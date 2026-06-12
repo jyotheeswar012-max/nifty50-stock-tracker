@@ -1,45 +1,40 @@
-# 📈 NSE & Nifty 50 Stock Tracker
+# 📈 NSE & Nifty 50 — Ultimate Tracker + Time Machine
 
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://nifty50-stock-tracker.streamlit.app)
 
 > **Live App → [https://nifty50-stock-tracker.streamlit.app](https://nifty50-stock-tracker.streamlit.app)**
 
-A real-time NSE & Nifty 50 dashboard built with **Streamlit** and **Yahoo Finance (yfinance)**.
+The **only free Nifty 50 dashboard** combining real-time NSE data with historical time-travel and macro event simulation.
 
 ---
 
-## 🚀 Features
+## 🚀 10 Pages in One App
 
-| Page | Description |
-|------|-------------|
-| 🏦 NSE Market Overview | Live NSE indices, market open/close status, advance/decline ratio, multi-index trend comparison |
-| 📈 Nifty 50 Index | Candlestick chart with MA20 & MA50, daily returns, volume |
-| 🏢 All 50 Companies | Live prices for all 50 Nifty stocks with sector filter & sort |
-| 🏆 Gainers & Losers | Top N gainers/losers + sector heatmap (treemap) |
-| 🧮 P&L Calculator | Actual vs assumed Nifty impact on your stock holdings + sensitivity table |
-| 🔍 Stock Chart Lookup | Candlestick / Line / Area chart for any NSE stock + volume |
+### 🟦 Live NSE Section
+| Page | Features |
+|------|----------|
+| 🏦 NSE Market Overview | Live indices, advance/decline, multi-index trend |
+| 📈 Nifty 50 Index | Candlestick + MA20/MA50 + volume + daily returns |
+| 🏢 All 50 Companies | Live prices, sector filter, sort by price/change |
+| 🏆 Gainers & Losers | Top N gainers/losers + treemap heatmap |
+| 🧮 P&L Calculator | Actual vs assumed Nifty impact + sensitivity table |
+| 🔍 Stock Chart Lookup | Any NSE stock — Candlestick/Line/Area + volume |
 
----
-
-## 🛠️ Tech Stack
-
-- **Python 3.10+**
-- [Streamlit](https://streamlit.io) — UI framework
-- [yfinance](https://github.com/ranaroussi/yfinance) — Yahoo Finance data
-- [Plotly](https://plotly.com/python/) — Interactive charts
-- [Pandas](https://pandas.pydata.org/) / [NumPy](https://numpy.org/) — Data processing
-
----
-
-## ⚡ Deploy on Streamlit Cloud (Free)
-
-1. Fork or clone this repo
-2. Go to **[share.streamlit.io](https://share.streamlit.io)**
-3. Click **New app**
-4. Select your repo, branch `main`, file `app.py`
-5. Click **Deploy** — your app goes live in ~2 minutes!
+### ⏰ Time Machine Section
+| Page | Features |
+|------|----------|
+| ⏰ Time Machine | Travel to any date — OHLC, gainers, heatmap, stock chart |
+| 🧪 Scenario Engine | Rupee drop, oil spike, gold rally — estimated reactions per stock |
+| 💼 Paper Portfolio | Invest on any date, track to any end date — full P&L + CAGR |
+| 📅 Market Calendar | Monthly return heatmap + annual performance bar chart |
 
 ---
+
+## ⚡ Deploy on Streamlit Cloud
+
+1. Go to [share.streamlit.io](https://share.streamlit.io)
+2. Connect repo `jyotheeswar012-max/nifty50-stock-tracker`, branch `main`, file `app.py`
+3. Click **Deploy** — live in ~3 minutes
 
 ## 🖥️ Run Locally
 
@@ -52,10 +47,4 @@ streamlit run app.py
 
 ---
 
-## ⚠️ Disclaimer
-
-This app is for **educational purposes only**. Data sourced from Yahoo Finance. Not investment advice.
-
----
-
-<p align="center">Built with ❤️ using Streamlit &nbsp;| Data: NSE via Yahoo Finance</p>
+> ⚠️ Educational use only. Not investment advice.
