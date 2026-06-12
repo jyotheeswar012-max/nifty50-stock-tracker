@@ -20,86 +20,20 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# =========================================================
-# HELPERS
-# =========================================================
-def safe_float(val, default=0.0):
-    try:
-        f = float(val)
-        return default if (np.isnan(f) or np.isinf(f)) else f
-    except Exception:
-        return default
-
-def calc_impact(nifty_pct, sp, qty, b):
-    spct = nifty_pct * b
-    pchg = sp * (spct / 100)
-    nsp  = sp + pchg
-    pl   = pchg * qty
-    return spct, pchg, nsp, sp * qty, nsp * qty, pl
-
-def is_nse_open():
-    """Check if NSE market is currently open (Mon-Fri 9:15 AM - 3:30 PM IST)."""
-    try:
-        ist = pytz.timezone("Asia/Kolkata")
-        now = datetime.now(ist)
-        if now.weekday() >= 5:
-            return False, "Weekend"
-        market_open  = now.replace(hour=9,  minute=15, second=0, microsecond=0)
-        market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
-        if market_open <= now <= market_close:
-            return True, "Open"
-        elif now < market_open:
-            return False, f"Opens at 9:15 AM IST"
-        else:
-            return False, "Closed (Today's session ended)"
-    except Exception:
-        return False, "Unknown"
-
-@st.cache_data(ttl=300)
-def fetch_ticker(symbol, period="3mo"):
-    try:
-        t = yf.Ticker(symbol)
-        h = t.history(period=period)
-        return h if not h.empty else pd.DataFrame()
-    except Exception:
-        return pd.DataFrame()
-
-def index_metrics(hist, label):
-    """Render 5 metric cards for an index."""
-    if hist.empty or len(hist) < 2:
-        st.warning(f"⚠️ No data for {label}")
-        return None, None, None
-    curr  = safe_float(hist["Close"].iloc[-1])
-    prev  = safe_float(hist["Close"].iloc[-2], curr)
-    chg   = curr - prev
-    pct   = (chg / prev * 100) if prev != 0 else 0.0
-    hi    = safe_float(hist["High"].max())
-    lo    = safe_float(hist["Low"].min())
-    c1,c2,c3,c4,c5 = st.columns(5)
-    c1.metric(f"{label} Value", f"₹{curr:,.2f}")
-    c2.metric("Points Change",  f"{chg:+.2f}")
-    c3.metric("% Change",       f"{pct:+.2f}%")
-    c4.metric("Period High",    f"₹{hi:,.2f}")
-    c5.metric("Period Low",     f"₹{lo:,.2f}")
-    return curr, chg, pct
-
-# =========================================================
-# NSE INDICES CONFIG
-# =========================================================
+# ============================================================
+# CONSTANTS
+# ============================================================
 NSE_INDICES = [
-    {"symbol": "^NSEI",   "name": "Nifty 50",         "color": "#00e5ff"},
-    {"symbol": "^NSEBANK","name": "Nifty Bank",       "color": "#ffd600"},
-    {"symbol": "^CNXIT",  "name": "Nifty IT",         "color": "#69f0ae"},
-    {"symbol": "^CNXAUTO","name": "Nifty Auto",       "color": "#ff6d00"},
-    {"symbol": "^CNXPHARMA","name":"Nifty Pharma",    "color": "#ea80fc"},
-    {"symbol": "^CNXFMCG", "name": "Nifty FMCG",      "color": "#80d8ff"},
-    {"symbol": "^CNXMETAL","name": "Nifty Metal",     "color": "#ff6e40"},
-    {"symbol": "^CNXREALTY","name":"Nifty Realty",    "color": "#b9f6ca"},
+    {"symbol": "^NSEI",      "name": "Nifty 50",    "color": "#00e5ff"},
+    {"symbol": "^NSEBANK",   "name": "Nifty Bank",  "color": "#ffd600"},
+    {"symbol": "^CNXIT",     "name": "Nifty IT",    "color": "#69f0ae"},
+    {"symbol": "^CNXAUTO",   "name": "Nifty Auto",  "color": "#ff6d00"},
+    {"symbol": "^CNXPHARMA", "name": "Nifty Pharma","color": "#ea80fc"},
+    {"symbol": "^CNXFMCG",   "name": "Nifty FMCG",  "color": "#80d8ff"},
+    {"symbol": "^CNXMETAL",  "name": "Nifty Metal", "color": "#ff6e40"},
+    {"symbol": "^CNXREALTY", "name": "Nifty Realty","color": "#b9f6ca"},
 ]
 
-# =========================================================
-# ALL 50 NIFTY COMPANIES
-# =========================================================
 NIFTY50 = [
     {"symbol":"RELIANCE.NS",   "name":"Reliance Industries",    "sector":"Energy",             "beta":0.90},
     {"symbol":"HDFCBANK.NS",   "name":"HDFC Bank",              "sector":"Financial Services", "beta":1.10},
@@ -123,7 +57,7 @@ NIFTY50 = [
     {"symbol":"ONGC.NS",       "name":"ONGC",                   "sector":"Energy",             "beta":1.00},
     {"symbol":"NTPC.NS",       "name":"NTPC",                   "sector":"Power",              "beta":0.80},
     {"symbol":"POWERGRID.NS",  "name":"Power Grid Corp",        "sector":"Power",              "beta":0.75},
-    {"symbol":"MM.NS",         "name":"Mahindra & Mahindra",    "sector":"Automobile",         "beta":1.05},
+    {"symbol":"M&M.NS",        "name":"Mahindra & Mahindra",    "sector":"Automobile",         "beta":1.05},
     {"symbol":"TATAMOTORS.NS", "name":"Tata Motors",            "sector":"Automobile",         "beta":1.45},
     {"symbol":"TATASTEEL.NS",  "name":"Tata Steel",             "sector":"Metals",             "beta":1.50},
     {"symbol":"JSWSTEEL.NS",   "name":"JSW Steel",              "sector":"Metals",             "beta":1.40},
@@ -156,10 +90,137 @@ NIFTY50 = [
 nifty50_df = pd.DataFrame(NIFTY50)
 sectors    = ["All"] + sorted(nifty50_df["sector"].unique().tolist())
 
-# =========================================================
-# SIDEBAR NAVIGATION
-# =========================================================
-st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/NSE_Logo.svg/200px-NSE_Logo.svg.png", width=120)
+# ============================================================
+# HELPERS
+# ============================================================
+def safe_float(val, default=0.0):
+    """Convert val to float safely; return default on NaN/Inf/error."""
+    try:
+        f = float(val)
+        return default if (np.isnan(f) or np.isinf(f)) else f
+    except Exception:
+        return default
+
+def is_nse_open():
+    try:
+        ist  = pytz.timezone("Asia/Kolkata")
+        now  = datetime.now(ist)
+        if now.weekday() >= 5:
+            return False, "Weekend — Market Closed"
+        mo = now.replace(hour=9,  minute=15, second=0, microsecond=0)
+        mc = now.replace(hour=15, minute=30, second=0, microsecond=0)
+        if mo <= now <= mc:
+            return True, "Open"
+        elif now < mo:
+            return False, "Pre-Market (Opens 9:15 AM IST)"
+        else:
+            return False, "Closed (Session ended at 3:30 PM)"
+    except Exception:
+        return False, "Unknown"
+
+@st.cache_data(ttl=300)
+def fetch_ticker(symbol: str, period: str = "3mo") -> pd.DataFrame:
+    """Fetch OHLCV history for a single symbol. Always returns a DataFrame."""
+    try:
+        h = yf.Ticker(symbol).history(period=period)
+        return h if (h is not None and not h.empty) else pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
+@st.cache_data(ttl=300)
+def fetch_batch(period: str = "5d") -> pd.DataFrame:
+    """Batch-download all 50 Nifty symbols. Returns raw yf DataFrame."""
+    syms = [s["symbol"] for s in NIFTY50]
+    try:
+        raw = yf.download(syms, period=period, auto_adjust=True,
+                          progress=False, group_by="ticker")
+        return raw if (raw is not None and not raw.empty) else pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
+def extract_close_series(raw: pd.DataFrame, sym: str) -> pd.Series:
+    """Safely extract the Close series for one symbol from batch download."""
+    try:
+        if raw.empty:
+            return pd.Series(dtype=float)
+        if isinstance(raw.columns, pd.MultiIndex):
+            lvl0 = raw.columns.get_level_values(0).tolist()
+            lvl1 = raw.columns.get_level_values(1).tolist()
+            # group_by='ticker' -> (ticker, field)
+            if sym in lvl0:
+                return raw[sym]["Close"].dropna()
+            # fallback: (field, ticker)
+            if "Close" in lvl0 and sym in lvl1:
+                return raw["Close"][sym].dropna()
+        return pd.Series(dtype=float)
+    except Exception:
+        return pd.Series(dtype=float)
+
+def get_curr_prev(raw: pd.DataFrame, sym: str):
+    """Return (current_price, prev_price) or (None, None)."""
+    s = extract_close_series(raw, sym)
+    if len(s) >= 2:
+        return safe_float(s.iloc[-1]), safe_float(s.iloc[-2])
+    if len(s) == 1:
+        return safe_float(s.iloc[0]), None
+    return None, None
+
+def build_stock_rows(raw: pd.DataFrame) -> pd.DataFrame:
+    """Build a DataFrame of all 50 stocks with price/change columns."""
+    rows = []
+    for s in NIFTY50:
+        curr, prev = get_curr_prev(raw, s["symbol"])
+        chg  = (curr - prev) if (curr is not None and prev is not None) else None
+        pct  = (chg / prev * 100) if (chg is not None and prev and prev != 0) else None
+        rows.append({
+            "Symbol":     s["symbol"].replace(".NS", ""),
+            "Company":    s["name"],
+            "Sector":     s["sector"],
+            "Beta":       s["beta"],
+            "Price (₹)":  round(curr, 2)  if curr is not None else "N/A",
+            "Change (₹)": round(chg, 2)   if chg  is not None else "N/A",
+            "Change (%)": round(pct, 2)   if pct  is not None else "N/A",
+            "_curr":      curr,
+            "_pct":       pct,
+        })
+    return pd.DataFrame(rows)
+
+def safe_sort(df: pd.DataFrame, col: str, ascending: bool = True) -> pd.DataFrame:
+    """Sort df by a numeric column that may contain None; NaNs go last."""
+    numeric = pd.to_numeric(df[col], errors="coerce")
+    # reset_index so argsort indices match positional indices
+    df2     = df.reset_index(drop=True)
+    numeric = numeric.reset_index(drop=True)
+    order   = numeric.argsort(kind="stable")
+    if not ascending:
+        # NaN positions stay at end even when reversed
+        n_valid = numeric.notna().sum()
+        order   = list(order[:n_valid][::-1]) + list(order[n_valid:])
+    return df2.iloc[list(order)]
+
+def calc_impact(nifty_pct, sp, qty, b):
+    spct = nifty_pct * b
+    pchg = sp * (spct / 100)
+    nsp  = sp + pchg
+    pl   = pchg * qty
+    return spct, pchg, nsp, sp * qty, nsp * qty, pl
+
+def show_pl_badge(pl):
+    if pl > 0:   st.success(f"✅ GAIN ₹{pl:,.2f}")
+    elif pl < 0: st.error(f"❌ LOSS ₹{abs(pl):,.2f}")
+    else:        st.info("⚖️ No Change")
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+try:
+    st.sidebar.image(
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/NSE_Logo.svg/200px-NSE_Logo.svg.png",
+        width=120
+    )
+except Exception:
+    pass
+
 st.sidebar.title("📈 NSE & Nifty Tracker")
 page = st.sidebar.radio("Navigate", [
     "🏦 NSE Market Overview",
@@ -170,97 +231,100 @@ page = st.sidebar.radio("Navigate", [
     "🔍 Stock Chart Lookup",
 ])
 
-ist = pytz.timezone("Asia/Kolkata")
-st.sidebar.markdown(f"**🕒 IST Time:** {datetime.now(ist).strftime('%d %b %Y %I:%M %p')}")
+try:
+    ist_tz = pytz.timezone("Asia/Kolkata")
+    now_ist = datetime.now(ist_tz)
+    st.sidebar.markdown(f"⌨️ **IST:** {now_ist.strftime('%d %b %Y %I:%M %p')}")
+except Exception:
+    pass
+
 market_open, market_status = is_nse_open()
 if market_open:
     st.sidebar.markdown('<span class="tag-open">● MARKET OPEN</span>', unsafe_allow_html=True)
 else:
     st.sidebar.markdown(f'<span class="tag-closed">● {market_status}</span>', unsafe_allow_html=True)
+
 st.sidebar.markdown("---")
 st.sidebar.caption("📊 Data: Yahoo Finance (yfinance)")
-st.sidebar.caption("⚠️ For educational use only")
+st.sidebar.caption("⚠️ Educational use only. Not investment advice.")
 
-# =========================================================
-# PAGE 1: NSE MARKET OVERVIEW
-# =========================================================
+# ============================================================
+# PAGE 1 — NSE MARKET OVERVIEW
+# ============================================================
 if page == "🏦 NSE Market Overview":
     st.title("🏦 NSE Market Overview")
-    st.markdown('<span class="tag-nse">NSE INDIA</span> &nbsp; National Stock Exchange — All Key Indices', unsafe_allow_html=True)
+    st.markdown('<span class="tag-nse">NSE INDIA</span> &nbsp; National Stock Exchange — Live Indices & Market Pulse', unsafe_allow_html=True)
     st.markdown("")
 
-    # Market Status Banner
     if market_open:
-        st.success("✅ NSE Market is currently **OPEN** | Trading Hours: Mon–Fri, 9:15 AM – 3:30 PM IST")
+        st.success("✅ NSE is **OPEN** — Mon–Fri 9:15 AM – 3:30 PM IST")
     else:
-        st.error(f"❌ NSE Market is **CLOSED** — {market_status}")
+        st.error(f"❌ NSE is **CLOSED** — {market_status}")
 
     st.markdown("---")
+    st.subheader("📊 All NSE Indices Snapshot")
 
-    # All NSE Indices snapshot
-    st.subheader("📊 NSE Indices Snapshot")
     idx_rows = []
-    with st.spinner("Fetching all NSE indices..."):
+    with st.spinner("Fetching NSE indices..."):
         for idx in NSE_INDICES:
             h = fetch_ticker(idx["symbol"], period="5d")
             if not h.empty and len(h) >= 2:
                 c  = safe_float(h["Close"].iloc[-1])
                 p  = safe_float(h["Close"].iloc[-2], c)
                 ch = c - p
-                pt = (ch / p * 100) if p != 0 else 0.0
+                pt = round((ch / p * 100), 2) if p != 0 else 0.0
                 hi = safe_float(h["High"].max())
                 lo = safe_float(h["Low"].min())
                 idx_rows.append({
-                    "Index":          idx["name"],
-                    "Current Value":  f"₹{c:,.2f}",
-                    "Change (pts)":   f"{ch:+.2f}",
-                    "Change (%)":     f"{pt:+.2f}%",
-                    "Period High":    f"₹{hi:,.2f}",
-                    "Period Low":     f"₹{lo:,.2f}",
-                    "_pct":           pt,
+                    "Index":        idx["name"],
+                    "Value":        f"₹{c:,.2f}",
+                    "Change (pts)": f"{ch:+.2f}",
+                    "Change (%)":   f"{pt:+.2f}%",
+                    "High (5d)":    f"₹{hi:,.2f}",
+                    "Low (5d)":     f"₹{lo:,.2f}",
+                    "_pct":         pt,
                 })
             else:
                 idx_rows.append({
-                    "Index": idx["name"], "Current Value": "N/A",
+                    "Index": idx["name"], "Value": "N/A",
                     "Change (pts)": "N/A", "Change (%)": "N/A",
-                    "Period High": "N/A", "Period Low": "N/A", "_pct": None
+                    "High (5d)": "N/A", "Low (5d)": "N/A", "_pct": None,
                 })
 
     idx_df = pd.DataFrame(idx_rows)
     st.dataframe(idx_df.drop(columns=["_pct"]), use_container_width=True, hide_index=True)
 
-    # NSE Indices Bar Chart
-    valid_idx = idx_df.dropna(subset=["_pct"]).copy()
+    valid_idx = idx_df[idx_df["_pct"].notna()].copy()
     if not valid_idx.empty:
-        fig_idx_bar = px.bar(
-            valid_idx, x="Index", y="_pct",
-            color="_pct",
-            color_continuous_scale=["#ff1744", "#ffd600", "#00c853"],
-            color_continuous_midpoint=0,
-            text="Change (%)",
-            title="NSE Indices — % Change Today",
-            template="plotly_dark", height=400,
-            labels={"_pct": "% Change"}
-        )
-        fig_idx_bar.update_traces(textposition="outside")
-        fig_idx_bar.update_layout(showlegend=False)
-        st.plotly_chart(fig_idx_bar, use_container_width=True)
+        try:
+            fig_bar = px.bar(
+                valid_idx, x="Index", y="_pct",
+                color="_pct",
+                color_continuous_scale=["#ff1744", "#ffd600", "#00c853"],
+                color_continuous_midpoint=0,
+                text="Change (%)",
+                title="NSE Indices — % Change",
+                template="plotly_dark", height=400,
+                labels={"_pct": "% Change"},
+            )
+            fig_bar.update_traces(textposition="outside")
+            fig_bar.update_layout(showlegend=False, coloraxis_showscale=False)
+            st.plotly_chart(fig_bar, use_container_width=True)
+        except Exception as e:
+            st.warning(f"⚠️ Chart error: {e}")
 
     st.markdown("---")
-
-    # Multi-index line chart comparison
-    st.subheader("📉 NSE Indices — 3-Month Trend Comparison")
-    period_sel = st.selectbox("Select Period", ["1mo", "3mo", "6mo", "1y"], index=1)
+    st.subheader("📉 Indices Trend Comparison")
+    period_sel = st.selectbox("Period", ["1mo", "3mo", "6mo", "1y"], index=1, key="idx_period")
     selected_indices = st.multiselect(
-        "Select Indices to Compare",
+        "Select Indices",
         [i["name"] for i in NSE_INDICES],
-        default=["Nifty 50", "Nifty Bank", "Nifty IT"]
+        default=["Nifty 50", "Nifty Bank", "Nifty IT"],
     )
-
+    sym_map = {i["name"]: i for i in NSE_INDICES}
     if selected_indices:
         fig_multi = go.Figure()
-        sym_map   = {i["name"]: i for i in NSE_INDICES}
-        with st.spinner("Fetching index data..."):
+        with st.spinner("Loading trend data..."):
             for name in selected_indices:
                 meta = sym_map.get(name)
                 if not meta:
@@ -268,241 +332,185 @@ if page == "🏦 NSE Market Overview":
                 h = fetch_ticker(meta["symbol"], period=period_sel)
                 if h.empty or len(h) < 2:
                     continue
-                # Normalize to 100 for comparison
                 base = safe_float(h["Close"].iloc[0], 1)
-                norm = (h["Close"] / base) * 100 if base != 0 else h["Close"]
+                norm = (h["Close"] / base * 100) if base != 0 else h["Close"]
                 fig_multi.add_trace(go.Scatter(
-                    x=h.index, y=norm,
-                    mode="lines", name=name,
-                    line=dict(color=meta["color"], width=2)
+                    x=h.index, y=norm, mode="lines", name=name,
+                    line=dict(color=meta["color"], width=2),
                 ))
-        fig_multi.update_layout(
-            title="NSE Indices — Normalized Trend (Base = 100)",
-            template="plotly_dark", height=450,
-            xaxis_title="Date", yaxis_title="Normalized Value",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02)
-        )
-        st.plotly_chart(fig_multi, use_container_width=True)
+        if fig_multi.data:
+            fig_multi.update_layout(
+                title="Normalized Trend (Base = 100)",
+                template="plotly_dark", height=450,
+                xaxis_title="Date", yaxis_title="Normalized Value",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            )
+            st.plotly_chart(fig_multi, use_container_width=True)
+        else:
+            st.info("No data available for selected indices.")
 
     st.markdown("---")
-
-    # Advance / Decline
-    st.subheader("📊 Nifty 50 — Advance / Decline Today")
-    with st.spinner("Calculating advance/decline..."):
-        symbols = [s["symbol"] for s in NIFTY50]
+    st.subheader("📊 Nifty 50 — Advance / Decline")
+    with st.spinner("Computing advance/decline..."):
         try:
-            raw_ad = yf.download(symbols, period="5d", auto_adjust=True,
-                                 progress=False, group_by="ticker")
+            raw_ad = fetch_batch(period="5d")
             advances = declines = unchanged = 0
             for s in NIFTY50:
-                sym = s["symbol"]
-                try:
-                    if isinstance(raw_ad.columns, pd.MultiIndex):
-                        lvl0 = raw_ad.columns.get_level_values(0)
-                        if sym in lvl0:
-                            cl = raw_ad[sym]["Close"].dropna()
-                        elif "Close" in lvl0:
-                            cl = raw_ad["Close"][sym].dropna()
-                        else:
-                            continue
-                    else:
-                        continue
-                    if len(cl) >= 2:
-                        diff = safe_float(cl.iloc[-1]) - safe_float(cl.iloc[-2])
-                        if diff > 0:   advances  += 1
-                        elif diff < 0: declines   += 1
-                        else:          unchanged  += 1
-                except Exception:
+                curr, prev = get_curr_prev(raw_ad, s["symbol"])
+                if curr is None or prev is None:
                     continue
+                diff = curr - prev
+                if diff > 0:        advances  += 1
+                elif diff < 0:      declines  += 1
+                else:               unchanged += 1
 
-            col_a, col_d, col_u = st.columns(3)
-            col_a.metric("🟢 Advances",  advances)
-            col_d.metric("🔴 Declines",  declines)
-            col_u.metric("⚪ Unchanged", unchanged)
+            ca, cd, cu = st.columns(3)
+            ca.metric("🟢 Advances",  advances)
+            cd.metric("🔴 Declines",  declines)
+            cu.metric("⚪ Unchanged", unchanged)
 
-            if advances + declines > 0:
-                fig_ad = go.Figure(go.Pie(
-                    labels=["Advances", "Declines", "Unchanged"],
-                    values=[advances, declines, unchanged],
-                    marker_colors=["#00c853", "#ff1744", "#9e9e9e"],
-                    hole=0.5
-                ))
-                fig_ad.update_layout(
-                    title="Advance / Decline Ratio",
-                    template="plotly_dark", height=300
-                )
-                st.plotly_chart(fig_ad, use_container_width=True)
+            total = advances + declines + unchanged
+            if total > 0:
+                try:
+                    fig_ad = go.Figure(go.Pie(
+                        labels=["Advances", "Declines", "Unchanged"],
+                        values=[advances, declines, max(unchanged, 0)],
+                        marker_colors=["#00c853", "#ff1744", "#9e9e9e"],
+                        hole=0.5,
+                    ))
+                    fig_ad.update_layout(
+                        title="Advance / Decline",
+                        template="plotly_dark", height=320,
+                    )
+                    st.plotly_chart(fig_ad, use_container_width=True)
+                except Exception as e:
+                    st.warning(f"⚠️ Pie chart error: {e}")
         except Exception as ex:
             st.warning(f"⚠️ Could not compute advance/decline: {ex}")
 
-# =========================================================
-# PAGE 2: NIFTY 50 INDEX
-# =========================================================
+# ============================================================
+# PAGE 2 — NIFTY 50 INDEX
+# ============================================================
 elif page == "📈 Nifty 50 Index":
     st.title("📈 Nifty 50 Index")
-    st.markdown('<span class="tag-actual">LIVE DATA</span> &nbsp; Real-time NSE Nifty 50 Index', unsafe_allow_html=True)
+    st.markdown('<span class="tag-actual">LIVE DATA</span> &nbsp; NSE Nifty 50 Index', unsafe_allow_html=True)
     st.markdown("")
 
-    period_n = st.selectbox("Select Period", ["1mo", "3mo", "6mo", "1y"], index=1)
+    period_n = st.selectbox("Period", ["1mo", "3mo", "6mo", "1y"], index=1, key="n50_period")
     hist_n   = fetch_ticker("^NSEI", period=period_n)
+
     nifty_live_ok = False
-    current_price = 22500.0; pct_change = 0.0; change = 0.0
+    current_price = 22500.0
+    pct_change    = 0.0
+    change        = 0.0
 
     if not hist_n.empty and len(hist_n) >= 2:
-        current_price, change, pct_change = index_metrics(hist_n, "Nifty 50")
-        if current_price: nifty_live_ok = True
+        try:
+            current_price = safe_float(hist_n["Close"].iloc[-1], 22500.0)
+            prev_p        = safe_float(hist_n["Close"].iloc[-2], current_price)
+            change        = current_price - prev_p
+            pct_change    = (change / prev_p * 100) if prev_p != 0 else 0.0
+            nifty_live_ok = True
 
-        hist_n = hist_n.copy()
-        hist_n["MA20"] = hist_n["Close"].rolling(20).mean()
-        hist_n["MA50"] = hist_n["Close"].rolling(50).mean()
+            c1,c2,c3,c4,c5 = st.columns(5)
+            c1.metric("Nifty 50",    f"₹{current_price:,.2f}")
+            c2.metric("Points Chg",  f"{change:+.2f}")
+            c3.metric("% Change",    f"{pct_change:+.2f}%")
+            c4.metric("Period High", f"₹{safe_float(hist_n['High'].max()):,.2f}")
+            c5.metric("Period Low",  f"₹{safe_float(hist_n['Low'].min()):,.2f}")
 
-        fig_n = go.Figure()
-        fig_n.add_trace(go.Candlestick(
-            x=hist_n.index, open=hist_n["Open"], high=hist_n["High"],
-            low=hist_n["Low"], close=hist_n["Close"], name="Nifty 50",
-            increasing_line_color="#00c853", decreasing_line_color="#ff1744"
-        ))
-        fig_n.add_trace(go.Scatter(x=hist_n.index, y=hist_n["MA20"],
-            mode="lines", name="20-Day MA", line=dict(color="#ffd600", width=1.5, dash="dot")))
-        fig_n.add_trace(go.Scatter(x=hist_n.index, y=hist_n["MA50"],
-            mode="lines", name="50-Day MA", line=dict(color="#ea80fc", width=1.5, dash="dash")))
-        fig_n.update_layout(
-            title=f"Nifty 50 — {period_n}", template="plotly_dark",
-            height=480, xaxis_rangeslider_visible=False
-        )
-        st.plotly_chart(fig_n, use_container_width=True)
+            hn = hist_n.copy()
+            hn["MA20"] = hn["Close"].rolling(20).mean()
+            hn["MA50"] = hn["Close"].rolling(50).mean()
 
-        hist_n["Daily_Return_%"] = hist_n["Close"].pct_change() * 100
-        ret_df = hist_n.dropna(subset=["Daily_Return_%"])
-        if not ret_df.empty:
-            fig_ret = px.bar(
-                ret_df, x=ret_df.index, y="Daily_Return_%",
-                color="Daily_Return_%",
-                color_continuous_scale=["#ff1744", "#ffd600", "#00c853"],
-                title="Daily Returns (%)", template="plotly_dark", height=280
-            )
-            st.plotly_chart(fig_ret, use_container_width=True)
+            fig_n = go.Figure()
+            fig_n.add_trace(go.Candlestick(
+                x=hn.index, open=hn["Open"], high=hn["High"],
+                low=hn["Low"], close=hn["Close"], name="Nifty 50",
+                increasing_line_color="#00c853", decreasing_line_color="#ff1744",
+            ))
+            fig_n.add_trace(go.Scatter(x=hn.index, y=hn["MA20"], mode="lines",
+                name="MA20", line=dict(color="#ffd600", width=1.5, dash="dot")))
+            fig_n.add_trace(go.Scatter(x=hn.index, y=hn["MA50"], mode="lines",
+                name="MA50", line=dict(color="#ea80fc", width=1.5, dash="dash")))
+            fig_n.update_layout(title=f"Nifty 50 — {period_n}", template="plotly_dark",
+                height=480, xaxis_rangeslider_visible=False)
+            st.plotly_chart(fig_n, use_container_width=True)
 
-        # Volume
-        if "Volume" in hist_n.columns:
-            vol_df = hist_n[hist_n["Volume"] > 0]
-            if not vol_df.empty:
-                fig_vol = px.bar(vol_df, x=vol_df.index, y="Volume",
-                    title="Nifty 50 Volume", template="plotly_dark", height=250,
-                    color_discrete_sequence=["#00e5ff"])
-                st.plotly_chart(fig_vol, use_container_width=True)
+            hn["Daily_Ret_%"] = hn["Close"].pct_change() * 100
+            ret_df = hn.dropna(subset=["Daily_Ret_%"])
+            if not ret_df.empty:
+                try:
+                    fig_ret = px.bar(ret_df, x=ret_df.index, y="Daily_Ret_%",
+                        color="Daily_Ret_%",
+                        color_continuous_scale=["#ff1744", "#ffd600", "#00c853"],
+                        title="Daily Returns (%)", template="plotly_dark", height=280)
+                    st.plotly_chart(fig_ret, use_container_width=True)
+                except Exception as e:
+                    st.warning(f"⚠️ Returns chart error: {e}")
+
+            if "Volume" in hn.columns:
+                vol_df = hn[hn["Volume"] > 0]
+                if not vol_df.empty:
+                    try:
+                        fig_vol = px.bar(vol_df, x=vol_df.index, y="Volume",
+                            title="Volume", template="plotly_dark", height=250,
+                            color_discrete_sequence=["#00e5ff"])
+                        st.plotly_chart(fig_vol, use_container_width=True)
+                    except Exception as e:
+                        st.warning(f"⚠️ Volume chart error: {e}")
+        except Exception as e:
+            st.warning(f"⚠️ Error rendering index: {e}")
     else:
         st.warning("⚠️ Could not fetch Nifty 50 data.")
 
-# =========================================================
-# PAGE 3: ALL 50 COMPANIES
-# =========================================================
+# ============================================================
+# PAGE 3 — ALL 50 COMPANIES
+# ============================================================
 elif page == "🏢 All 50 Companies":
     st.title("🏢 All 50 Nifty Companies")
-    st.markdown('<span class="tag-actual">LIVE DATA</span> &nbsp; All companies with live NSE prices', unsafe_allow_html=True)
+    st.markdown('<span class="tag-actual">LIVE DATA</span> &nbsp; NSE prices for all 50 companies', unsafe_allow_html=True)
     st.markdown("")
 
     col_f, col_s = st.columns([2, 1])
-    with col_f: sector_filter = st.selectbox("Filter by Sector", sectors)
-    with col_s: sort_by = st.selectbox("Sort by", ["Name","Price ↑","Price ↓","Change % ↑","Change % ↓"])
-
-    @st.cache_data(ttl=300)
-    def fetch_all():
-        syms = [s["symbol"] for s in NIFTY50]
-        try:
-            return yf.download(syms, period="5d", auto_adjust=True,
-                               progress=False, group_by="ticker")
-        except Exception:
-            return pd.DataFrame()
-
-    def get_curr_prev(raw, sym):
-        try:
-            if isinstance(raw.columns, pd.MultiIndex):
-                lvl0 = raw.columns.get_level_values(0)
-                s = raw[sym]["Close"].dropna() if sym in lvl0 else raw["Close"][sym].dropna()
-            else:
-                s = raw["Close"].dropna()
-            if len(s) >= 2: return safe_float(s.iloc[-1]), safe_float(s.iloc[-2])
-            if len(s) == 1: return safe_float(s.iloc[-1]), None
-        except Exception: pass
-        return None, None
+    with col_f: sector_filter = st.selectbox("Sector", sectors, key="sec_filter")
+    with col_s: sort_by = st.selectbox("Sort by", ["Name","Price ↑","Price ↓","Change % ↑","Change % ↓"], key="sort_by")
 
     with st.spinner("⏳ Loading live prices..."):
-        raw = fetch_all()
-        rows = []
-        for s in NIFTY50:
-            curr, prev = get_curr_prev(raw, s["symbol"]) if not raw.empty else (None, None)
-            chg = (curr - prev) if (curr and prev) else None
-            pct = (chg / prev * 100) if (chg and prev and prev != 0) else None
-            rows.append({
-                "Symbol":     s["symbol"].replace(".NS",""),
-                "Company":    s["name"],
-                "Sector":     s["sector"],
-                "Beta":       s["beta"],
-                "Price (₹)":  round(curr,2) if curr else "N/A",
-                "Change (₹)": round(chg,2)  if chg  else "N/A",
-                "Change (%)": round(pct,2)  if pct  else "N/A",
-                "_curr": curr, "_pct": pct,
-            })
-        all_df   = pd.DataFrame(rows)
-        fetch_ok = True
+        raw    = fetch_batch(period="5d")
+        all_df = build_stock_rows(raw)
 
-    disp = all_df.copy() if sector_filter=="All" else all_df[all_df["Sector"]==sector_filter].copy()
-    nc   = pd.to_numeric(disp["_curr"], errors="coerce")
-    np_  = pd.to_numeric(disp["_pct"],  errors="coerce")
-    if sort_by=="Price ↑":      disp = disp.iloc[nc.argsort()]
-    elif sort_by=="Price ↓":    disp = disp.iloc[nc.argsort()[::-1]]
-    elif sort_by=="Change % ↑": disp = disp.iloc[np_.argsort()]
-    elif sort_by=="Change % ↓": disp = disp.iloc[np_.argsort()[::-1]]
-    else: disp = disp.sort_values("Company")
+    disp = all_df.copy() if sector_filter == "All" else all_df[all_df["Sector"] == sector_filter].copy()
 
-    st.dataframe(disp[["Symbol","Company","Sector","Beta","Price (₹)","Change (₹)","Change (%)"]], use_container_width=True, hide_index=True)
+    if sort_by == "Price ↑":      disp = safe_sort(disp, "_curr", ascending=True)
+    elif sort_by == "Price ↓":    disp = safe_sort(disp, "_curr", ascending=False)
+    elif sort_by == "Change % ↑": disp = safe_sort(disp, "_pct",  ascending=True)
+    elif sort_by == "Change % ↓": disp = safe_sort(disp, "_pct",  ascending=False)
+    else:                          disp = disp.sort_values("Company").reset_index(drop=True)
+
+    st.dataframe(
+        disp[["Symbol","Company","Sector","Beta","Price (₹)","Change (₹)","Change (%)"]],
+        use_container_width=True, hide_index=True,
+    )
     st.caption(f"Showing {len(disp)} of 50 companies")
 
-# =========================================================
-# PAGE 4: GAINERS & LOSERS
-# =========================================================
+# ============================================================
+# PAGE 4 — GAINERS & LOSERS
+# ============================================================
 elif page == "🏆 Gainers & Losers":
     st.title("🏆 Top Gainers & Losers")
     st.markdown('<span class="tag-actual">LIVE DATA</span>', unsafe_allow_html=True)
     st.markdown("")
 
-    @st.cache_data(ttl=300)
-    def fetch_all_gl():
-        syms = [s["symbol"] for s in NIFTY50]
-        try:
-            return yf.download(syms, period="5d", auto_adjust=True,
-                               progress=False, group_by="ticker")
-        except Exception: return pd.DataFrame()
-
-    def get_cp(raw, sym):
-        try:
-            if isinstance(raw.columns, pd.MultiIndex):
-                lvl0 = raw.columns.get_level_values(0)
-                s = raw[sym]["Close"].dropna() if sym in lvl0 else raw["Close"][sym].dropna()
-            else:
-                s = raw["Close"].dropna()
-            if len(s) >= 2: return safe_float(s.iloc[-1]), safe_float(s.iloc[-2])
-        except: pass
-        return None, None
-
     with st.spinner("Fetching data..."):
-        raw = fetch_all_gl()
-        rows = []
-        for s in NIFTY50:
-            curr, prev = get_cp(raw, s["symbol"]) if not raw.empty else (None, None)
-            chg = (curr - prev) if (curr and prev) else None
-            pct = (chg / prev * 100) if (chg and prev and prev != 0) else None
-            rows.append({"Company":s["name"],"Sector":s["sector"],
-                         "Price (₹)":round(curr,2) if curr else "N/A",
-                         "Change (%)": round(pct,2) if pct else "N/A",
-                         "_pct": pct})
-        gl_df = pd.DataFrame(rows)
+        raw    = fetch_batch(period="5d")
+        all_df = build_stock_rows(raw)
 
-    valid = gl_df.dropna(subset=["_pct"]).copy()
+    valid = all_df[all_df["_pct"].notna()].copy()
+
     if not valid.empty:
-        top_n = st.slider("Show Top N", 3, 10, 5)
-        gainers = valid.nlargest(top_n, "_pct")[["Company","Sector","Price (₹)","Change (%)"]]
+        top_n = st.slider("Show Top N", 3, 10, 5, key="top_n")
+        gainers = valid.nlargest(top_n,  "_pct")[["Company","Sector","Price (₹)","Change (%)"]]
         losers  = valid.nsmallest(top_n, "_pct")[["Company","Sector","Price (₹)","Change (%)"]]
 
         cg, cl = st.columns(2)
@@ -513,150 +521,187 @@ elif page == "🏆 Gainers & Losers":
             st.markdown(f"### 🔴 Top {top_n} Losers")
             st.dataframe(losers, use_container_width=True, hide_index=True)
 
-        # Heatmap
+        # Treemap — hover_data keys must match actual column names
         valid["_heat"] = valid["_pct"].abs().clip(lower=0.01)
-        valid["Sector2"] = valid["Sector"]
         try:
-            fig_h = px.treemap(valid, path=["Sector2","Company"],
-                values="_heat", color="_pct",
-                color_continuous_scale=["#ff1744","#ffd600","#00c853"],
+            fig_h = px.treemap(
+                valid,
+                path=["Sector", "Company"],
+                values="_heat",
+                color="_pct",
+                color_continuous_scale=["#ff1744", "#ffd600", "#00c853"],
                 color_continuous_midpoint=0,
-                title="Nifty 50 Heatmap — % Change by Sector & Stock",
-                hover_data={"Price (₹)":True,"Change (%)":True})
+                title="Nifty 50 Heatmap — % Change",
+                hover_data={"Price (₹)": True, "Change (%)": True, "_heat": False},
+            )
             fig_h.update_layout(template="plotly_dark", height=520)
             st.plotly_chart(fig_h, use_container_width=True)
         except Exception as e:
             st.warning(f"⚠️ Heatmap error: {e}")
     else:
-        st.info("Not enough live data.")
+        st.info("⚠️ Not enough live data to show gainers/losers.")
 
-# =========================================================
-# PAGE 5: P&L CALCULATOR
-# =========================================================
+# ============================================================
+# PAGE 5 — P&L CALCULATOR
+# ============================================================
 elif page == "🧮 P&L Calculator":
     st.title("🧮 Stock P&L Calculator")
-    st.markdown('<span class="tag-assumed">SIMULATED</span> &nbsp; Actual vs Assumed Nifty impact on your stock', unsafe_allow_html=True)
+    st.markdown('<span class="tag-assumed">SIMULATED</span> &nbsp; Nifty movement impact on your holdings', unsafe_allow_html=True)
     st.markdown("")
 
-    # Fetch live Nifty for actual data
-    hist_calc = fetch_ticker("^NSEI", period="5d")
+    hist_c = fetch_ticker("^NSEI", period="5d")
     nifty_live_ok = False
-    current_price = 22500.0; pct_change = 0.0; change = 0.0
-    if not hist_calc.empty and len(hist_calc) >= 2:
-        current_price = safe_float(hist_calc["Close"].iloc[-1], 22500.0)
-        prev_p        = safe_float(hist_calc["Close"].iloc[-2], current_price)
-        change        = current_price - prev_p
-        pct_change    = (change / prev_p * 100) if prev_p != 0 else 0.0
-        nifty_live_ok = True
+    current_price = 22500.0
+    pct_change    = 0.0
+    change        = 0.0
+
+    if not hist_c.empty and len(hist_c) >= 2:
+        try:
+            current_price = safe_float(hist_c["Close"].iloc[-1], 22500.0)
+            prev_p        = safe_float(hist_c["Close"].iloc[-2], current_price)
+            change        = current_price - prev_p
+            pct_change    = (change / prev_p * 100) if prev_p != 0 else 0.0
+            nifty_live_ok = True
+        except Exception:
+            pass
 
     col_l, col_r = st.columns(2)
     with col_l:
         st.subheader("📊 Nifty Movement")
-        assumed_base   = st.number_input("Base Nifty Value", value=float(round(current_price,2)), step=50.0, min_value=1.0)
-        assumed_change = st.number_input("Change in Points (+ gain / − loss)", value=-200.0, step=10.0)
+        assumed_base   = st.number_input("Base Nifty Value", value=float(round(current_price, 2)),
+                                         step=50.0, min_value=1.0, key="ab")
+        assumed_change = st.number_input("Change in Points", value=-200.0, step=10.0, key="ac")
         assumed_new    = assumed_base + assumed_change
         assumed_pct    = (assumed_change / assumed_base * 100) if assumed_base != 0 else 0.0
-        st.info(f"📌 Assumed % Change: **{assumed_pct:+.2f}%** → New Value: **{assumed_new:,.2f}**")
+        st.info(f"📌 Assumed: **{assumed_pct:+.2f}%** → **₹{assumed_new:,.2f}**")
 
         if nifty_live_ok:
-            st.dataframe(pd.DataFrame({
-                "Metric":     ["Base Value","Change (pts)","Change (%)","New Value"],
-                "🟢 Actual":  [f"₹{current_price:,.2f}",f"{change:+.2f}",f"{pct_change:+.2f}%",f"₹{current_price:,.2f}"],
-                "🟡 Assumed": [f"₹{assumed_base:,.2f}",f"{assumed_change:+.2f}",f"{assumed_pct:+.2f}%",f"₹{assumed_new:,.2f}"]
-            }), use_container_width=True, hide_index=True)
+            try:
+                st.dataframe(pd.DataFrame({
+                    "Metric":     ["Base","Change (pts)","Change (%)","New Value"],
+                    "🟢 Actual":  [f"₹{current_price:,.2f}",f"{change:+.2f}",f"{pct_change:+.2f}%",f"₹{current_price:,.2f}"],
+                    "🟡 Assumed": [f"₹{assumed_base:,.2f}",f"{assumed_change:+.2f}",f"{assumed_pct:+.2f}%",f"₹{assumed_new:,.2f}"],
+                }), use_container_width=True, hide_index=True)
+            except Exception:
+                pass
 
     with col_r:
         st.subheader("💼 Your Stock")
         company_names = ["-- Custom --"] + nifty50_df["name"].tolist()
-        selected_co   = st.selectbox("Select Nifty 50 Company", company_names)
+        selected_co   = st.selectbox("Company", company_names, key="sel_co")
         if selected_co != "-- Custom --":
-            match        = nifty50_df[nifty50_df["name"] == selected_co]
-            default_beta = float(match["beta"].iloc[0]) if not match.empty else 1.0
+            m            = nifty50_df[nifty50_df["name"] == selected_co]
+            default_beta = float(m["beta"].iloc[0]) if not m.empty else 1.0
             stock_name   = selected_co
         else:
             default_beta = 1.0
-            stock_name   = st.text_input("Stock Name", value="My Stock")
-        stock_price = st.number_input("Current Price (₹)", value=100.0, min_value=0.01, step=10.0)
-        quantity    = st.number_input("Quantity", value=10, min_value=1, step=1)
-        beta        = st.slider("Beta", 0.0, 3.0, float(round(default_beta,1)), 0.1)
-        st.caption(f"💡 Beta for **{selected_co}**: **{default_beta}**")
+            stock_name   = st.text_input("Stock Name", value="My Stock", key="sn")
+        stock_price = st.number_input("Price (₹)", value=100.0, min_value=0.01, step=10.0, key="sp")
+        quantity    = st.number_input("Quantity", value=10, min_value=1, step=1, key="qty")
+        beta        = st.slider("Beta", 0.0, 3.0, float(round(default_beta, 1)), 0.1, key="beta_sl")
+        st.caption(f"💡 Default beta for **{selected_co}**: **{default_beta}**")
 
     st.markdown("---")
-    col_a, col_s = st.columns(2)
+    col_a, col_s2 = st.columns(2)
+
     with col_a:
         st.markdown("### 🟢 Actual Nifty Impact")
         if nifty_live_ok:
             a = calc_impact(pct_change, stock_price, quantity, beta)
             st.metric("Stock % Change",  f"{a[0]:+.2f}%")
-            st.metric("New Stock Price", f"₹{a[2]:,.2f}", delta=f"₹{a[1]:+.2f}")
-            st.metric("Portfolio P&L",   f"₹{a[5]:+,.2f}")
-            st.success(f"✅ GAIN ₹{a[5]:,.2f}") if a[5]>0 else (st.error(f"❌ LOSS ₹{abs(a[5]):,.2f}") if a[5]<0 else st.info("⚖️ No Change"))
+            st.metric("New Price",       f"₹{a[2]:,.2f}", delta=f"₹{a[1]:+.2f}")
+            st.metric("P&L",             f"₹{a[5]:+,.2f}")
+            show_pl_badge(a[5])
         else:
-            st.warning("Live data unavailable.")
-    with col_s:
+            st.warning("⚠️ Live Nifty data unavailable.")
+
+    with col_s2:
         st.markdown("### 🟡 Assumed Nifty Impact")
-        s = calc_impact(assumed_pct, stock_price, quantity, beta)
-        st.metric("Stock % Change",  f"{s[0]:+.2f}%")
-        st.metric("New Stock Price", f"₹{s[2]:,.2f}", delta=f"₹{s[1]:+.2f}")
-        st.metric("Portfolio P&L",   f"₹{s[5]:+,.2f}")
-        st.success(f"✅ GAIN ₹{s[5]:,.2f}") if s[5]>0 else (st.error(f"❌ LOSS ₹{abs(s[5]):,.2f}") if s[5]<0 else st.info("⚖️ No Change"))
+        s2 = calc_impact(assumed_pct, stock_price, quantity, beta)
+        st.metric("Stock % Change", f"{s2[0]:+.2f}%")
+        st.metric("New Price",      f"₹{s2[2]:,.2f}", delta=f"₹{s2[1]:+.2f}")
+        st.metric("P&L",            f"₹{s2[5]:+,.2f}")
+        show_pl_badge(s2[5])
 
     st.markdown("#### 📋 Sensitivity Table")
     sen = []
-    for pts in [-500,-300,-200,-100,0,100,200,300,500]:
-        p   = (pts / assumed_base * 100) if assumed_base != 0 else 0
+    for pts in [-500, -300, -200, -100, 0, 100, 200, 300, 500]:
+        p   = (pts / assumed_base * 100) if assumed_base != 0 else 0.0
         sp_ = p * beta
         pc  = stock_price * (sp_ / 100)
-        sen.append({"Nifty Chg":f"{pts:+}","Nifty %":f"{p:+.2f}%","Stock %":f"{sp_:+.2f}%",
-                    "New Price":f"₹{stock_price+pc:,.2f}","P&L (₹)":f"₹{pc*quantity:+,.2f}"})
+        sen.append({
+            "Nifty Chg (pts)": f"{pts:+}",
+            "Nifty %":         f"{p:+.2f}%",
+            "Stock %":         f"{sp_:+.2f}%",
+            "New Price":       f"₹{stock_price + pc:,.2f}",
+            "P&L (₹)":        f"₹{pc * quantity:+,.2f}",
+        })
     st.dataframe(pd.DataFrame(sen), use_container_width=True, hide_index=True)
 
-# =========================================================
-# PAGE 6: STOCK CHART LOOKUP
-# =========================================================
+    with st.expander("📘 Formula Reference"):
+        st.markdown(f"""
+        | Formula | Expression |
+        |---------|------------|
+        | Nifty % | `pts ÷ base × 100` |
+        | Stock % | `Nifty % × Beta ({beta})` |
+        | New Price | `Price × (1 + Stock% ÷ 100)` |
+        | P&L | `(New − Old) × Qty` |
+
+        > ⚠️ **Disclaimer**: Beta-based estimate only. Not investment advice.
+        """)
+
+# ============================================================
+# PAGE 6 — STOCK CHART LOOKUP
+# ============================================================
 elif page == "🔍 Stock Chart Lookup":
     st.title("🔍 NSE Stock Chart Lookup")
-    st.markdown('<span class="tag-nse">NSE</span> &nbsp; Search any NSE listed stock by symbol', unsafe_allow_html=True)
+    st.markdown('<span class="tag-nse">NSE</span> &nbsp; Chart any NSE-listed stock', unsafe_allow_html=True)
     st.markdown("")
 
-    # Quick pick from Nifty 50
-    quick = st.selectbox("Quick Pick (Nifty 50)", ["-- Type manually below --"] + [f"{s['name']} ({s['symbol'].replace('.NS','')})" for s in NIFTY50])
-    if quick != "-- Type manually below --":
-        default_sym = quick.split("(")[-1].replace(")","").strip()
-    else:
-        default_sym = "RELIANCE"
+    quick_options = ["-- Type below --"] + [
+        f"{s['name']} ({s['symbol'].replace('.NS', '')})"
+        for s in NIFTY50
+    ]
+    quick = st.selectbox("Quick Pick (Nifty 50)", quick_options, key="quick_pick")
+    default_sym = "RELIANCE"
+    if quick != "-- Type below --":
+        try:
+            default_sym = quick.split("(")[-1].replace(")", "").strip()
+        except Exception:
+            default_sym = "RELIANCE"
 
-    col_sym, col_per, col_type = st.columns([2,1,1])
-    with col_sym:  sym_in  = st.text_input("NSE Symbol", value=default_sym)
-    with col_per:  per_ch  = st.selectbox("Period", ["1wk","1mo","3mo","6mo","1y"], index=1)
-    with col_type: ch_type = st.selectbox("Chart Type", ["Candlestick","Line","Area"])
+    col_sym, col_per, col_type = st.columns([2, 1, 1])
+    with col_sym:  sym_in  = st.text_input("NSE Symbol (CAPS)", value=default_sym, key="sym_in")
+    with col_per:  per_ch  = st.selectbox("Period", ["1wk","1mo","3mo","6mo","1y"], index=1, key="per_ch")
+    with col_type: ch_type = st.selectbox("Chart Type", ["Candlestick","Line","Area"], key="ch_type")
 
-    if st.button("🔎 Fetch & Plot"):
-        clean = sym_in.strip().upper()
+    if st.button("🔎 Fetch & Plot", key="fetch_btn"):
+        clean = sym_in.strip().upper() if sym_in else ""
         if not clean:
-            st.error("Enter a valid symbol.")
+            st.error("❌ Please enter a valid NSE symbol.")
         else:
-            with st.spinner(f"Fetching {clean}..."):
+            with st.spinner(f"Fetching {clean}.NS..."):
                 try:
                     sh = yf.Ticker(f"{clean}.NS").history(period=per_ch)
                     if sh is None or sh.empty:
-                        st.error(f"No data for **{clean}**. Try: RELIANCE, HDFCBANK, TCS, INFY")
+                        st.error(f"No data for **{clean}**. Check: RELIANCE, HDFCBANK, TCS, INFY, SBIN")
                     elif len(sh) < 2:
-                        st.warning("Not enough data.")
+                        st.warning("Too few data points.")
+                        st.metric("Latest Close", f"₹{safe_float(sh['Close'].iloc[-1]):,.2f}")
                     else:
-                        lp  = safe_float(sh["Close"].iloc[-1])
-                        pp  = safe_float(sh["Close"].iloc[-2])
-                        chg = lp - pp
-                        pct = (chg/pp*100) if pp!=0 else 0
+                        lp    = safe_float(sh["Close"].iloc[-1])
+                        pp    = safe_float(sh["Close"].iloc[-2])
+                        chg   = lp - pp
+                        pct   = (chg / pp * 100) if pp != 0 else 0.0
                         wk_hi = safe_float(sh["High"].max())
                         wk_lo = safe_float(sh["Low"].min())
 
                         c1,c2,c3,c4,c5 = st.columns(5)
-                        c1.metric("Price",         f"₹{lp:,.2f}")
-                        c2.metric("Change",        f"₹{chg:+.2f}")
-                        c3.metric("% Change",      f"{pct:+.2f}%")
-                        c4.metric("Period High",   f"₹{wk_hi:,.2f}")
-                        c5.metric("Period Low",    f"₹{wk_lo:,.2f}")
+                        c1.metric("Price",       f"₹{lp:,.2f}")
+                        c2.metric("Change",      f"₹{chg:+.2f}")
+                        c3.metric("% Change",    f"{pct:+.2f}%")
+                        c4.metric("Period High", f"₹{wk_hi:,.2f}")
+                        c5.metric("Period Low",  f"₹{wk_lo:,.2f}")
 
                         fig_s = go.Figure()
                         if ch_type == "Candlestick":
@@ -664,49 +709,55 @@ elif page == "🔍 Stock Chart Lookup":
                                 x=sh.index, open=sh["Open"], high=sh["High"],
                                 low=sh["Low"], close=sh["Close"], name=clean,
                                 increasing_line_color="#00c853",
-                                decreasing_line_color="#ff1744"
+                                decreasing_line_color="#ff1744",
                             ))
                         elif ch_type == "Line":
                             fig_s.add_trace(go.Scatter(
                                 x=sh.index, y=sh["Close"],
                                 mode="lines", name=clean,
-                                line=dict(color="#00e5ff", width=2)
+                                line=dict(color="#00e5ff", width=2),
                             ))
-                        else:  # Area
+                        else:
                             fig_s.add_trace(go.Scatter(
                                 x=sh.index, y=sh["Close"],
                                 mode="lines", fill="tozeroy", name=clean,
                                 line=dict(color="#00e5ff", width=2),
-                                fillcolor="rgba(0,229,255,0.15)"
+                                fillcolor="rgba(0,229,255,0.15)",
                             ))
 
-                        # Add 20MA overlay
-                        sh_copy = sh.copy()
-                        sh_copy["MA20"] = sh_copy["Close"].rolling(20).mean()
+                        sh_ma = sh.copy()
+                        sh_ma["MA20"] = sh_ma["Close"].rolling(20).mean()
                         fig_s.add_trace(go.Scatter(
-                            x=sh_copy.index, y=sh_copy["MA20"],
-                            mode="lines", name="20-Day MA",
-                            line=dict(color="#ffd600", width=1.5, dash="dot")
+                            x=sh_ma.index, y=sh_ma["MA20"],
+                            mode="lines", name="MA20",
+                            line=dict(color="#ffd600", width=1.5, dash="dot"),
                         ))
                         fig_s.update_layout(
-                            title=f"{clean} — {ch_type} Chart ({per_ch})",
+                            title=f"{clean} — {ch_type} ({per_ch})",
                             template="plotly_dark", height=460,
-                            xaxis_rangeslider_visible=False
+                            xaxis_rangeslider_visible=False,
                         )
                         st.plotly_chart(fig_s, use_container_width=True)
 
-                        # Volume
                         if "Volume" in sh.columns:
                             vol = sh[sh["Volume"] > 0]
                             if not vol.empty:
-                                fig_v = px.bar(vol, x=vol.index, y="Volume",
-                                    title=f"{clean} — Volume",
-                                    template="plotly_dark", height=220,
-                                    color_discrete_sequence=["#00e5ff"])
-                                st.plotly_chart(fig_v, use_container_width=True)
+                                try:
+                                    fig_v = px.bar(
+                                        vol, x=vol.index, y="Volume",
+                                        title=f"{clean} — Volume",
+                                        template="plotly_dark", height=220,
+                                        color_discrete_sequence=["#00e5ff"],
+                                    )
+                                    st.plotly_chart(fig_v, use_container_width=True)
+                                except Exception as ve:
+                                    st.warning(f"⚠️ Volume chart error: {ve}")
                 except Exception as ex:
-                    st.error(f"❌ Error: {str(ex)}")
-                    st.info("💡 Use NSE CAPS symbols: RELIANCE, HDFCBANK, INFY, TCS, SBIN")
+                    st.error(f"❌ Error fetching **{clean}**: {str(ex)}")
+                    st.info("💡 Use NSE symbols in CAPS: RELIANCE, HDFCBANK, INFY, TCS, SBIN")
 
 st.markdown("---")
-st.markdown("<center>Built with ❤️ using Streamlit &nbsp;|&nbsp; Data: NSE via Yahoo Finance &nbsp;|&nbsp; All 50 Nifty Companies</center>", unsafe_allow_html=True)
+st.markdown(
+    "<center>Built with ❤️ using Streamlit &nbsp;| Data: NSE via Yahoo Finance&nbsp;| All 50 Nifty Companies</center>",
+    unsafe_allow_html=True,
+)
