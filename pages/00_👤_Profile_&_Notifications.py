@@ -1,15 +1,17 @@
 """
-Page: User Profile & Notification Settings
+Page: Profile & Notification Settings
 
-Users enter their email and phone number here.
-These are stored in st.session_state and used by the Alerts page
-to send real email (SMTP via Gmail) and SMS (Twilio) when a price alert fires.
-
-NO real money. NO brokerage. Pure notification layer.
+Option B — Shared sender.
+Users enter ONLY their destination email and/or phone number.
+The app owner's Gmail / Twilio credentials live in Streamlit Secrets.
+No user ever needs to configure SMTP or Twilio themselves.
 """
 import re
 import streamlit as st
-from utils.notifications import send_email, send_sms
+from utils.notifications import (
+    send_email, send_sms,
+    smtp_configured, twilio_configured,
+)
 
 st.set_page_config(
     page_title="Profile & Notifications",
@@ -17,204 +19,204 @@ st.set_page_config(
     layout="wide",
 )
 
-# ------------------------------------------------------------------ helpers
-
-EMAIL_RE  = re.compile(r"^[\w.+-]+@[\w-]+\.[\w.]+$")
-PHONE_RE  = re.compile(r"^\+?[1-9]\d{7,14}$")   # E.164 format
+# ------------------------------------------------------------------ regex
+EMAIL_RE = re.compile(r"^[\w.+\-]+@[\w\-]+\.[\w.]+$")
+PHONE_RE = re.compile(r"^\+[1-9]\d{7,14}$")
 
 def valid_email(s: str) -> bool:
     return bool(EMAIL_RE.match(s.strip()))
 
 def valid_phone(s: str) -> bool:
-    cleaned = s.strip().replace(" ", "").replace("-", "")
-    return bool(PHONE_RE.match(cleaned))
+    return bool(PHONE_RE.match(s.strip().replace(" ", "").replace("-", "")))
 
 
-# ------------------------------------------------------------------ session state defaults
-
+# ------------------------------------------------------------------ session defaults
 for key, default in [
-    ("user_email",         ""),
-    ("user_phone",         ""),
-    ("notify_email",       True),
-    ("notify_sms",         False),
-    ("profile_saved",      False),
+    ("user_email",    ""),
+    ("user_phone",    ""),
+    ("notify_email",  True),
+    ("notify_sms",    False),
+    ("profile_saved", False),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
 
 
-# ------------------------------------------------------------------ UI
-
+# ------------------------------------------------------------------ page
 st.title("👤 Profile & Notification Settings")
 st.markdown("""
-Configure your contact details so the **🔔 Alerts** page can notify you
-via **email** and/or **SMS** the moment a price alert fires.
-
-> 🟡 All details stay in your browser session only — nothing is stored on any server.
-> Add your credentials in **Streamlit Secrets** (`SMTP_*` / `TWILIO_*`) to enable live sending.
+Enter your **email address** and/or **phone number** below.
+When a price alert fires on the 🔔 Alerts page, the app will instantly
+notify you — no account signup or API keys needed on your end.
 """)
 
+# ---- service status banners (visible to all users) ----
+col_s1, col_s2 = st.columns(2)
+with col_s1:
+    if smtp_configured():
+        st.success("✅ Email service is active")
+    else:
+        st.error("❌ Email service not configured (contact app owner)")
+with col_s2:
+    if twilio_configured():
+        st.success("✅ SMS service is active")
+    else:
+        st.warning("⚠️ SMS service not configured — email-only mode")
+
 st.markdown("---")
 
-# ---- Contact details ----
-st.subheader("📬 Contact Details")
+# ---- contact form ----
+st.subheader("📬 Your Contact Details")
+st.caption("These are stored in your browser session only — never on any server.")
 
-col1, col2 = st.columns(2)
-with col1:
+c1, c2 = st.columns(2)
+with c1:
     email_input = st.text_input(
-        "📧 Email Address",
+        "📧 Your Email Address",
         value=st.session_state["user_email"],
         placeholder="you@example.com",
-        key="_email_input",
     )
-with col2:
+with c2:
     phone_input = st.text_input(
-        "📱 Phone Number (E.164 format, e.g. +919876543210)",
+        "📱 Your Phone Number",
         value=st.session_state["user_phone"],
-        placeholder="+919876543210",
-        key="_phone_input",
+        placeholder="+919876543210  (include country code)",
+        disabled=not twilio_configured(),
+        help="SMS requires Twilio to be set up by the app owner.",
     )
 
-# Validate
+# inline validation
 email_ok = valid_email(email_input) if email_input.strip() else True
-phone_ok = valid_phone(phone_input) if phone_input.strip() else True
+phone_ok = valid_phone(phone_input.strip().replace(" ","").replace("-","")) if phone_input.strip() else True
 
 if email_input.strip() and not email_ok:
-    st.warning("⚠️ Invalid email address format.")
+    st.warning("⚠️ Invalid email format.")
 if phone_input.strip() and not phone_ok:
-    st.warning("⚠️ Invalid phone number. Use E.164 format: +91XXXXXXXXXX")
+    st.warning("⚠️ Use E.164 format: +91XXXXXXXXXX")
 
 st.markdown("---")
 
-# ---- Notification channels ----
-st.subheader("🔔 Notification Channels")
-
-nc1, nc2 = st.columns(2)
-with nc1:
+# ---- notification channel toggles ----
+st.subheader("🔔 Alert Channels")
+nt1, nt2 = st.columns(2)
+with nt1:
     notify_email = st.toggle(
-        "📧 Send Email on Alert",
+        "📧 Email me when an alert fires",
         value=st.session_state["notify_email"],
-        key="_notify_email",
+        disabled=not smtp_configured(),
     )
-with nc2:
+with nt2:
     notify_sms = st.toggle(
-        "📱 Send SMS on Alert (Twilio)",
+        "📱 SMS me when an alert fires",
         value=st.session_state["notify_sms"],
-        key="_notify_sms",
+        disabled=not twilio_configured(),
     )
 
 st.markdown("---")
 
-# ---- Save ----
-if st.button("💾 Save Profile", type="primary"):
-    if notify_email and not valid_email(email_input):
-        st.error("❌ Please enter a valid email address before enabling email notifications.")
-    elif notify_sms and not valid_phone(phone_input):
-        st.error("❌ Please enter a valid phone number before enabling SMS notifications.")
-    else:
-        st.session_state["user_email"]    = email_input.strip()
-        st.session_state["user_phone"]    = phone_input.strip().replace(" ", "").replace("-", "")
-        st.session_state["notify_email"]  = notify_email
-        st.session_state["notify_sms"]    = notify_sms
-        st.session_state["profile_saved"] = True
-        st.success("✅ Profile saved! The Alerts page will now notify you when thresholds are hit.")
+# ---- save ----
+if st.button("💾 Save", type="primary"):
+    errors = []
+    if notify_email and not email_input.strip():
+        errors.append("Enter an email address to enable email alerts.")
+    elif notify_email and not valid_email(email_input):
+        errors.append("Email address format is invalid.")
+    if notify_sms and not phone_input.strip():
+        errors.append("Enter a phone number to enable SMS alerts.")
+    elif notify_sms and not valid_phone(phone_input.strip().replace(" ","").replace("-","")):
+        errors.append("Phone number must be in E.164 format (+91XXXXXXXXXX).")
 
-# ---- Summary badge ----
+    if errors:
+        for e in errors:
+            st.error(f"❌ {e}")
+    else:
+        st.session_state["user_email"]   = email_input.strip()
+        st.session_state["user_phone"]   = phone_input.strip().replace(" ","").replace("-","")
+        st.session_state["notify_email"] = notify_email
+        st.session_state["notify_sms"]   = notify_sms
+        st.session_state["profile_saved"]= True
+        st.success("✅ Saved! You'll be notified when your price alerts trigger.")
+        st.balloons()
+
+# saved profile summary
 if st.session_state["profile_saved"]:
     with st.container(border=True):
-        st.markdown("### 📌 Saved Profile")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("📧 Email",    st.session_state["user_email"]  or "—")
-        c2.metric("📱 Phone",    st.session_state["user_phone"]  or "—")
-        c3.metric("Email Alerts",  "✅ On" if st.session_state["notify_email"] else "❌ Off")
-        c4.metric("SMS Alerts",    "✅ On" if st.session_state["notify_sms"]   else "❌ Off")
+        st.markdown("#### 📌 Active Notification Profile")
+        r1, r2, r3, r4 = st.columns(4)
+        r1.metric("📧 Email",       st.session_state["user_email"] or "—")
+        r2.metric("📱 Phone",       st.session_state["user_phone"] or "—")
+        r3.metric("Email Alerts", "✅ On" if st.session_state["notify_email"] else "❌ Off")
+        r4.metric("SMS Alerts",   "✅ On" if st.session_state["notify_sms"]   else "❌ Off")
 
 st.markdown("---")
 
-# ---- Test notifications ----
-st.subheader("🧪 Test Notifications")
-st.caption("Send a test message right now to verify your SMTP / Twilio config.")
+# ---- test buttons ----
+st.subheader("🧪 Send a Test Notification")
+st.caption("Verify everything is working before relying on live alerts.")
 
-t1, t2 = st.columns(2)
+tb1, tb2 = st.columns(2)
 
-with t1:
+with tb1:
     st.markdown("**📧 Test Email**")
-    if st.button("🚀 Send Test Email"):
+    if not smtp_configured():
+        st.info("ℹ️ Email service not active.")
+    elif st.button("🚀 Send Test Email"):
         addr = st.session_state.get("user_email", "")
         if not addr:
-            st.error("❌ Save a valid email first.")
+            st.error("❌ Save a valid email address first.")
         else:
-            ok, err = send_email(
-                to_addr=addr,
-                subject="🔔 Nifty50 Tracker — Test Alert",
-                body=(
-                    "Hello!\n\n"
-                    "This is a test message from your Nifty50 Stock Tracker app.\n"
-                    "Email notifications are working correctly.\n\n"
-                    "Happy trading!"
-                ),
-            )
-            if ok:
-                st.success(f"✅ Test email sent to {addr}")
-            else:
-                st.error(f"❌ Email failed: {err}")
-                st.info(
-                    "Make sure you have set **SMTP_HOST**, **SMTP_PORT**, "
-                    "**SMTP_USER**, **SMTP_PASS**, **SMTP_FROM** in "
-                    "`.streamlit/secrets.toml` (local) or Streamlit Cloud Secrets."
+            with st.spinner("Sending…"):
+                ok, err = send_email(
+                    to_addr=addr,
+                    subject="🔔 Nifty50 Tracker — Test Alert",
+                    body=(
+                        "Hello!\n\n"
+                        "This is a test message from your Nifty50 Stock Tracker app.\n"
+                        "Email notifications are working correctly.\n\n"
+                        "You will receive alerts like this one whenever a price "
+                        "threshold you set on the 🔔 Alerts page is triggered.\n\n"
+                        "Happy trading! 📊"
+                    ),
                 )
+            if ok:
+                st.success(f"✅ Test email sent to **{addr}**")
+            else:
+                st.error(f"❌ Failed: {err}")
 
-with t2:
+with tb2:
     st.markdown("**📱 Test SMS**")
-    if st.button("🚀 Send Test SMS"):
+    if not twilio_configured():
+        st.info("ℹ️ SMS service not active.")
+    elif st.button("🚀 Send Test SMS"):
         phone = st.session_state.get("user_phone", "")
         if not phone:
             st.error("❌ Save a valid phone number first.")
         else:
-            ok, err = send_sms(
-                to_number=phone,
-                body="🔔 Nifty50 Tracker — SMS notifications are working!",
-            )
-            if ok:
-                st.success(f"✅ Test SMS sent to {phone}")
-            else:
-                st.error(f"❌ SMS failed: {err}")
-                st.info(
-                    "Make sure you have set **TWILIO_SID**, **TWILIO_TOKEN**, "
-                    "**TWILIO_FROM** in `.streamlit/secrets.toml` or Streamlit Cloud Secrets."
+            with st.spinner("Sending…"):
+                ok, err = send_sms(
+                    to_number=phone,
+                    body="🔔 Nifty50 Tracker — SMS alerts are working! You'll get a message here when your price alerts fire.",
                 )
+            if ok:
+                st.success(f"✅ Test SMS sent to **{phone}**")
+            else:
+                st.error(f"❌ Failed: {err}")
 
 st.markdown("---")
 
-# ---- Setup guide ----
-with st.expander("ℹ️ How to configure SMTP & Twilio credentials"):
+# ---- how it works explainer ----
+with st.expander("ℹ️ How does this work?"):
     st.markdown("""
-### Step 1 — Create `.streamlit/secrets.toml` (local) or add Streamlit Cloud Secrets
+**You only need to enter your email / phone. That's it.**
 
-```toml
-# Email (Gmail example — use an App Password, NOT your main password)
-[smtp]
-host     = "smtp.gmail.com"
-port     = 587
-user     = "youremail@gmail.com"
-password = "your_16char_app_password"
-from     = "youremail@gmail.com"
+The app has a shared Gmail account and Twilio number configured by the app owner.
+When your price alert fires on the 🔔 Alerts page, the app automatically:
+1. Sends an email **from** the app's Gmail **to** your email address
+2. Sends an SMS **from** the app's Twilio number **to** your phone
 
-# Twilio (get free trial at twilio.com)
-[twilio]
-sid   = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-token = "your_auth_token"
-from  = "+1415XXXXXXX"   # your Twilio number
-```
+Your contact details are stored **only in your browser session** and are never
+saved to a database or shared with anyone.
 
-### Step 2 — Gmail App Password
-1. Go to [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
-2. Create an app password for "Mail"
-3. Use that 16-character password above (not your Gmail login password)
-
-### Step 3 — Twilio Free Trial
-1. Sign up at [twilio.com](https://www.twilio.com/try-twilio)
-2. Get a free phone number
-3. Copy your **Account SID** and **Auth Token** from the dashboard
-4. Note: free trial can only SMS verified numbers
+> If the email/SMS service shows as inactive, the app owner needs to configure
+> the SMTP and Twilio credentials in Streamlit Secrets.
     """)
