@@ -26,7 +26,7 @@ st.set_page_config(page_title="Options Chain", page_icon="📈", layout="wide")
 
 INDEX_SYMBOLS: List[str] = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
 
-STOCK_NAMES = [
+STOCK_NAMES: List[str] = [
     "Reliance Industries", "HDFC Bank", "ICICI Bank", "Infosys", "TCS",
     "Bharti Airtel", "ITC", "Kotak Mahindra Bank", "Larsen & Toubro",
     "HCL Technologies", "Axis Bank", "State Bank of India", "Bajaj Finance",
@@ -36,6 +36,7 @@ STOCK_NAMES = [
     "Cipla", "Dr. Reddy's Labs", "Hindustan Unilever",
     "Mahindra & Mahindra", "Eicher Motors", "Hero MotoCorp",
 ]
+
 STOCK_SYM_MAP: Dict[str, str] = {
     "Reliance Industries":  "RELIANCE.NS",
     "HDFC Bank":            "HDFCBANK.NS",
@@ -77,11 +78,12 @@ NSE_HEADERS: Dict[str, str] = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept":          "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer":         "https://www.nseindia.com/",
+    "Accept":           "application/json, text/plain, */*",
+    "Accept-Language":  "en-US,en;q=0.9",
+    "Referer":          "https://www.nseindia.com/",
     "X-Requested-With": "XMLHttpRequest",
 }
+
 
 # ================================================================== helpers
 
@@ -93,15 +95,10 @@ def safe_float(val, default: float = 0.0) -> float:
         return default
 
 
-# -------- NSE session (cookie auth required) --------
+# -------- NSE session (cookie auth required) ------------------------
 
 @st.cache_resource(ttl=600)
 def get_nse_session() -> requests.Session:
-    """
-    Opens an NSE homepage request to obtain session cookies,
-    then returns the authenticated session object.
-    Cached as a resource (shared across reruns for 10 min).
-    """
     sess = requests.Session()
     sess.headers.update(NSE_HEADERS)
     try:
@@ -113,10 +110,6 @@ def get_nse_session() -> requests.Session:
 
 @st.cache_data(ttl=300)
 def fetch_nse_index_chain(symbol: str) -> Optional[dict]:
-    """
-    Fetches raw option-chain JSON from NSE for an index symbol.
-    Returns the parsed JSON dict, or None on failure.
-    """
     url = f"https://www.nseindia.com/api/option-chain-indices?symbol={symbol}"
     try:
         sess = get_nse_session()
@@ -124,7 +117,7 @@ def fetch_nse_index_chain(symbol: str) -> Optional[dict]:
         resp.raise_for_status()
         return resp.json()
     except Exception:
-        # Session cookie may have expired — retry once with a fresh session
+        # Cookie may have expired — retry once with a fresh session
         try:
             st.cache_resource.clear()
             sess = get_nse_session()
@@ -138,54 +131,37 @@ def fetch_nse_index_chain(symbol: str) -> Optional[dict]:
 def parse_nse_chain(
     raw: dict, expiry: str
 ) -> Tuple[pd.DataFrame, pd.DataFrame, float]:
-    """
-    Parses NSE API JSON for a given expiry date.
-    Returns (calls_df, puts_df, underlying_value).
-    """
-    records  = raw.get("records",  {})
-    filtered = raw.get("filtered", {})
-    spot     = safe_float(records.get("underlyingValue", 0))
-
-    ce_rows: list = []
-    pe_rows: list = []
+    records = raw.get("records", {})
+    spot    = safe_float(records.get("underlyingValue", 0))
+    ce_rows: List[dict] = []
+    pe_rows: List[dict] = []
 
     for item in records.get("data", []):
         if item.get("expiryDate", "").strip() != expiry.strip():
             continue
         strike = safe_float(item.get("strikePrice", 0))
-        if "CE" in item:
-            ce = item["CE"]
-            ce_rows.append({
-                "strike":            strike,
-                "lastPrice":         safe_float(ce.get("lastPrice")),
-                "bid":               safe_float(ce.get("bidprice")),
-                "ask":               safe_float(ce.get("askPrice")),
-                "volume":            int(safe_float(ce.get("totalTradedVolume"))),
-                "openInterest":      int(safe_float(ce.get("openInterest"))),
-                "changeinOpenInterest": int(safe_float(ce.get("changeinOpenInterest"))),
-                "impliedVolatility": safe_float(ce.get("impliedVolatility")) / 100,
-                "pChange":           safe_float(ce.get("pChange")),
-            })
-        if "PE" in item:
-            pe = item["PE"]
-            pe_rows.append({
-                "strike":            strike,
-                "lastPrice":         safe_float(pe.get("lastPrice")),
-                "bid":               safe_float(pe.get("bidprice")),
-                "ask":               safe_float(pe.get("askPrice")),
-                "volume":            int(safe_float(pe.get("totalTradedVolume"))),
-                "openInterest":      int(safe_float(pe.get("openInterest"))),
-                "changeinOpenInterest": int(safe_float(pe.get("changeinOpenInterest"))),
-                "impliedVolatility": safe_float(pe.get("impliedVolatility")) / 100,
-                "pChange":           safe_float(pe.get("pChange")),
+        for key, rows in (("CE", ce_rows), ("PE", pe_rows)):
+            if key not in item:
+                continue
+            leg = item[key]
+            rows.append({
+                "strike":               strike,
+                "lastPrice":            safe_float(leg.get("lastPrice")),
+                "bid":                  safe_float(leg.get("bidprice")),
+                "ask":                  safe_float(leg.get("askPrice")),
+                "volume":               int(safe_float(leg.get("totalTradedVolume"))),
+                "openInterest":         int(safe_float(leg.get("openInterest"))),
+                "changeinOpenInterest": int(safe_float(leg.get("changeinOpenInterest"))),
+                "impliedVolatility":    safe_float(leg.get("impliedVolatility")) / 100.0,
+                "pChange":              safe_float(leg.get("pChange")),
             })
 
-    calls = pd.DataFrame(ce_rows).sort_values("strike").reset_index(drop=True)
-    puts  = pd.DataFrame(pe_rows).sort_values("strike").reset_index(drop=True)
+    calls = pd.DataFrame(ce_rows).sort_values("strike").reset_index(drop=True) if ce_rows else pd.DataFrame()
+    puts  = pd.DataFrame(pe_rows).sort_values("strike").reset_index(drop=True) if pe_rows else pd.DataFrame()
     return calls, puts, spot
 
 
-# -------- yfinance stock options --------
+# -------- yfinance stock options ------------------------------------
 
 @st.cache_data(ttl=60)
 def get_spot_yf(sym: str) -> Optional[float]:
@@ -226,11 +202,13 @@ def get_chain_yf(sym: str, expiry: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     return calls, puts
 
 
-# -------- shared analytics --------
+# -------- shared analytics ------------------------------------------
 
 def calc_max_pain(
     calls: pd.DataFrame, puts: pd.DataFrame
 ) -> Optional[float]:
+    if calls.empty or puts.empty:
+        return None
     c_s = calls["strike"].values.astype(float)
     c_o = calls["openInterest"].values.astype(float)
     p_s = puts["strike"].values.astype(float)
@@ -238,7 +216,8 @@ def calc_max_pain(
     candidates = sorted(set(c_s.tolist()) | set(p_s.tolist()))
     if not candidates:
         return None
-    min_pain, best_k = float("inf"), None
+    min_pain: float = float("inf")
+    best_k: Optional[float] = None
     for K in candidates:
         total = (
             float(np.sum(c_o * np.maximum(0.0, c_s - K))) +
@@ -255,12 +234,16 @@ def build_oi_df(
     spot: Optional[float],
     window: float = 0.15,
 ) -> pd.DataFrame:
+    if calls.empty and puts.empty:
+        return pd.DataFrame(columns=["Strike", "Call OI", "Put OI"])
     c = (calls[["strike", "openInterest"]]
          .rename(columns={"strike": "Strike", "openInterest": "Call OI"})
          .copy())
     p = (puts[["strike", "openInterest"]]
          .rename(columns={"strike": "Strike", "openInterest": "Put OI"})
          .copy())
+    c["Call OI"] = c["Call OI"].astype(float)
+    p["Put OI"]  = p["Put OI"].astype(float)
     merged = (
         pd.merge(c, p, on="Strike", how="outer")
         .fillna(0).sort_values("Strike").reset_index(drop=True)
@@ -293,15 +276,15 @@ def render_oi_chart(
             name="Call OI", marker_color="#00c853"))
         fig.add_trace(go.Bar(
             x=oi_df["Strike"], y=-oi_df["Put OI"],
-            name="Put OI",  marker_color="#ff1744"))
+            name="Put OI", marker_color="#ff1744"))
         if spot:
             fig.add_vline(x=spot, line_dash="dash", line_color="#ffd600",
-                annotation_text=f"Spot {spot:,.0f}",
-                annotation_position="top right")
+                          annotation_text=f"Spot {spot:,.0f}",
+                          annotation_position="top right")
         if max_pain:
             fig.add_vline(x=max_pain, line_dash="dot", line_color="#ea80fc",
-                annotation_text=f"Max Pain {max_pain:,.0f}",
-                annotation_position="top left")
+                          annotation_text=f"Max Pain {max_pain:,.0f}",
+                          annotation_position="top left")
         fig.update_layout(
             title=title, template="plotly_dark", barmode="relative",
             height=480, bargap=0.1,
@@ -315,8 +298,10 @@ def render_oi_chart(
 
 
 def render_iv_chart(
-    calls: pd.DataFrame, puts: pd.DataFrame,
-    spot: Optional[float], title: str,
+    calls: pd.DataFrame,
+    puts: pd.DataFrame,
+    spot: Optional[float],
+    title: str,
 ) -> None:
     try:
         if "impliedVolatility" not in calls.columns:
@@ -351,7 +336,7 @@ def render_iv_chart(
             line=dict(color="#ff1744", width=2)))
         if spot:
             fig.add_vline(x=spot, line_dash="dash", line_color="#ffd600",
-                annotation_text="Spot")
+                          annotation_text="Spot")
         fig.update_layout(
             title=title, template="plotly_dark", height=360,
             xaxis_title="Strike", yaxis_title="IV (%)")
@@ -360,11 +345,9 @@ def render_iv_chart(
         st.warning(f"⚠️ IV chart error: {e}")
 
 
-def render_pcr_metrics(
-    calls: pd.DataFrame, puts: pd.DataFrame
-) -> None:
-    total_c = safe_float(calls["openInterest"].sum())
-    total_p = safe_float(puts["openInterest"].sum())
+def render_pcr_metrics(calls: pd.DataFrame, puts: pd.DataFrame) -> None:
+    total_c = safe_float(calls["openInterest"].sum()) if not calls.empty else 0.0
+    total_p = safe_float(puts["openInterest"].sum())  if not puts.empty  else 0.0
     pcr     = round(total_p / total_c, 3) if total_c > 0 else 0.0
     if   pcr < 0.7: label = "🔴 Bearish (PCR < 0.7)"
     elif pcr > 1.3: label = "🟢 Bullish (PCR > 1.3)"
@@ -391,25 +374,48 @@ def render_raw_tables(calls: pd.DataFrame, puts: pd.DataFrame) -> None:
         "changeinOpenInterest": "OI Change",
         "impliedVolatility":    "IV (%)",
     }
-    tab1, tab2 = st.tabs(["🟢 Calls (CE)", "🔴 Puts (PE)"])
-    for tab, df, label in [(tab1, calls, "CE"), (tab2, puts, "PE")]:
-        with tab:
+    t1, t2 = st.tabs(["🟢 Calls (CE)", "🔴 Puts (PE)"])
+    for tab_obj, df in ((t1, calls), (t2, puts)):
+        with tab_obj:
+            if df.empty:
+                st.info("ℹ️ No data.")
+                continue
             present = [c for c in COLS if c in df.columns]
             disp = df[present].copy().reset_index(drop=True)
             if "impliedVolatility" in disp.columns:
-                disp["impliedVolatility"] = (
-                    disp["impliedVolatility"] * 100).round(2)
+                disp["impliedVolatility"] = (disp["impliedVolatility"] * 100).round(2)
             disp.rename(columns=RENAME, inplace=True)
             st.dataframe(disp, use_container_width=True, hide_index=True)
 
 
-# ================================================================== PAGE UI
+def render_max_pain_info(
+    calls: pd.DataFrame, puts: pd.DataFrame, spot: Optional[float]
+) -> Optional[float]:
+    """Compute and display max pain. Returns the strike value (or None)."""
+    mp: Optional[float] = None
+    try:
+        mp = calc_max_pain(calls, puts)
+        if mp is not None:
+            dist_str = ""
+            if spot and spot > 0:
+                pct      = (mp - spot) / spot * 100
+                dist_str = f" • {pct:+.1f}% from spot"
+            st.info(
+                f"🕹️ **Max Pain: {mp:,.0f}**{dist_str} — "
+                "strike where option writers lose the least at expiry"
+            )
+    except Exception as e:
+        st.warning(f"⚠️ Max Pain error: {e}")
+    return mp
+
+
+# ================================================================== PAGE
 
 st.title("📈 Options Chain & PCR")
 st.markdown("""
 Two data sources in one page:
 - **🟦 Index Options** (NIFTY / BANKNIFTY / FINNIFTY / MIDCPNIFTY) — via **NSE India official API**
-- **🏢 Stock Options** (individual Nifty-50 stocks) — via **Yahoo Finance**
+- **🏢 Stock Options** (Nifty-50 F&O stocks) — via **Yahoo Finance**
 """)
 
 tab_index, tab_stock = st.tabs([
@@ -417,100 +423,84 @@ tab_index, tab_stock = st.tabs([
     "🏢 Stock Options (F&O Stocks)",
 ])
 
-# ==================================================================
+
+# ------------------------------------------------------------------
 # TAB A — NSE INDEX OPTIONS
-# ==================================================================
+# ------------------------------------------------------------------
 with tab_index:
     st.subheader("🟦 Index Options via NSE API")
-    st.caption("📍 Data from nseindia.com official API — requires active internet & NSE server availability")
+    st.caption("📍 Data from nseindia.com — requires internet & NSE server availability")
 
-    col1, col2 = st.columns(2)
-    with col1:
+    ia_col1, ia_col2 = st.columns(2)
+    with ia_col1:
         idx_sym = st.selectbox("📊 Index", INDEX_SYMBOLS, key="idx_sym")
-    with col2:
-        refresh_btn = st.button("🔄 Refresh", key="idx_refresh")
-        if refresh_btn:
+    with ia_col2:
+        if st.button("🔄 Refresh", key="idx_refresh"):
             st.cache_data.clear()
             st.cache_resource.clear()
+            st.rerun()
 
     with st.spinner(f"Fetching {idx_sym} option chain from NSE…"):
         raw_data = fetch_nse_index_chain(idx_sym)
 
     if raw_data is None:
         st.error(
-            "❌ Could not fetch data from NSE India API. Possible reasons:\n"
-            "- NSE rate-limiting (wait 30s and click Refresh)\n"
+            "❌ Could not fetch data from NSE India API.\n\n"
+            "Possible reasons:\n"
+            "- NSE rate-limiting — wait 30 s and click **Refresh**\n"
             "- Network / firewall blocking nseindia.com\n"
             "- NSE server maintenance\n\n"
-            "**Tip:** NSE blocks automated requests frequently. "
-            "Try clicking Refresh once or twice."
+            "**Tip:** Click Refresh 1–2 times to open a fresh session."
         )
     else:
-        # Extract expiry dates
-        expiry_dates = raw_data.get("records", {}).get("expiryDates", [])
-        spot_val     = safe_float(
+        expiry_dates: list = raw_data.get("records", {}).get("expiryDates", [])
+        spot_val: float    = safe_float(
             raw_data.get("records", {}).get("underlyingValue", 0))
 
         if not expiry_dates:
             st.warning("⚠️ No expiry dates found in NSE response.")
         else:
-            col3, col4 = st.columns(2)
-            with col3:
-                expiry_sel = st.selectbox(
+            ib_col1, ib_col2 = st.columns(2)
+            with ib_col1:
+                expiry_sel: str = st.selectbox(
                     "📅 Expiry", expiry_dates, key="idx_expiry")
-            with col4:
+            with ib_col2:
                 if spot_val:
-                    st.metric("📌 Spot (Underlying)", f"{spot_val:,.2f}")
+                    st.metric("📌 Spot", f"{spot_val:,.2f}")
 
-            # Parse chain for selected expiry
+            # Parse chain
+            idx_calls = pd.DataFrame()
+            idx_puts  = pd.DataFrame()
             try:
                 idx_calls, idx_puts, _ = parse_nse_chain(raw_data, expiry_sel)
             except Exception as parse_err:
                 st.error(f"❌ Parse error: {parse_err}")
-                idx_calls = pd.DataFrame()
-                idx_puts  = pd.DataFrame()
 
             if idx_calls.empty and idx_puts.empty:
-                st.warning("⚠️ No data for this expiry. Try another date.")
+                st.warning("⚠️ No data for this expiry — try another date.")
             else:
-                # PCR
                 render_pcr_metrics(idx_calls, idx_puts)
-
-                # Max Pain
-                try:
-                    mp = calc_max_pain(idx_calls, idx_puts)
-                    if mp:
-                        dist = ""
-                        if spot_val > 0:
-                            dist = f" • {(mp - spot_val)/spot_val*100:+.1f}% from spot"
-                        st.info(
-                            f"🕹️ **Max Pain: {mp:,.0f}**{dist} — "
-                            "strike of max writer profit at expiry"
-                        )
-except Exception as mp_err:
-                    st.warning(f"⚠️ Max Pain: {mp_err}")
-                    mp = None
-
+                mp_idx = render_max_pain_info(idx_calls, idx_puts, spot_val)
                 st.markdown("---")
 
-                # OI Heatmap
                 st.subheader("📊 OI Heatmap")
                 render_oi_chart(
-                    idx_calls, idx_puts, spot_val, mp,
+                    idx_calls, idx_puts, spot_val, mp_idx,
                     f"{idx_sym} — Call vs Put OI ({expiry_sel})",
                 )
 
-                # OI Change bar
+                # OI Change chart (index only — NSE provides changeinOpenInterest)
                 if "changeinOpenInterest" in idx_calls.columns:
                     st.subheader("📉 OI Change (Build-up / Unwinding)")
                     try:
-                        oi_chg = build_oi_df(idx_calls, idx_puts, spot_val)
-                        # Add change columns via separate merge
-                        c_chg = idx_calls[["strike","changeinOpenInterest"]].rename(
-                            columns={"strike":"Strike","changeinOpenInterest":"Call OI Δ"})
-                        p_chg = idx_puts[["strike","changeinOpenInterest"]].rename(
-                            columns={"strike":"Strike","changeinOpenInterest":"Put OI Δ"})
-                        chg_df = pd.merge(c_chg, p_chg, on="Strike", how="outer").fillna(0)
+                        c_chg = idx_calls[["strike", "changeinOpenInterest"]].rename(
+                            columns={"strike": "Strike", "changeinOpenInterest": "Call OI Δ"})
+                        p_chg = idx_puts[["strike", "changeinOpenInterest"]].rename(
+                            columns={"strike": "Strike", "changeinOpenInterest": "Put OI Δ"})
+                        chg_df = (
+                            pd.merge(c_chg, p_chg, on="Strike", how="outer")
+                            .fillna(0)
+                        )
                         if spot_val > 0:
                             chg_df = chg_df[
                                 (chg_df["Strike"] >= spot_val * 0.85) &
@@ -523,7 +513,7 @@ except Exception as mp_err:
                                 name="Call OI Δ", marker_color="#69f0ae"))
                             fig_chg.add_trace(go.Bar(
                                 x=chg_df["Strike"], y=-chg_df["Put OI Δ"],
-                                name="Put OI Δ",  marker_color="#ff6d00"))
+                                name="Put OI Δ", marker_color="#ff6d00"))
                             if spot_val:
                                 fig_chg.add_vline(
                                     x=spot_val, line_dash="dash",
@@ -540,83 +530,75 @@ except Exception as mp_err:
                     except Exception as chg_err:
                         st.warning(f"⚠️ OI Change chart: {chg_err}")
 
-                # IV Smile
                 st.subheader("📉 IV Smile")
                 render_iv_chart(
                     idx_calls, idx_puts, spot_val,
                     f"{idx_sym} — IV Smile ({expiry_sel})",
                 )
 
-                # Raw tables
                 st.subheader("📊 Raw Chain Data")
                 render_raw_tables(idx_calls, idx_puts)
 
 
-# ==================================================================
+# ------------------------------------------------------------------
 # TAB B — STOCK OPTIONS (yfinance)
-# ==================================================================
+# ------------------------------------------------------------------
 with tab_stock:
     st.subheader("🏢 Stock Options via Yahoo Finance")
-    st.caption("📍 Data from Yahoo Finance — individual NSE F&O stocks only")
+    st.caption("📍 Yahoo Finance — individual NSE F&O stocks only")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        sel_name = st.selectbox("🏢 Underlying Stock", STOCK_NAMES, key="stk_name")
-    with col2:
-        sym      = STOCK_SYM_MAP.get(sel_name, "RELIANCE.NS")
-        expiries = get_expiries_yf(sym)
-        if not expiries:
+    sc_col1, sc_col2 = st.columns(2)
+    with sc_col1:
+        sel_name: str = st.selectbox(
+            "🏢 Underlying Stock", STOCK_NAMES, key="stk_name")
+    with sc_col2:
+        stk_sym: str      = STOCK_SYM_MAP.get(sel_name, "RELIANCE.NS")
+        stk_expiries: list = get_expiries_yf(stk_sym)
+        if not stk_expiries:
             st.error(
-                f"❌ No options for **{sel_name}** (`{sym}`) on Yahoo Finance. "
+                f"❌ No options for **{sel_name}** (`{stk_sym}`) on Yahoo Finance. "
                 "Try Reliance, HDFC Bank, TCS, or Infosys."
             )
-            st.stop()
-        expiry_stk = st.selectbox("📅 Expiry", expiries, key="stk_expiry")
+            # Use st.empty to avoid st.stop() breaking other tabs
+            stk_expiries = []
+        else:
+            expiry_stk: str = st.selectbox(
+                "📅 Expiry", stk_expiries, key="stk_expiry")
 
-    spot_stk = get_spot_yf(sym)
-    if spot_stk:
-        st.metric("📌 Spot Price", f"₹{spot_stk:,.2f}")
-    else:
-        st.warning("⚠️ Live spot unavailable.")
+    if stk_expiries:   # only proceed if we have expiries
+        spot_stk = get_spot_yf(stk_sym)
+        if spot_stk:
+            st.metric("📌 Spot Price", f"₹{spot_stk:,.2f}")
+        else:
+            st.warning("⚠️ Live spot unavailable.")
+            spot_stk = None
 
-    with st.spinner(f"Fetching {sel_name} options from Yahoo Finance…"):
-        try:
-            stk_calls, stk_puts = get_chain_yf(sym, expiry_stk)
-        except Exception as e:
-            st.error(f"❌ {e}")
-            st.stop()
+        stk_calls = pd.DataFrame()
+        stk_puts  = pd.DataFrame()
+        with st.spinner(f"Fetching {sel_name} options…"):
+            try:
+                stk_calls, stk_puts = get_chain_yf(stk_sym, expiry_stk)
+            except Exception as fetch_err:
+                st.error(f"❌ {fetch_err}")
 
-    if stk_calls.empty and stk_puts.empty:
-        st.warning("⚠️ Options chain is empty.")
-        st.stop()
+        if stk_calls.empty and stk_puts.empty:
+            st.warning("⚠️ Options chain is empty.")
+        else:
+            render_pcr_metrics(stk_calls, stk_puts)
+            mp_stk = render_max_pain_info(stk_calls, stk_puts, spot_stk)
+            st.markdown("---")
 
-    render_pcr_metrics(stk_calls, stk_puts)
-
-    try:
-        mp_stk = calc_max_pain(stk_calls, stk_puts)
-        if mp_stk:
-            dist = ""
-            if spot_stk and spot_stk > 0:
-                dist = f" • {(mp_stk - spot_stk)/spot_stk*100:+.1f}% from spot"
-            st.info(
-                f"🕹️ **Max Pain: ₹{mp_stk:,.0f}**{dist}"
+            st.subheader("📊 OI Heatmap")
+            render_oi_chart(
+                stk_calls, stk_puts, spot_stk, mp_stk,
+                f"{sel_name} — Call vs Put OI ({expiry_stk})",
             )
-    except Exception as mp_err:
-        st.warning(f"⚠️ Max Pain: {mp_err}")
-        mp_stk = None
 
-    st.markdown("---")
-    st.subheader("📊 OI Heatmap")
-    render_oi_chart(
-        stk_calls, stk_puts, spot_stk, mp_stk,
-        f"{sel_name} — Call vs Put OI ({expiry_stk})",
-    )
+            st.subheader("📉 IV Smile")
+            render_iv_chart(
+                stk_calls, stk_puts, spot_stk,
+                f"{sel_name} — IV Smile ({expiry_stk})",
+            )
 
-    st.subheader("📉 IV Smile")
-    render_iv_chart(
-        stk_calls, stk_puts, spot_stk,
-        f"{sel_name} — IV Smile ({expiry_stk})",
-    )
-
-    st.subheader("📊 Raw Chain Data")
-    render_raw_tables(stk_calls, stk_puts)
+            st.subheader("📊 Raw Chain Data")
+            render_raw_tables(stk_calls, stk_puts)
