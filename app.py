@@ -1,202 +1,313 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta
 
-# Page config
 st.set_page_config(
     page_title="Nifty 50 Stock Tracker",
     page_icon="📈",
     layout="wide"
 )
 
-# Custom CSS
 st.markdown("""
 <style>
     .main { background-color: #0e1117; }
-    .metric-card {
-        background: linear-gradient(135deg, #1e2130, #2d3250);
-        border-radius: 12px;
-        padding: 20px;
-        margin: 8px 0;
-        border: 1px solid #3a3f5c;
-    }
     .gain { color: #00c853; font-weight: bold; }
     .loss { color: #ff1744; font-weight: bold; }
-    .neutral { color: #ffd600; font-weight: bold; }
-    h1 { color: #e0e0e0; }
+    .tag-actual {
+        background-color: #00c853; color: black;
+        padding: 2px 10px; border-radius: 20px;
+        font-size: 13px; font-weight: bold;
+    }
+    .tag-assumed {
+        background-color: #ffd600; color: black;
+        padding: 2px 10px; border-radius: 20px;
+        font-size: 13px; font-weight: bold;
+    }
     .stMetric label { color: #9e9e9e !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# Title
 st.title("📈 Nifty 50 Stock Tracker")
-st.markdown("Track Nifty 50 performance and calculate your stock's gain/loss based on index movements.")
+st.markdown("Track **actual** Nifty 50 data vs **assumed/simulated** scenarios to estimate your stock's gain or loss.")
 st.markdown("---")
 
-# ---- SECTION 1: Live Nifty 50 Data ----
-st.header("🏦 Live Nifty 50 Index")
+# =========================================================
+# SECTION 1: ACTUAL NIFTY 50 LIVE DATA
+# =========================================================
+st.header("🟢 Actual Nifty 50 Data")
+st.markdown('<span class="tag-actual">LIVE DATA</span> &nbsp; Fetched in real-time from Yahoo Finance (NSE)', unsafe_allow_html=True)
+st.markdown("")
 
 @st.cache_data(ttl=300)
-def get_nifty_data(period="1mo"):
+def get_nifty_data(period="3mo"):
     nifty = yf.Ticker("^NSEI")
     hist = nifty.history(period=period)
-    info = nifty.fast_info
-    return hist, info
+    return hist
 
+nifty_live_ok = False
 try:
-    hist, info = get_nifty_data()
+    hist = get_nifty_data()
+    if hist.empty:
+        raise ValueError("Empty data")
+
     current_price = hist['Close'].iloc[-1]
-    prev_price = hist['Close'].iloc[-2]
-    change = current_price - prev_price
-    pct_change = (change / prev_price) * 100
+    prev_price    = hist['Close'].iloc[-2]
+    change        = current_price - prev_price
+    pct_change    = (change / prev_price) * 100
+    high_52w      = hist['High'].max()
+    low_52w       = hist['Low'].min()
+    nifty_live_ok = True
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Nifty 50 Current", f"₹{current_price:,.2f}")
-    with col2:
-        st.metric("Points Change", f"{change:+.2f}")
-    with col3:
-        st.metric("% Change", f"{pct_change:+.2f}%")
-    with col4:
-        st.metric("Previous Close", f"₹{prev_price:,.2f}")
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Current Value",   f"₹{current_price:,.2f}")
+    col2.metric("Points Change",   f"{change:+.2f}")
+    col3.metric("% Change",        f"{pct_change:+.2f}%")
+    col4.metric("Period High",     f"₹{high_52w:,.2f}")
+    col5.metric("Period Low",      f"₹{low_52w:,.2f}")
 
-    # Nifty Chart
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(
+    # Actual Candlestick Chart
+    fig_actual = go.Figure()
+    fig_actual.add_trace(go.Candlestick(
         x=hist.index,
-        open=hist['Open'],
-        high=hist['High'],
-        low=hist['Low'],
-        close=hist['Close'],
-        name='Nifty 50'
+        open=hist['Open'], high=hist['High'],
+        low=hist['Low'],   close=hist['Close'],
+        name="Nifty 50 Actual",
+        increasing_line_color="#00c853",
+        decreasing_line_color="#ff1744"
     ))
-    fig.update_layout(
-        title="Nifty 50 - Last 1 Month",
-        xaxis_title="Date",
-        yaxis_title="Index Value",
-        template="plotly_dark",
-        height=400
+    # 20-day Moving Average on actual data
+    hist['MA20'] = hist['Close'].rolling(20).mean()
+    fig_actual.add_trace(go.Scatter(
+        x=hist.index, y=hist['MA20'],
+        mode='lines', name='20-Day MA',
+        line=dict(color='#ffd600', width=1.5, dash='dot')
+    ))
+    fig_actual.update_layout(
+        title="📊 Nifty 50 — Actual Price (Last 3 Months)",
+        xaxis_title="Date", yaxis_title="Index Value",
+        template="plotly_dark", height=420,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02)
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig_actual, use_container_width=True)
+
+    # Actual Daily Returns
+    hist['Daily_Return_%'] = hist['Close'].pct_change() * 100
+    fig_ret = px.bar(
+        hist.dropna(), x=hist.dropna().index, y='Daily_Return_%',
+        color='Daily_Return_%',
+        color_continuous_scale=["#ff1744", "#ffd600", "#00c853"],
+        title="📉 Actual Daily Returns (%)",
+        template="plotly_dark", height=300,
+        labels={"Daily_Return_%": "Return (%)", "index": "Date"}
+    )
+    st.plotly_chart(fig_ret, use_container_width=True)
 
 except Exception as e:
-    st.warning(f"Could not fetch live Nifty 50 data. Using demo values. Error: {e}")
+    st.warning(f"⚠️ Could not fetch live Nifty data: {e}. Using fallback values.")
     current_price = 22500.0
-    pct_change = -0.89
+    pct_change    = -0.89
+    change        = -200.0
 
 st.markdown("---")
 
-# ---- SECTION 2: Calculator ----
-st.header("🧮 Stock Gain/Loss Calculator")
-st.markdown("Enter your stock details and simulate how a Nifty 50 movement affects your portfolio.")
+# =========================================================
+# SECTION 2: ASSUMED / SIMULATED DATA
+# =========================================================
+st.header("🟡 Assumed / Simulated Nifty Scenario")
+st.markdown('<span class="tag-assumed">SIMULATED</span> &nbsp; You define the assumed movement — app calculates impact', unsafe_allow_html=True)
+st.markdown("")
 
-col_left, col_right = st.columns(2)
+col_l, col_r = st.columns(2)
 
-with col_left:
-    st.subheader("📊 Nifty 50 Movement")
-    nifty_current = st.number_input("Current Nifty 50 Value", value=float(round(current_price, 2)), step=10.0)
-    nifty_change_points = st.number_input("Nifty 50 Change (Points, use - for loss)", value=-200.0, step=10.0)
-    nifty_new = nifty_current + nifty_change_points
-    nifty_pct = (nifty_change_points / nifty_current) * 100
+with col_l:
+    st.subheader("📊 Set Assumed Nifty Movement")
+    assumed_base   = st.number_input("Assumed Base Nifty Value", value=float(round(current_price if nifty_live_ok else 22500.0, 2)), step=50.0)
+    assumed_change = st.number_input("Assumed Change in Points (+ gain / − loss)", value=-200.0, step=10.0)
+    assumed_new    = assumed_base + assumed_change
+    assumed_pct    = (assumed_change / assumed_base) * 100
 
-    st.info(f"📌 Nifty % Change: **{nifty_pct:+.2f}%** → New Value: **{nifty_new:,.2f}**")
+    # Real vs Assumed comparison
+    st.markdown("#### 🔍 Actual vs Assumed")
+    compare_df = pd.DataFrame({
+        "Metric":        ["Base Value", "Change (pts)", "Change (%)", "New Value"],
+        "🟢 Actual":     [
+            f"₹{current_price:,.2f}" if nifty_live_ok else "N/A",
+            f"{change:+.2f}"         if nifty_live_ok else "N/A",
+            f"{pct_change:+.2f}%"    if nifty_live_ok else "N/A",
+            f"₹{current_price:,.2f}" if nifty_live_ok else "N/A"
+        ],
+        "🟡 Assumed":    [
+            f"₹{assumed_base:,.2f}",
+            f"{assumed_change:+.2f}",
+            f"{assumed_pct:+.2f}%",
+            f"₹{assumed_new:,.2f}"
+        ]
+    })
+    st.dataframe(compare_df, use_container_width=True, hide_index=True)
 
-with col_right:
+with col_r:
     st.subheader("💼 Your Stock Details")
-    stock_name = st.text_input("Stock Name (e.g., Reliance, HDFC Bank)", value="Reliance")
-    stock_price = st.number_input("Your Stock's Current Price (₹)", value=2500.0, step=10.0)
-    quantity = st.number_input("Quantity (Number of Shares)", value=10, step=1)
-    beta = st.slider("Beta (Sensitivity to Nifty)", min_value=0.0, max_value=3.0, value=1.0, step=0.1,
-                     help="Beta = 1 means stock moves same as Nifty. Beta > 1 = more volatile. Beta < 1 = less volatile.")
+    stock_name  = st.text_input("Stock Name", value="Reliance")
+    stock_price = st.number_input("Stock Current Price (₹)", value=2500.0, step=10.0)
+    quantity    = st.number_input("Quantity (Shares)", value=10, step=1)
+    beta        = st.slider(
+        "Beta (Market Sensitivity)", 0.0, 3.0, 1.0, 0.1,
+        help="Beta=1: moves with Nifty | >1: more volatile | <1: less volatile"
+    )
+    st.caption("💡 Common betas: Reliance ~0.9 | HDFC Bank ~1.1 | TCS ~0.7 | Zomato ~1.5")
 
 st.markdown("---")
 
-# ---- SECTION 3: Results ----
-st.header("📉 Impact Analysis")
+# =========================================================
+# SECTION 3: IMPACT ANALYSIS — ACTUAL vs ASSUMED
+# =========================================================
+st.header("📉 Impact on Your Stock — Actual vs Assumed")
 
-estimated_stock_change_pct = nifty_pct * beta
-estimated_stock_change_price = stock_price * (estimated_stock_change_pct / 100)
-new_stock_price = stock_price + estimated_stock_change_price
+def calc_impact(nifty_pct, stock_price, quantity, beta):
+    stock_pct   = nifty_pct * beta
+    price_chg   = stock_price * (stock_pct / 100)
+    new_price   = stock_price + price_chg
+    old_val     = stock_price * quantity
+    new_val     = new_price * quantity
+    pl          = new_val - old_val
+    return stock_pct, price_chg, new_price, old_val, new_val, pl
 
-current_value = stock_price * quantity
-new_value = new_stock_price * quantity
-pl = new_value - current_value
-
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    color = "normal" if pl >= 0 else "inverse"
-    st.metric("Stock % Change (Est.)", f"{estimated_stock_change_pct:+.2f}%", delta=f"{estimated_stock_change_pct:+.2f}%")
-with col2:
-    st.metric("New Stock Price (Est.)", f"₹{new_stock_price:,.2f}", delta=f"₹{estimated_stock_change_price:+.2f}")
-with col3:
-    st.metric("Portfolio Value Before", f"₹{current_value:,.2f}")
-with col4:
-    st.metric("Portfolio Value After", f"₹{new_value:,.2f}", delta=f"₹{pl:+.2f}")
-
-# P&L Display
-if pl > 0:
-    st.success(f"✅ Estimated GAIN: ₹{pl:,.2f} on {quantity} shares of {stock_name}")
-elif pl < 0:
-    st.error(f"❌ Estimated LOSS: ₹{abs(pl):,.2f} on {quantity} shares of {stock_name}")
+# Actual impact
+if nifty_live_ok:
+    a_spct, a_pchg, a_nprice, a_oval, a_nval, a_pl = calc_impact(pct_change, stock_price, quantity, beta)
 else:
-    st.info("⚖️ No change estimated.")
+    a_spct = a_pchg = a_nprice = a_oval = a_nval = a_pl = None
 
-# Explanation
-with st.expander("📘 How is this calculated?"):
+# Assumed impact
+s_spct, s_pchg, s_nprice, s_oval, s_nval, s_pl = calc_impact(assumed_pct, stock_price, quantity, beta)
+
+col_a, col_s = st.columns(2)
+
+with col_a:
+    st.markdown("### 🟢 Based on Actual Nifty")
+    if nifty_live_ok:
+        st.metric("Stock % Change", f"{a_spct:+.2f}%")
+        st.metric("New Stock Price", f"₹{a_nprice:,.2f}", delta=f"₹{a_pchg:+.2f}")
+        st.metric("Portfolio Value", f"₹{a_nval:,.2f}", delta=f"₹{a_pl:+.2f}")
+        if a_pl > 0:
+            st.success(f"✅ GAIN: ₹{a_pl:,.2f}")
+        elif a_pl < 0:
+            st.error(f"❌ LOSS: ₹{abs(a_pl):,.2f}")
+        else:
+            st.info("⚖️ No change")
+    else:
+        st.warning("Live data unavailable.")
+
+with col_s:
+    st.markdown("### 🟡 Based on Assumed Nifty")
+    st.metric("Stock % Change", f"{s_spct:+.2f}%")
+    st.metric("New Stock Price", f"₹{s_nprice:,.2f}", delta=f"₹{s_pchg:+.2f}")
+    st.metric("Portfolio Value", f"₹{s_nval:,.2f}", delta=f"₹{s_pl:+.2f}")
+    if s_pl > 0:
+        st.success(f"✅ GAIN: ₹{s_pl:,.2f}")
+    elif s_pl < 0:
+        st.error(f"❌ LOSS: ₹{abs(s_pl):,.2f}")
+    else:
+        st.info("⚖️ No change")
+
+# Visual Bar Chart: Actual vs Assumed P&L
+if nifty_live_ok:
+    fig_compare = go.Figure()
+    fig_compare.add_trace(go.Bar(
+        x=["Actual P&L", "Assumed P&L"],
+        y=[a_pl, s_pl],
+        marker_color=["#00c853" if a_pl >= 0 else "#ff1744",
+                      "#00c853" if s_pl >= 0 else "#ff1744"],
+        text=[f"₹{a_pl:+,.2f}", f"₹{s_pl:+,.2f}"],
+        textposition="outside"
+    ))
+    fig_compare.update_layout(
+        title=f"Actual vs Assumed P&L for {stock_name} ({quantity} shares)",
+        yaxis_title="Profit / Loss (₹)",
+        template="plotly_dark", height=350
+    )
+    st.plotly_chart(fig_compare, use_container_width=True)
+
+# Scenario Sensitivity Table
+st.markdown("#### 📋 Sensitivity Table — What if Nifty moves by...")
+scenarios = [-500, -300, -200, -100, 0, 100, 200, 300, 500]
+rows = []
+for pts in scenarios:
+    pct  = (pts / assumed_base) * 100
+    spct = pct * beta
+    pchg = stock_price * (spct / 100)
+    pl_s = pchg * quantity
+    rows.append({
+        "Nifty Change (pts)": f"{pts:+}",
+        "Nifty % Change":     f"{pct:+.2f}%",
+        "Stock % Change":     f"{spct:+.2f}%",
+        "New Stock Price":    f"₹{stock_price + pchg:,.2f}",
+        "P&L (₹)":           f"₹{pl_s:+,.2f}"
+    })
+sensitivity_df = pd.DataFrame(rows)
+st.dataframe(sensitivity_df, use_container_width=True, hide_index=True)
+
+with st.expander("📘 Formula Reference"):
     st.markdown(f"""
-    - **Nifty % Change** = `({nifty_change_points:+.0f} / {nifty_current:,.0f}) × 100` = `{nifty_pct:+.2f}%`
-    - **Stock % Change (Est.)** = `Nifty % × Beta` = `{nifty_pct:+.2f}% × {beta}` = `{estimated_stock_change_pct:+.2f}%`
-    - **New Stock Price** = `{stock_price} + ({stock_price} × {estimated_stock_change_pct/100:.4f})` = `₹{new_stock_price:,.2f}`
-    - **P&L** = `(New Price - Old Price) × Quantity` = `₹{estimated_stock_change_price:+.2f} × {quantity}` = `₹{pl:+.2f}`
-    
-    > ⚠️ **Disclaimer**: This is a simplified estimation using Beta correlation. Actual stock movement depends on many other factors like company news, sector trends, and market sentiment.
+    | Formula | Value |
+    |---------|-------|
+    | Nifty % Change | `points_change / base_value × 100` |
+    | Stock % Change | `Nifty % × Beta ({beta})` |
+    | New Stock Price | `Current Price × (1 + Stock%/100)` |
+    | P&L | `(New Price − Old Price) × Quantity` |
+
+    > ⚠️ **Disclaimer**: Estimates use Beta correlation only. Real stock movement depends on company news, sector, global cues & market sentiment.
     """)
 
 st.markdown("---")
 
-# ---- SECTION 4: Live Stock Lookup ----
-st.header("🔍 Live Stock Lookup (NSE)")
-st.markdown("Enter any NSE stock symbol to see its current price and chart.")
-
-col_sym, col_period = st.columns([2,1])
+# =========================================================
+# SECTION 4: LIVE NSE STOCK LOOKUP
+# =========================================================
+st.header("🔍 Live NSE Stock Lookup")
+col_sym, col_per = st.columns([2, 1])
 with col_sym:
-    symbol_input = st.text_input("NSE Stock Symbol (e.g., RELIANCE, HDFCBANK, TCS)", value="RELIANCE")
-with col_period:
+    symbol_input = st.text_input("NSE Symbol (e.g., RELIANCE, HDFCBANK, TCS, INFY)", value="RELIANCE")
+with col_per:
     period_choice = st.selectbox("Period", ["1wk", "1mo", "3mo", "6mo", "1y"], index=1)
 
 if st.button("🔎 Fetch Stock Data"):
     try:
-        ticker_symbol = f"{symbol_input.upper()}.NS"
-        stock = yf.Ticker(ticker_symbol)
-        stock_hist = stock.history(period=period_choice)
-
-        if stock_hist.empty:
-            st.error("No data found. Please check the symbol (e.g., use RELIANCE not Reliance).")
+        ticker = f"{symbol_input.strip().upper()}.NS"
+        s = yf.Ticker(ticker)
+        sh = s.history(period=period_choice)
+        if sh.empty:
+            st.error("No data found. Check symbol — use all caps like RELIANCE, HDFCBANK.")
         else:
-            latest = stock_hist['Close'].iloc[-1]
-            prev = stock_hist['Close'].iloc[-2]
-            chg = latest - prev
-            pct = (chg / prev) * 100
-
+            lp = sh['Close'].iloc[-1]
+            pp = sh['Close'].iloc[-2]
+            chg = lp - pp
+            pct = (chg / pp) * 100
             c1, c2, c3 = st.columns(3)
-            c1.metric("Current Price", f"₹{latest:,.2f}")
-            c2.metric("Change", f"₹{chg:+.2f}")
-            c3.metric("% Change", f"{pct:+.2f}%")
+            c1.metric("Current Price", f"₹{lp:,.2f}")
+            c2.metric("Change",        f"₹{chg:+.2f}")
+            c3.metric("% Change",      f"{pct:+.2f}%")
 
-            fig2 = px.line(
-                stock_hist, x=stock_hist.index, y="Close",
-                title=f"{symbol_input.upper()} Stock Price",
-                template="plotly_dark",
-                labels={"Close": "Price (₹)", "index": "Date"}
+            fig_s = go.Figure()
+            fig_s.add_trace(go.Candlestick(
+                x=sh.index,
+                open=sh['Open'], high=sh['High'],
+                low=sh['Low'],   close=sh['Close'],
+                name=symbol_input.upper(),
+                increasing_line_color="#00c853",
+                decreasing_line_color="#ff1744"
+            ))
+            fig_s.update_layout(
+                title=f"{symbol_input.upper()} — Actual Price Chart",
+                template="plotly_dark", height=400
             )
-            fig2.update_traces(line_color="#00e5ff")
-            st.plotly_chart(fig2, use_container_width=True)
-
+            st.plotly_chart(fig_s, use_container_width=True)
     except Exception as ex:
-        st.error(f"Error fetching data: {ex}")
+        st.error(f"Error: {ex}")
 
 st.markdown("---")
-st.markdown("<center>Built with ❤️ using Streamlit | Data from Yahoo Finance via yfinance</center>", unsafe_allow_html=True)
+st.markdown("<center>Built with ❤️ using Streamlit | Live Data: Yahoo Finance (yfinance) | Simulated Data: User-defined</center>", unsafe_allow_html=True)
