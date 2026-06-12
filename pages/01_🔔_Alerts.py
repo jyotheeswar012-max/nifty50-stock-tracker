@@ -1,7 +1,7 @@
 """
 Page: Real-Time Price Alerts
 Users set price threshold alerts per stock; app checks live price
-and shows a banner + plays an audio beep via st.audio hack.
+and fires a visual banner + sends email/SMS via utils.notifications.
 """
 import streamlit as st
 import yfinance as yf
@@ -10,11 +10,12 @@ import numpy as np
 from datetime import datetime
 import pytz
 import warnings
+from utils.notifications import send_email, send_sms
 warnings.filterwarnings("ignore")
 
 st.set_page_config(page_title="Price Alerts", page_icon="🔔", layout="wide")
 
-# ---- shared constants (duplicated to keep pages self-contained) ----
+# ---- shared constants ----
 NIFTY50_NAMES = [
     "Reliance Industries", "HDFC Bank", "ICICI Bank", "Infosys", "TCS",
     "Bharti Airtel", "ITC", "Kotak Mahindra Bank", "Larsen & Toubro",
@@ -44,12 +45,14 @@ NIFTY50_SYMS = [
 ]
 NAME_TO_SYM = dict(zip(NIFTY50_NAMES, NIFTY50_SYMS))
 
+
 def safe_float(val, default=0.0):
     try:
         f = float(val)
         return default if (np.isnan(f) or np.isinf(f)) else f
     except Exception:
         return default
+
 
 @st.cache_data(ttl=60)
 def get_live_price(sym):
@@ -61,15 +64,75 @@ def get_live_price(sym):
         pass
     return None
 
-# ---- Session state init ----
-if "alerts" not in st.session_state:
-    st.session_state.alerts = []   # list of dicts
 
+# ---- session state ----
+if "alerts" not in st.session_state:
+    st.session_state.alerts = []
+if "notified_set" not in st.session_state:
+    # track which alerts already sent notifications (prevent spam)
+    st.session_state.notified_set = set()
+
+
+# ---- helpers ----
+def _notification_status() -> dict:
+    """Returns current user notification config from session state."""
+    return {
+        "email":        st.session_state.get("user_email", ""),
+        "phone":        st.session_state.get("user_phone", ""),
+        "notify_email": st.session_state.get("notify_email", False),
+        "notify_sms":   st.session_state.get("notify_sms",   False),
+    }
+
+
+def _fire_notifications(alert: dict, live_price: float) -> list:
+    """
+    Send email and/or SMS for a triggered alert.
+    Returns list of status strings for display.
+    """
+    ns = _notification_status()
+    msgs = []
+    subject = f"🔔 Alert: {alert['stock']} {alert['direction']} ₹{alert['threshold']:,.2f}"
+    body = (
+        f"Your price alert has fired!\n\n"
+        f"Stock     : {alert['stock']} ({alert['symbol']})\n"
+        f"Condition : {alert['direction']} ₹{alert['threshold']:,.2f}\n"
+        f"Live Price: ₹{live_price:,.2f}\n"
+        f"Time      : {datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M:%S IST')}\n\n"
+        f"Nifty50 Stock Tracker — Paper Trading Simulator"
+    )
+    if ns["notify_email"] and ns["email"]:
+        ok, err = send_email(ns["email"], subject, body)
+        msgs.append(f"📧 Email {'sent to ' + ns['email'] if ok else 'failed: ' + err}")
+    if ns["notify_sms"] and ns["phone"]:
+        sms_body = f"🔔 {alert['stock']} {alert['direction']} ₹{alert['threshold']:,.2f} | Live: ₹{live_price:,.2f}"
+        ok, err = send_sms(ns["phone"], sms_body)
+        msgs.append(f"📱 SMS {'sent to ' + ns['phone'] if ok else 'failed: ' + err}")
+    return msgs
+
+
+# ---- page ----
 st.title("🔔 Real-Time Price Alerts")
+
+# Notification status banner
+ns = _notification_status()
+if ns["email"] or ns["phone"]:
+    channels = []
+    if ns["notify_email"] and ns["email"]:   channels.append(f"📧 {ns['email']}")
+    if ns["notify_sms"]   and ns["phone"]:   channels.append(f"📱 {ns['phone']}")
+    if channels:
+        st.success(f"🔔 Notifications active — {' | '.join(channels)}")
+    else:
+        st.info("ℹ️ Contact saved but all channels disabled. Enable them in 👤 Profile.")
+else:
+    st.warning(
+        "⚠️ No contact details saved. Go to **👤 Profile & Notifications** to set up "
+        "email/SMS alerts, then come back here."
+    )
+
 st.markdown("""
 Set **above / below** price thresholds for any Nifty 50 stock.
-The dashboard checks live prices and fires a visual banner when triggered.
-> ⚠️ Alerts are session-based (reset on page refresh). Use the **Watchlist** page for persistence.
+The dashboard checks live prices and fires a visual banner + sends email/SMS when triggered.
+> ⚠️ Alerts are session-based (reset on page refresh).
 """)
 
 # ---- Add alert form ----
@@ -101,56 +164,79 @@ if not st.session_state.alerts:
 else:
     st.subheader("📊 Active Alerts")
     auto_refresh = st.toggle("↺ Auto-check every 60s", value=False)
-    if auto_refresh:
-        import time
-        st.caption("⏳ Auto-checking... (disable toggle to stop)")
 
     rows = []
-    fired = []
+    fired_alerts = []
+
     for i, alert in enumerate(st.session_state.alerts):
         price = get_live_price(alert["symbol"])
         status = "⏳ Pending"
+        triggered = False
+
         if price is not None:
             above = price >= alert["threshold"]
             if alert["direction"] == "⬆️ Above" and above:
-                status = f"🔴 TRIGGERED — ₹{price:,.2f}"
-                fired.append(alert)
+                status    = f"🔴 TRIGGERED — ₹{price:,.2f}"
+                triggered = True
             elif alert["direction"] == "⬇️ Below" and not above:
-                status = f"🔴 TRIGGERED — ₹{price:,.2f}"
-                fired.append(alert)
+                status    = f"🔴 TRIGGERED — ₹{price:,.2f}"
+                triggered = True
             else:
                 status = f"🟢 Watching — ₹{price:,.2f}"
+
+        if triggered:
+            fired_alerts.append((i, alert, price))
+
         rows.append({
-            "#":        i + 1,
-            "Stock":    alert["stock"],
-            "Trigger":  alert["direction"],
+            "#":         i + 1,
+            "Stock":     alert["stock"],
+            "Trigger":   alert["direction"],
             "Threshold": f"₹{alert['threshold']:,.2f}",
             "Live Price": f"₹{price:,.2f}" if price else "N/A",
-            "Status":   status,
-            "Added":    alert["added"],
+            "Status":    status,
+            "Added":     alert["added"],
         })
+
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-    if fired:
-        for f in fired:
-            st.error(f"🚨 ALERT FIRED: **{f['stock']}** {f['direction']} ₹{f['threshold']:,.2f}!")
+    # Fire notifications for newly triggered alerts
+    for idx, alert, price in fired_alerts:
+        alert_key = f"{alert['symbol']}_{alert['direction']}_{alert['threshold']}"
+        st.error(f"🚨 ALERT FIRED: **{alert['stock']}** {alert['direction']} ₹{alert['threshold']:,.2f}!")
+
+        # Only send notification once per alert (avoid spam on every rerun)
+        if alert_key not in st.session_state.notified_set:
+            st.session_state.notified_set.add(alert_key)
+            notif_msgs = _fire_notifications(alert, price)
+            for m in notif_msgs:
+                st.info(m)
+
+    if fired_alerts:
         st.snow()
 
     col_del, col_clr = st.columns([1, 5])
     with col_del:
-        del_idx = st.number_input("Delete alert #", min_value=1,
-            max_value=max(len(st.session_state.alerts), 1), step=1, value=1)
+        del_idx = st.number_input(
+            "Delete alert #", min_value=1,
+            max_value=max(len(st.session_state.alerts), 1),
+            step=1, value=1
+        )
         if st.button("🗑️ Delete"):
             if 1 <= del_idx <= len(st.session_state.alerts):
                 removed = st.session_state.alerts.pop(del_idx - 1)
+                # also remove from notified set
+                key = f"{removed['symbol']}_{removed['direction']}_{removed['threshold']}"
+                st.session_state.notified_set.discard(key)
                 st.success(f"Removed alert for {removed['stock']}")
                 st.rerun()
     with col_clr:
         if st.button("🧹 Clear All Alerts", type="secondary"):
             st.session_state.alerts = []
+            st.session_state.notified_set = set()
             st.rerun()
 
     if auto_refresh:
         import time
+        st.caption("⏳ Auto-checking... (disable toggle to stop)")
         time.sleep(60)
         st.rerun()
