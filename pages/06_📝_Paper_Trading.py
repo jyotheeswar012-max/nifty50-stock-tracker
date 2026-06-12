@@ -1,99 +1,53 @@
-"""
-Page: Paper Trading Simulator
-Simulated trading with virtual capital — zero real money involved.
-
-Features:
-  - Virtual portfolio with configurable starting capital (default ₹10,00,000)
-  - BUY / SELL orders on any Nifty-50 F&O stock
-  - Live mark-to-market P&L via yfinance
-  - Full trade log with entry price, exit price, realised P&L
-  - Portfolio summary: holdings, unrealised P&L, cash balance
-  - Risk metrics: win rate, avg trade P&L, max drawdown, total return
-  - JSON export/import for persistence across sessions
-  - Reset portfolio button
-"""
-import json
-import warnings
-from datetime import datetime
-from typing import Optional, Dict, List
-
-import numpy as np
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
-import yfinance as yf
+from utils.supabase_auth import require_login
 
+st.set_page_config(page_title="Paper Trading", page_icon="📝", layout="wide")
+user = require_login()
+
+import yfinance as yf
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import pytz
+import warnings
 warnings.filterwarnings("ignore")
 
-st.set_page_config(
-    page_title="Paper Trading",
-    page_icon="📝",
-    layout="wide",
-)
-
-# ================================================================== constants
-
-DEFAULT_CAPITAL: float = 1_000_000.0  # ₹10 Lakhs
-
-NIFTY50_NAMES: List[str] = [
-    "Reliance Industries", "HDFC Bank", "ICICI Bank", "Infosys", "TCS",
-    "Bharti Airtel", "ITC", "Kotak Mahindra Bank", "Larsen & Toubro",
-    "HCL Technologies", "Axis Bank", "State Bank of India", "Bajaj Finance",
-    "Wipro", "Asian Paints", "Maruti Suzuki", "Sun Pharmaceutical",
-    "Titan Company", "UltraTech Cement", "ONGC", "NTPC", "Tata Motors",
-    "Tata Steel", "Adani Enterprises", "Adani Ports", "Bajaj Auto",
-    "Cipla", "Dr. Reddy's Labs", "Hindustan Unilever",
-    "Mahindra & Mahindra", "Eicher Motors", "Hero MotoCorp",
+NIFTY50_NAMES = [
+    "Reliance Industries","HDFC Bank","ICICI Bank","Infosys","TCS",
+    "Bharti Airtel","ITC","Kotak Mahindra Bank","Larsen & Toubro","HCL Technologies",
+    "Axis Bank","State Bank of India","Bajaj Finance","Wipro","Asian Paints",
+    "Maruti Suzuki","Sun Pharmaceutical","Titan Company","UltraTech Cement","ONGC",
+    "NTPC","Power Grid Corp","Mahindra & Mahindra","Tata Motors","Tata Steel",
+    "JSW Steel","Hindalco Industries","Adani Enterprises","Adani Ports","Bajaj Finserv",
+    "Bajaj Auto","Hero MotoCorp","Cipla","Dr. Reddy's Labs","Divi's Laboratories",
+    "Eicher Motors","Grasim Industries","HDFC Life Insurance","SBI Life Insurance",
+    "IndusInd Bank","Tata Consumer Products","Britannia Industries","Nestle India",
+    "Hindustan Unilever","Coal India","BPCL","Tech Mahindra","L&T Finance",
+    "Shriram Finance","Bharat Electronics",
 ]
+NIFTY50_SYMS = [
+    "RELIANCE.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS","TCS.NS",
+    "BHARTIARTL.NS","ITC.NS","KOTAKBANK.NS","LT.NS","HCLTECH.NS",
+    "AXISBANK.NS","SBIN.NS","BAJFINANCE.NS","WIPRO.NS","ASIANPAINT.NS",
+    "MARUTI.NS","SUNPHARMA.NS","TITAN.NS","ULTRACEMCO.NS","ONGC.NS",
+    "NTPC.NS","POWERGRID.NS","M&M.NS","TATAMOTORS.NS","TATASTEEL.NS",
+    "JSWSTEEL.NS","HINDALCO.NS","ADANIENT.NS","ADANIPORTS.NS","BAJAJFINSV.NS",
+    "BAJAJAUTO.NS","HEROMOTOCO.NS","CIPLA.NS","DRREDDY.NS","DIVISLAB.NS",
+    "EICHERMOT.NS","GRASIM.NS","HDFCLIFE.NS","SBILIFE.NS","INDUSINDBK.NS",
+    "TATACONSUM.NS","BRITANNIA.NS","NESTLEIND.NS","HINDUNILVR.NS","COALINDIA.NS",
+    "BPCL.NS","TECHM.NS","LTF.NS","SHRIRAMFIN.NS","BEL.NS",
+]
+NAME_TO_SYM = dict(zip(NIFTY50_NAMES, NIFTY50_SYMS))
 
-NAME_TO_SYM: Dict[str, str] = {
-    "Reliance Industries": "RELIANCE.NS",
-    "HDFC Bank": "HDFCBANK.NS",
-    "ICICI Bank": "ICICIBANK.NS",
-    "Infosys": "INFY.NS",
-    "TCS": "TCS.NS",
-    "Bharti Airtel": "BHARTIARTL.NS",
-    "ITC": "ITC.NS",
-    "Kotak Mahindra Bank": "KOTAKBANK.NS",
-    "Larsen & Toubro": "LT.NS",
-    "HCL Technologies": "HCLTECH.NS",
-    "Axis Bank": "AXISBANK.NS",
-    "State Bank of India": "SBIN.NS",
-    "Bajaj Finance": "BAJFINANCE.NS",
-    "Wipro": "WIPRO.NS",
-    "Asian Paints": "ASIANPAINT.NS",
-    "Maruti Suzuki": "MARUTI.NS",
-    "Sun Pharmaceutical": "SUNPHARMA.NS",
-    "Titan Company": "TITAN.NS",
-    "UltraTech Cement": "ULTRACEMCO.NS",
-    "ONGC": "ONGC.NS",
-    "NTPC": "NTPC.NS",
-    "Tata Motors": "TATAMOTORS.NS",
-    "Tata Steel": "TATASTEEL.NS",
-    "Adani Enterprises": "ADANIENT.NS",
-    "Adani Ports": "ADANIPORTS.NS",
-    "Bajaj Auto": "BAJAJAUTO.NS",
-    "Cipla": "CIPLA.NS",
-    "Dr. Reddy's Labs": "DRREDDY.NS",
-    "Hindustan Unilever": "HINDUNILVR.NS",
-    "Mahindra & Mahindra": "M&M.NS",
-    "Eicher Motors": "EICHERMOT.NS",
-    "Hero MotoCorp": "HEROMOTOCO.NS",
-}
-
-# ================================================================== helpers
-
-def safe_float(val, default: float = 0.0) -> float:
+def safe_float(val, default=0.0):
     try:
         f = float(val)
         return default if (np.isnan(f) or np.isinf(f)) else f
     except Exception:
         return default
 
-
 @st.cache_data(ttl=60)
-def get_live_price(sym: str) -> Optional[float]:
+def get_live_price(sym):
     try:
         h = yf.Ticker(sym).history(period="1d", interval="1m")
         if h is not None and not h.empty:
@@ -102,510 +56,129 @@ def get_live_price(sym: str) -> Optional[float]:
         pass
     return None
 
+# ---- session state ----
+if "pt_balance"   not in st.session_state: st.session_state.pt_balance   = 1_000_000.0
+if "pt_holdings"  not in st.session_state: st.session_state.pt_holdings  = {}
+if "pt_trades"    not in st.session_state: st.session_state.pt_trades    = []
+if "pt_equity"    not in st.session_state: st.session_state.pt_equity    = []
 
-def get_live_prices_bulk(symbols: List[str]) -> Dict[str, float]:
-    prices: Dict[str, float] = {}
-    for sym in symbols:
-        p = get_live_price(sym)
-        if p is not None and p > 0:
-            prices[sym] = p
-    return prices
+IST = pytz.timezone("Asia/Kolkata")
 
-
-def ts() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-
-def style_pnl_df(df: pd.DataFrame):
-    def colour_positive_negative(val):
-        try:
-            v = float(val)
-        except Exception:
-            return ""
-        color = "#00c853" if v > 0 else ("#ff1744" if v < 0 else "#ffd600")
-        return f"color: {color}"
-
-    return df.style.map(
-        colour_positive_negative,
-        subset=["Unreal P&L (₹)", "P&L %"]
-    ).format({
-        "Avg Price (₹)": "₹{:,.2f}",
-        "LTP (₹)": "₹{:,.2f}",
-        "Mkt Value (₹)": "₹{:,.2f}",
-        "Unreal P&L (₹)": "₹{:+,.2f}",
-        "P&L %": "{:+.2f}%",
-    })
-
-
-# ================================================================== session state init
-
-def init_state() -> None:
-    if "pt_capital" not in st.session_state:
-        st.session_state["pt_capital"] = DEFAULT_CAPITAL
-    if "pt_holdings" not in st.session_state:
-        st.session_state["pt_holdings"] = {}
-    if "pt_trades" not in st.session_state:
-        st.session_state["pt_trades"] = []
-    if "pt_initial" not in st.session_state:
-        st.session_state["pt_initial"] = DEFAULT_CAPITAL
-    if "pt_equity_curve" not in st.session_state:
-        st.session_state["pt_equity_curve"] = [
-            {"ts": ts(), "value": DEFAULT_CAPITAL}
-        ]
-
-
-init_state()
-
-
-# ================================================================== trade engine
-
-def _snapshot_equity() -> None:
-    holdings = st.session_state["pt_holdings"]
-    cash = st.session_state["pt_capital"]
-    symbols = list(holdings.keys())
-    live_prices = get_live_prices_bulk(symbols) if symbols else {}
-    mkt_val = sum(
-        h["qty"] * live_prices.get(sym, h["avg_price"])
-        for sym, h in holdings.items()
+def _snapshot_equity():
+    syms = list(st.session_state.pt_holdings.keys())
+    prices = {}
+    for s in syms:
+        p = get_live_price(s)
+        if p: prices[s] = p
+    port_val = sum(
+        prices.get(sym, h["avg_price"]) * h["qty"]
+        for sym, h in st.session_state.pt_holdings.items()
     )
-    st.session_state["pt_equity_curve"].append(
-        {"ts": ts(), "value": round(cash + mkt_val, 2)}
-    )
-
-
-def place_order(action: str, sym: str, name: str, qty: int, price: float) -> str:
-    cost = qty * price
-    capital = st.session_state["pt_capital"]
-    holdings = st.session_state["pt_holdings"]
-    realised_pnl = 0.0
-
-    if qty <= 0 or price <= 0:
-        return "❌ Quantity and price must be greater than zero."
-
-    if action == "BUY":
-        if cost > capital:
-            return f"❌ Insufficient cash. Need ₹{cost:,.2f}, available ₹{capital:,.2f}"
-
-        if sym in holdings:
-            old_qty = int(holdings[sym]["qty"])
-            old_avg = safe_float(holdings[sym]["avg_price"])
-            new_qty = old_qty + qty
-            new_avg = (old_qty * old_avg + qty * price) / new_qty
-            holdings[sym]["qty"] = new_qty
-            holdings[sym]["avg_price"] = new_avg
-        else:
-            holdings[sym] = {"name": name, "qty": qty, "avg_price": price}
-
-        st.session_state["pt_capital"] -= cost
-        msg = f"✅ BUY {qty} × {name} @ ₹{price:,.2f} | Cost: ₹{cost:,.2f}"
-
-    elif action == "SELL":
-        if sym not in holdings or int(holdings[sym]["qty"]) < qty:
-            held = int(holdings.get(sym, {}).get("qty", 0))
-            return f"❌ Cannot sell {qty} shares. You hold only {held}."
-
-        avg_price = safe_float(holdings[sym]["avg_price"])
-        realised_pnl = (price - avg_price) * qty
-        holdings[sym]["qty"] -= qty
-        if int(holdings[sym]["qty"]) == 0:
-            del holdings[sym]
-
-        st.session_state["pt_capital"] += qty * price
-        pnl_icon = "🟢" if realised_pnl >= 0 else "🔴"
-        msg = f"{pnl_icon} SELL {qty} × {name} @ ₹{price:,.2f} | Realised P&L: ₹{realised_pnl:+,.2f}"
-
-    else:
-        return "❌ Invalid action."
-
-    trade: Dict = {
-        "timestamp": ts(),
-        "action": action,
-        "symbol": sym,
-        "name": name,
-        "qty": int(qty),
-        "price": round(price, 2),
-        "value": round(cost if action == "BUY" else qty * price, 2),
-        "realised_pnl": round(realised_pnl, 2),
-    }
-
-    st.session_state["pt_trades"].append(trade)
-    _snapshot_equity()
-    return msg
-
-
-def portfolio_summary(live_prices: Dict[str, float]) -> pd.DataFrame:
-    rows = []
-    for sym, h in st.session_state["pt_holdings"].items():
-        avg_price = safe_float(h["avg_price"])
-        qty = int(h["qty"])
-        lp = safe_float(live_prices.get(sym, avg_price), avg_price)
-        unreal = (lp - avg_price) * qty
-        mkt_val = lp * qty
-        pct = ((lp - avg_price) / avg_price * 100) if avg_price > 0 else 0.0
-        rows.append({
-            "Stock": h["name"],
-            "Symbol": sym,
-            "Qty": qty,
-            "Avg Price (₹)": round(avg_price, 2),
-            "LTP (₹)": round(lp, 2),
-            "Mkt Value (₹)": round(mkt_val, 2),
-            "Unreal P&L (₹)": round(unreal, 2),
-            "P&L %": round(pct, 2),
-        })
-    return pd.DataFrame(rows)
-
-
-def risk_metrics() -> Dict:
-    trades = st.session_state["pt_trades"]
-    sells = [t for t in trades if t["action"] == "SELL"]
-    if not sells:
-        return {}
-
-    pnls = [safe_float(t["realised_pnl"]) for t in sells]
-    wins = [p for p in pnls if p > 0]
-    losses = [p for p in pnls if p <= 0]
-    win_rate = len(wins) / len(pnls) * 100 if pnls else 0.0
-    avg_win = float(np.mean(wins)) if wins else 0.0
-    avg_loss = float(np.mean(losses)) if losses else 0.0
-    expectancy = (win_rate / 100 * avg_win) + ((1 - win_rate / 100) * avg_loss)
-
-    curve = [safe_float(e["value"]) for e in st.session_state["pt_equity_curve"]]
-    if len(curve) > 1:
-        arr = np.array(curve, dtype=float)
-        peaks = np.maximum.accumulate(arr)
-        dd = np.where(peaks > 0, (arr - peaks) / peaks * 100, 0)
-        max_dd = float(np.min(dd))
-    else:
-        max_dd = 0.0
-
-    initial = safe_float(st.session_state["pt_initial"], DEFAULT_CAPITAL)
-    latest = safe_float(st.session_state["pt_equity_curve"][-1]["value"], initial)
-    total_return = ((latest - initial) / initial * 100) if initial > 0 else 0.0
-
-    return {
-        "Total Trades": len(sells),
-        "Win Rate": round(win_rate, 1),
-        "Avg Win (₹)": round(avg_win, 2),
-        "Avg Loss (₹)": round(avg_loss, 2),
-        "Expectancy (₹)": round(expectancy, 2),
-        "Max Drawdown": round(max_dd, 2),
-        "Total Return %": round(total_return, 2),
-    }
-
-
-# ================================================================== export / import
-
-def export_portfolio() -> str:
-    return json.dumps({
-        "capital": st.session_state["pt_capital"],
-        "initial": st.session_state["pt_initial"],
-        "holdings": st.session_state["pt_holdings"],
-        "trades": st.session_state["pt_trades"],
-        "equity_curve": st.session_state["pt_equity_curve"],
-    }, indent=2)
-
-
-def import_portfolio(json_str: str) -> str:
-    try:
-        data = json.loads(json_str)
-        st.session_state["pt_capital"] = float(data["capital"])
-        st.session_state["pt_initial"] = float(data["initial"])
-        st.session_state["pt_holdings"] = data["holdings"]
-        st.session_state["pt_trades"] = data["trades"]
-        st.session_state["pt_equity_curve"] = data["equity_curve"]
-        return "✅ Portfolio imported successfully!"
-    except Exception as e:
-        return f"❌ Import failed: {e}"
-
-
-# ================================================================== page ui
+    total = st.session_state.pt_balance + port_val
+    st.session_state.pt_equity.append({"time": datetime.now(IST).strftime("%H:%M:%S"), "equity": total})
 
 st.title("📝 Paper Trading Simulator")
-st.markdown("""
-> 🟡 **Simulated trading only — zero real money involved.**
-> Practice buying and selling Nifty-50 stocks with virtual capital.
-> Live prices are fetched from Yahoo Finance for realistic simulation.
-""")
+st.caption(f"Signed in as **{user['full_name']}** • Virtual money only")
 
-cash = safe_float(st.session_state["pt_capital"])
-holdings_map = st.session_state["pt_holdings"]
-live_syms = list(holdings_map.keys())
-live_prices = get_live_prices_bulk(live_syms) if live_syms else {}
-
-mkt_value = sum(
-    int(h["qty"]) * safe_float(live_prices.get(sym, h["avg_price"]), h["avg_price"])
-    for sym, h in holdings_map.items()
+# ---- metrics ----
+port_val = sum(
+    (get_live_price(sym) or h["avg_price"]) * h["qty"]
+    for sym, h in st.session_state.pt_holdings.items()
 )
-total_value = cash + mkt_value
-initial = safe_float(st.session_state["pt_initial"], DEFAULT_CAPITAL)
-unreal_total = mkt_value - sum(
-    int(h["qty"]) * safe_float(h["avg_price"])
-    for h in holdings_map.values()
-)
-total_pnl = total_value - initial
-pnl_pct = (total_pnl / initial * 100) if initial > 0 else 0.0
-
-m1, m2, m3, m4, m5 = st.columns(5)
-m1.metric("💰 Cash Balance", f"₹{cash:,.0f}")
-m2.metric("📈 Holdings Value", f"₹{mkt_value:,.0f}")
-m3.metric("🏆 Portfolio Value", f"₹{total_value:,.0f}")
-m4.metric("📉 Unrealised P&L", f"₹{unreal_total:+,.0f}")
-m5.metric("📊 Total Return", f"₹{total_pnl:+,.0f}", delta=f"{pnl_pct:+.2f}%")
+total_equity = st.session_state.pt_balance + port_val
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("💵 Cash Balance",   f"₹{st.session_state.pt_balance:,.2f}")
+m2.metric("💼 Portfolio Value", f"₹{port_val:,.2f}")
+m3.metric("📊 Total Equity",   f"₹{total_equity:,.2f}")
+m4.metric("🔄 Trades",         len(st.session_state.pt_trades))
 
 st.markdown("---")
 
-tab_order, tab_holdings, tab_log, tab_metrics, tab_chart, tab_io = st.tabs([
-    "🛒 Place Order",
-    "💼 Holdings",
-    "📃 Trade Log",
-    "📊 Risk Metrics",
-    "📈 Equity Curve",
-    "📥 Export / Import",
-])
+# ---- order form ----
+st.subheader("🛒 Place Order")
+col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+with col1: stock_name = st.selectbox("Stock", NIFTY50_NAMES, key="pt_stock")
+with col2: order_type = st.radio("Order", ["BUY", "SELL"], horizontal=True)
+with col3: qty        = st.number_input("Qty", min_value=1, value=10, step=1)
+with col4:
+    st.markdown("<br>", unsafe_allow_html=True)
+    execute = st.button("⚡ Execute", type="primary", use_container_width=True)
 
+sym = NAME_TO_SYM[stock_name]
+live_price = get_live_price(sym)
+if live_price:
+    st.info(f"📊 Live price of **{stock_name}**: ₹{live_price:,.2f} | Order value: ₹{live_price*qty:,.2f}")
 
-with tab_order:
-    st.subheader("🛒 Place a Paper Trade")
-    st.caption("Live price is fetched automatically. You can override it for limit-order simulation.")
-
-    oc1, oc2, oc3 = st.columns(3)
-    with oc1:
-        order_name = st.selectbox("🏢 Stock", NIFTY50_NAMES, key="order_stock")
-    with oc2:
-        order_action = st.radio("🔄 Action", ["BUY", "SELL"], horizontal=True, key="order_action")
-    with oc3:
-        order_qty = st.number_input("🔢 Quantity", min_value=1, max_value=10000, value=10, step=1, key="order_qty")
-
-    order_sym = NAME_TO_SYM.get(order_name, "RELIANCE.NS")
-
-    with st.spinner("Fetching live price…"):
-        live_px = get_live_price(order_sym)
-
-    if live_px:
-        st.info(f"📌 **Live Price ({order_name}):** ₹{live_px:,.2f}")
-    else:
-        st.warning("⚠️ Could not fetch live price. Enter price manually below.")
-        live_px = 0.0
-
-    override_px = st.number_input(
-        "₹ Order Price (editable — use live price or set your limit price)",
-        min_value=0.01,
-        value=float(round(live_px, 2)) if live_px else 100.0,
-        step=0.5,
-        format="%.2f",
-        key="order_price",
-    )
-
-    order_value = override_px * order_qty
-    if order_action == "BUY":
-        st.markdown(
-            f"**Order Value:** ₹{order_value:,.2f} &nbsp;|&nbsp; "
-            f"**Available Cash:** ₹{cash:,.2f} &nbsp;|&nbsp; "
-            f"**After Trade:** ₹{cash - order_value:,.2f}"
-        )
-    else:
-        st.markdown(f"**Order Value:** ₹{order_value:,.2f}")
-
-    if order_action == "SELL" and order_sym in holdings_map:
-        h = holdings_map[order_sym]
-        est_qty = min(int(order_qty), int(h["qty"]))
-        est_pnl = (override_px - safe_float(h["avg_price"])) * est_qty
-        st.markdown(
-            f"📌 Holding: **{int(h['qty'])} shares** @ avg ₹{safe_float(h['avg_price']):,.2f} &nbsp;| "
-            f"Est. P&L for this trade: **₹{est_pnl:+,.2f}**"
-        )
-    elif order_action == "SELL":
-        st.info("ℹ️ You do not currently hold this stock.")
-
-    confirm = st.checkbox("✅ I confirm this is a PAPER trade — no real money", key="paper_trade_confirm")
-    if st.button("🚀 Execute Order", disabled=not confirm, type="primary"):
-        result = place_order(order_action, order_sym, order_name, int(order_qty), float(override_px))
-        if result.startswith(("✅", "🟢", "🔴")):
-            st.success(result)
+if execute:
+    price = live_price or 0.0
+    if price <= 0:
+        st.error("❌ Could not fetch live price. Try again.")
+    elif order_type == "BUY":
+        cost = price * qty
+        if cost > st.session_state.pt_balance:
+            st.error(f"❌ Insufficient balance. Need ₹{cost:,.2f}, have ₹{st.session_state.pt_balance:,.2f}")
         else:
-            st.error(result)
-        st.rerun()
+            st.session_state.pt_balance -= cost
+            h = st.session_state.pt_holdings.get(sym, {"qty": 0, "avg_price": 0.0})
+            total_qty  = h["qty"] + qty
+            avg        = (h["avg_price"] * h["qty"] + price * qty) / total_qty
+            st.session_state.pt_holdings[sym] = {"qty": total_qty, "avg_price": avg, "name": stock_name}
+            st.session_state.pt_trades.append({
+                "time": datetime.now(IST).strftime("%H:%M:%S"), "stock": stock_name,
+                "type": "BUY", "qty": qty, "price": price, "value": cost,
+            })
+            _snapshot_equity()
+            st.success(f"✅ BUY {qty} x {stock_name} @ ₹{price:,.2f} = ₹{cost:,.2f}")
+    else:  # SELL
+        holding = st.session_state.pt_holdings.get(sym)
+        if not holding or holding["qty"] < qty:
+            held = holding["qty"] if holding else 0
+            st.error(f"❌ Not enough shares. Holding {held}, trying to sell {qty}.")
+        else:
+            proceeds     = price * qty
+            realised_pnl = (price - holding["avg_price"]) * qty
+            st.session_state.pt_balance += proceeds
+            new_qty = holding["qty"] - qty
+            if new_qty == 0:
+                del st.session_state.pt_holdings[sym]
+            else:
+                st.session_state.pt_holdings[sym]["qty"] = new_qty
+            st.session_state.pt_trades.append({
+                "time": datetime.now(IST).strftime("%H:%M:%S"), "stock": stock_name,
+                "type": "SELL", "qty": qty, "price": price, "value": proceeds,
+                "pnl": realised_pnl,
+            })
+            _snapshot_equity()
+            pnl_str = f"₹{realised_pnl:+,.2f}"
+            st.success(f"✅ SELL {qty} x {stock_name} @ ₹{price:,.2f} | P&L: {pnl_str}")
 
+st.markdown("---")
 
-with tab_holdings:
+# ---- holdings ----
+if st.session_state.pt_holdings:
     st.subheader("💼 Current Holdings")
-    if not holdings_map:
-        st.info("ℹ️ No open positions. Place a BUY order to start.")
-    else:
-        port_df = portfolio_summary(live_prices)
-        st.dataframe(style_pnl_df(port_df), use_container_width=True, hide_index=True)
+    h_rows = []
+    for sym_h, h in st.session_state.pt_holdings.items():
+        lp = get_live_price(sym_h) or h["avg_price"]
+        pnl = (lp - h["avg_price"]) * h["qty"]
+        h_rows.append({
+            "Stock": h["name"], "Qty": h["qty"],
+            "Avg Price": f"₹{h['avg_price']:,.2f}",
+            "Live Price": f"₹{lp:,.2f}",
+            "P&L": f"₹{pnl:+,.2f}",
+            "📊": "🟢" if pnl >= 0 else "🔴",
+        })
+    st.dataframe(pd.DataFrame(h_rows), use_container_width=True, hide_index=True)
 
-        fig_pie = px.pie(
-            port_df,
-            names="Stock",
-            values="Mkt Value (₹)",
-            title="Portfolio Allocation",
-            hole=0.4,
-            color_discrete_sequence=px.colors.qualitative.Set3,
-        )
-        fig_pie.update_layout(template="plotly_dark", height=380)
-        st.plotly_chart(fig_pie, use_container_width=True)
-
-
-with tab_log:
-    st.subheader("📃 Trade History")
-    trades = st.session_state["pt_trades"]
-    if not trades:
-        st.info("ℹ️ No trades yet.")
-    else:
-        tdf = pd.DataFrame(trades)
-        display_cols = ["timestamp", "action", "name", "qty", "price", "value", "realised_pnl"]
-        present = [c for c in display_cols if c in tdf.columns]
-        tdf_disp = tdf[present].copy()
-        tdf_disp.rename(columns={
-            "timestamp": "Time",
-            "action": "Action",
-            "name": "Stock",
-            "qty": "Qty",
-            "price": "Price (₹)",
-            "value": "Value (₹)",
-            "realised_pnl": "Realised P&L (₹)",
-        }, inplace=True)
-        st.dataframe(
-            tdf_disp.iloc[::-1].reset_index(drop=True),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-        sell_trades = tdf[tdf["action"] == "SELL"].copy()
-        if not sell_trades.empty:
-            sell_trades["color"] = sell_trades["realised_pnl"].apply(
-                lambda x: "#00c853" if safe_float(x) >= 0 else "#ff1744"
-            )
-            fig_bar = go.Figure(go.Bar(
-                x=sell_trades["timestamp"],
-                y=sell_trades["realised_pnl"],
-                marker_color=sell_trades["color"],
-                name="Realised P&L",
-                text=sell_trades["realised_pnl"].apply(lambda x: f"₹{safe_float(x):+,.0f}"),
-                textposition="outside",
-            ))
-            fig_bar.update_layout(
-                title="Realised P&L per Trade",
-                template="plotly_dark",
-                height=350,
-                xaxis_title="Time",
-                yaxis_title="P&L (₹)",
-            )
-            st.plotly_chart(fig_bar, use_container_width=True)
-
-
-with tab_metrics:
-    st.subheader("📊 Risk & Performance Metrics")
-    metrics = risk_metrics()
-    if not metrics:
-        st.info("ℹ️ Complete at least one SELL trade to see metrics.")
-    else:
-        mc1, mc2, mc3, mc4 = st.columns(4)
-        mc1.metric("📊 Total Closed Trades", metrics["Total Trades"])
-        mc2.metric("🎯 Win Rate", f"{metrics['Win Rate']}%")
-        mc3.metric("🟢 Avg Win", f"₹{metrics['Avg Win (₹)']:,.2f}")
-        mc4.metric("🔴 Avg Loss", f"₹{metrics['Avg Loss (₹)']:,.2f}")
-
-        mc5, mc6, mc7, _ = st.columns(4)
-        mc5.metric("🧠 Expectancy", f"₹{metrics['Expectancy (₹)']:,.2f}")
-        mc6.metric("📉 Max Drawdown", f"{metrics['Max Drawdown']}%")
-        mc7.metric("💰 Total Return", f"{metrics['Total Return %']}%")
-
-        st.markdown("""
-        | Metric | What it means |
-        |--------|---------------|
-        | **Win Rate** | % of closed trades that were profitable |
-        | **Expectancy** | Average expected P&L per trade (positive = edge) |
-        | **Max Drawdown** | Largest peak-to-trough drop in portfolio value |
-        | **Total Return** | Overall gain/loss vs starting capital |
-        """)
-
-
-with tab_chart:
-    st.subheader("📈 Portfolio Equity Curve")
-    eq_curve = st.session_state["pt_equity_curve"]
-    if len(eq_curve) < 2:
-        st.info("ℹ️ Place at least one trade to see the equity curve.")
-    else:
-        eq_df = pd.DataFrame(eq_curve)
-        fig_eq = go.Figure()
-        fig_eq.add_trace(go.Scatter(
-            x=eq_df["ts"],
-            y=eq_df["value"],
-            mode="lines+markers",
-            name="Portfolio Value",
-            line=dict(color="#00e5ff", width=2),
-            fill="tozeroy",
-            fillcolor="rgba(0,229,255,0.08)",
-        ))
-        fig_eq.add_hline(
-            y=initial,
-            line_dash="dash",
-            line_color="#ffd600",
-            annotation_text=f"Starting Capital ₹{initial:,.0f}",
-        )
-        fig_eq.update_layout(
-            title="Portfolio Value Over Time",
-            template="plotly_dark",
-            height=420,
-            xaxis_title="Time",
-            yaxis_title="Portfolio Value (₹)",
-        )
-        st.plotly_chart(fig_eq, use_container_width=True)
-
-
-with tab_io:
-    st.subheader("📥 Save & Restore Portfolio")
-    st.markdown(
-        "Export your portfolio as JSON and restore it later "
-        "after Streamlit restarts or new sessions."
-    )
-
-    json_out = export_portfolio()
-    st.download_button(
-        label="⬇️ Download Portfolio JSON",
-        data=json_out,
-        file_name="paper_portfolio.json",
-        mime="application/json",
-    )
-    with st.expander("📋 View raw JSON"):
-        st.code(json_out, language="json")
-
+# ---- trade log ----
+if st.session_state.pt_trades:
     st.markdown("---")
+    st.subheader("📜 Trade Log")
+    st.dataframe(pd.DataFrame(st.session_state.pt_trades), use_container_width=True, hide_index=True)
 
-    st.subheader("📤 Restore Portfolio")
-    uploaded = st.file_uploader("Upload portfolio JSON", type=["json"], key="pt_upload")
-    if uploaded is not None:
-        raw = uploaded.read().decode("utf-8")
-        msg = import_portfolio(raw)
-        if msg.startswith("✅"):
-            st.success(msg)
-            st.rerun()
-        else:
-            st.error(msg)
-
-    st.markdown("---")
-
-    st.subheader("⚠️ Reset Portfolio")
-    reset_capital = st.number_input(
-        "Starting capital for new portfolio (₹)",
-        min_value=10_000.0,
-        max_value=100_000_000.0,
-        value=DEFAULT_CAPITAL,
-        step=100_000.0,
-        format="%.0f",
-        key="reset_capital_input",
-    )
-    confirm_reset = st.checkbox(
-        "✅ Yes, I want to reset and lose all trade history",
-        key="confirm_reset"
-    )
-    if st.button("🗑️ Reset Portfolio", disabled=not confirm_reset, type="primary"):
-        st.session_state["pt_capital"] = float(reset_capital)
-        st.session_state["pt_initial"] = float(reset_capital)
-        st.session_state["pt_holdings"] = {}
-        st.session_state["pt_trades"] = []
-        st.session_state["pt_equity_curve"] = [{"ts": ts(), "value": float(reset_capital)}]
-        st.success(f"✅ Portfolio reset with ₹{reset_capital:,.0f} starting capital.")
-        st.rerun()
+# ---- reset ----
+st.markdown("---")
+if st.button("🔄 Reset Paper Trading Account", type="secondary"):
+    for k in ["pt_balance","pt_holdings","pt_trades","pt_equity"]:
+        del st.session_state[k]
+    st.rerun()
