@@ -16,6 +16,45 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ================================================================
+# AUTH GATE  — must come before any page content
+# ================================================================
+from utils.auth import get_authenticator
+
+authenticator = get_authenticator()
+
+auth_status = st.session_state.get("authentication_status")
+
+if auth_status is not True:
+    st.markdown("""
+    <div style="text-align:center; padding:3rem 0 1rem 0;">
+      <h1 style="font-size:3rem;">&#128200; Nifty50 Tracker</h1>
+      <p style="color:#9e9e9e; font-size:1.15rem;">
+        NSE India • Real-Time Prices • Paper Trading • Price Alerts
+      </p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.warning("🔒 **Please log in to access the app.**")
+    st.page_link("pages/00_🔐_Login.py", label="➡️ Go to Login / Register", icon="🔐")
+    st.stop()
+
+# ================================================================
+# LOGGED IN — show logout in sidebar
+# ================================================================
+name     = st.session_state.get("name",     "User")
+username = st.session_state.get("username", "")
+
+st.sidebar.markdown("""
+<style>
+.tag-actual  { background:#00c853;color:black;padding:2px 10px;border-radius:20px;font-size:13px;font-weight:bold; }
+.tag-assumed { background:#ffd600;color:black;padding:2px 10px;border-radius:20px;font-size:13px;font-weight:bold; }
+.tag-nse     { background:#1565c0;color:white;padding:2px 10px;border-radius:20px;font-size:13px;font-weight:bold; }
+.tag-open    { background:#00c853;color:black;padding:3px 12px;border-radius:20px;font-size:14px;font-weight:bold; }
+.tag-closed  { background:#ff1744;color:white;padding:3px 12px;border-radius:20px;font-size:14px;font-weight:bold; }
+.stMetric label { color:#9e9e9e !important; }
+</style>
+""", unsafe_allow_html=True)
+
 st.markdown("""
 <style>
 .tag-actual  { background:#00c853;color:black;padding:2px 10px;border-radius:20px;font-size:13px;font-weight:bold; }
@@ -26,6 +65,66 @@ st.markdown("""
 .stMetric label { color:#9e9e9e !important; }
 </style>
 """, unsafe_allow_html=True)
+
+try:
+    st.sidebar.image(
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/NSE_Logo.svg/200px-NSE_Logo.svg.png",
+        width=120,
+    )
+except Exception:
+    pass
+
+st.sidebar.title("📈 NSE + Time Machine")
+st.sidebar.markdown(f"👤 **{name}** (`{username}`)")
+authenticator.logout("🚪 Logout", "sidebar", key="sidebar_logout")
+st.sidebar.markdown("---")
+st.sidebar.markdown("**🟦 LIVE NSE**")
+
+page = st.sidebar.radio("Navigate", [
+    "🏦 NSE Market Overview",
+    "📈 Nifty 50 Index",
+    "🏢 All 50 Companies",
+    "🏆 Gainers & Losers",
+    "🧮 P&L Calculator",
+    "🔍 Stock Chart Lookup",
+    "─────────────────",
+    "⏰ Time Machine",
+    "🧪 Scenario Engine",
+    "💼 Paper Portfolio",
+    "📅 Market Calendar",
+])
+
+try:
+    ist_tz  = pytz.timezone("Asia/Kolkata")
+    now_ist = datetime.now(ist_tz)
+    st.sidebar.markdown(f"⌨️ **IST:** {now_ist.strftime('%d %b %Y %I:%M %p')}")
+except Exception:
+    pass
+
+def is_nse_open():
+    try:
+        ist = pytz.timezone("Asia/Kolkata")
+        now = datetime.now(ist)
+        if now.weekday() >= 5:
+            return False, "Weekend — Market Closed"
+        mo = now.replace(hour=9,  minute=15, second=0, microsecond=0)
+        mc = now.replace(hour=15, minute=30, second=0, microsecond=0)
+        if mo <= now <= mc:   return True,  "Open"
+        elif now < mo:        return False, "Pre-Market (Opens 9:15 AM IST)"
+        else:                 return False, "Closed (Session ended 3:30 PM)"
+    except Exception:
+        return False, "Unknown"
+
+market_open, market_status = is_nse_open()
+if market_open:
+    st.sidebar.markdown('<span class="tag-open">● MARKET OPEN</span>', unsafe_allow_html=True)
+else:
+    st.sidebar.markdown(f'<span class="tag-closed">● {market_status}</span>', unsafe_allow_html=True)
+
+st.sidebar.markdown("---")
+st.sidebar.caption("📊 Data: Yahoo Finance")
+st.sidebar.caption("⏰ 5yr history for Time Machine")
+st.sidebar.caption("⚠️ Educational use only")
 
 # ================================================================
 # CONSTANTS
@@ -126,21 +225,6 @@ def safe_float(val, default: float = 0.0) -> float:
         return default if (np.isnan(f) or np.isinf(f)) else f
     except Exception:
         return default
-
-
-def is_nse_open():
-    try:
-        ist = pytz.timezone("Asia/Kolkata")
-        now = datetime.now(ist)
-        if now.weekday() >= 5:
-            return False, "Weekend — Market Closed"
-        mo = now.replace(hour=9,  minute=15, second=0, microsecond=0)
-        mc = now.replace(hour=15, minute=30, second=0, microsecond=0)
-        if mo <= now <= mc:   return True,  "Open"
-        elif now < mo:        return False, "Pre-Market (Opens 9:15 AM IST)"
-        else:                 return False, "Closed (Session ended 3:30 PM)"
-    except Exception:
-        return False, "Unknown"
 
 
 @st.cache_data(ttl=300)
@@ -433,56 +517,10 @@ def tm_scenario(all_hist: dict, event_key: str, as_of_date: date) -> pd.DataFram
 
 
 # ================================================================
-# SIDEBAR
-# ================================================================
-try:
-    st.sidebar.image(
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/NSE_Logo.svg/200px-NSE_Logo.svg.png",
-        width=120,
-    )
-except Exception:
-    pass
-
-st.sidebar.title("📈 NSE + Time Machine")
-st.sidebar.markdown("**🟦 LIVE NSE**")
-
-page = st.sidebar.radio("Navigate", [
-    "🏦 NSE Market Overview",
-    "📈 Nifty 50 Index",
-    "🏢 All 50 Companies",
-    "🏆 Gainers & Losers",
-    "🧮 P&L Calculator",
-    "🔍 Stock Chart Lookup",
-    "─────────────────",
-    "⏰ Time Machine",
-    "🧪 Scenario Engine",
-    "💼 Paper Portfolio",
-    "📅 Market Calendar",
-])
-
-try:
-    ist_tz  = pytz.timezone("Asia/Kolkata")
-    now_ist = datetime.now(ist_tz)
-    st.sidebar.markdown(f"⌨️ **IST:** {now_ist.strftime('%d %b %Y %I:%M %p')}")
-except Exception:
-    pass
-
-market_open, market_status = is_nse_open()
-if market_open:
-    st.sidebar.markdown('<span class="tag-open">● MARKET OPEN</span>', unsafe_allow_html=True)
-else:
-    st.sidebar.markdown(f'<span class="tag-closed">● {market_status}</span>', unsafe_allow_html=True)
-
-st.sidebar.markdown("---")
-st.sidebar.caption("📊 Data: Yahoo Finance")
-st.sidebar.caption("⏰ 5yr history for Time Machine")
-st.sidebar.caption("⚠️ Educational use only")
-
-# ================================================================
 # SEPARATOR
 # ================================================================
 if page == "─────────────────":
-    st.info("💆 Select a page from the sidebar.")
+    st.info("💬 Select a page from the sidebar.")
     st.stop()
 
 # ================================================================
@@ -537,14 +575,14 @@ elif page == "🏦 NSE Market Overview":
     sym_map = {i["name"]: i for i in NSE_INDICES}
     if sel_idx:
         fig_m = go.Figure()
-        for name in sel_idx:
-            meta = sym_map.get(name)
+        for name_idx in sel_idx:
+            meta = sym_map.get(name_idx)
             if not meta: continue
             h = fetch_ticker(meta["symbol"], period=p_sel)
             if h.empty or len(h) < 2: continue
             base = safe_float(h["Close"].iloc[0], 1)
             norm = (h["Close"] / base * 100) if base != 0 else h["Close"]
-            fig_m.add_trace(go.Scatter(x=h.index, y=norm, mode="lines", name=name,
+            fig_m.add_trace(go.Scatter(x=h.index, y=norm, mode="lines", name=name_idx,
                 line=dict(color=meta["color"], width=2)))
         if fig_m.data:
             fig_m.update_layout(title="Normalized Trend (Base=100)", template="plotly_dark",
@@ -958,8 +996,8 @@ elif page == "📅 Market Calendar":
     st.subheader(f"🗓️ NSE Holidays {yr}")
     if holidays:
         cols = st.columns(4)
-        for i, h in enumerate(holidays):
-            cols[i % 4].info(f"📅 {h} {yr}")
+        for i, h_day in enumerate(holidays):
+            cols[i % 4].info(f"📅 {h_day} {yr}")
     else:
         st.info("No holiday data available for this year.")
     st.markdown("---")
