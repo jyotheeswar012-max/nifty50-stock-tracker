@@ -1,6 +1,5 @@
 """
 utils/supabase_auth.py
-
 Auth layer backed by Supabase.
 Guest mode: anyone can view the app; login is only required to SAVE data.
 """
@@ -33,7 +32,8 @@ def register(email: str, password: str, full_name: str = "", phone: str = "") ->
         meta = {"full_name": full_name}
         if phone:
             meta["phone"] = phone
-        res = client.auth.sign_up({"email": email, "password": password, "options": {"data": meta}})
+        res = client.auth.sign_up({"email": email, "password": password,
+                                    "options": {"data": meta}})
         if res.user:
             return True, "Account created! Check your email to confirm."
         return False, "Registration failed. Please try again."
@@ -53,18 +53,18 @@ def login(email: str, password: str) -> tuple[bool, dict | str]:
     try:
         res = client.auth.sign_in_with_password({"email": email, "password": password})
         if res.session and res.user:
-            user = res.user
-            meta = user.user_metadata or {}
-            user_dict = {
+            user  = res.user
+            meta  = user.user_metadata or {}
+            udict = {
                 "id":        user.id,
                 "email":     user.email,
                 "full_name": meta.get("full_name", user.email.split("@")[0]),
                 "phone":     meta.get("phone", ""),
                 "token":     res.session.access_token,
             }
-            st.session_state["sb_user"]   = user_dict
+            st.session_state["sb_user"]   = udict
             st.session_state["sb_authed"] = True
-            return True, user_dict
+            return True, udict
         return False, "Invalid credentials."
     except Exception as e:
         msg = str(e).lower()
@@ -95,7 +95,7 @@ def get_current_user() -> Optional[dict]:
 
 
 def is_guest() -> bool:
-    """True when the visitor is NOT logged in (browsing as guest)."""
+    """True when the visitor is NOT logged in."""
     return get_current_user() is None
 
 
@@ -133,21 +133,21 @@ def update_profile(full_name: str = "", phone: str = "") -> tuple[bool, str]:
 
 def login_nudge(feature: str = "save your data") -> None:
     """
-    Show a soft, non-blocking banner telling guests to log in to use a feature.
-    Does NOT call st.stop() — the rest of the page still renders.
+    Soft, non-blocking banner for guests. Does NOT call st.stop().
+    Points to the CORRECT Login page path.
     """
     st.info(
         f"💡 **Sign in to {feature}.** "
         f"You're browsing as a guest — everything is visible but nothing is saved.",
         icon="🔒",
     )
+    # Use the ACTUAL filename that exists on disk
     st.page_link("pages/00_🔐_Login.py", label="➡️ Sign In / Create Account", icon="🔐")
 
 
 def require_login(redirect_page: str = "pages/00_🔐_Login.py") -> dict:
     """
-    Hard guard — use ONLY on pages that are 100% useless without an account
-    (e.g. Profile & Notifications). Blocks rendering for guests.
+    Hard guard — use ONLY on pages that are 100% useless without an account.
     Returns the user dict when logged in.
     """
     user = get_current_user()
