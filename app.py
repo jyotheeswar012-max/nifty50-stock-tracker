@@ -575,11 +575,27 @@ elif page == "🏦 Market Overview":
             fig_m.add_trace(go.Scatter(x=h.index,y=norm,mode="lines",name=ni,
                 line=dict(color=meta["color"],width=2.5)))
         if fig_m.data:
-            fig_m.update_layout(title="Normalized Performance (Base 100)",template=PLT,
-                height=360,xaxis_title="Date",yaxis_title="Value (Base 100)",
-                legend=dict(orientation="h",yanchor="bottom",y=1.02,
-                            font=dict(color="#1e293b")),
-                **PLT_LAYOUT)
+            # Build layout without duplicate legend key — PLT_LAYOUT already has legend
+            fig_m.update_layout(
+                title="Normalized Performance (Base 100)",
+                template=PLT,
+                height=360,
+                xaxis_title="Date",
+                yaxis_title="Value (Base 100)",
+                **PLT_LAYOUT,
+            )
+            # Override legend positioning for this specific chart
+            fig_m.update_layout(
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    font=dict(color="#1e293b"),
+                    bgcolor="rgba(255,255,255,0.85)",
+                    bordercolor="#e2e8f0",
+                    borderwidth=1,
+                )
+            )
             style_fig(fig_m)
             st.plotly_chart(fig_m,use_container_width=True)
 
