@@ -8,3 +8,5 @@ scikit-learn>=1.4.0
 textblob>=0.18.0
 fpdf2>=2.7.9
 supabase>=2.4.0
+requests>=2.31.0
+python-dateutil>=2.8.2
