@@ -13,13 +13,11 @@ st.set_page_config(
     layout="centered",
 )
 
-# ── CSS ──────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
 [data-testid="stSidebar"] { display: none; }
 [data-testid="stHeader"]  { background: transparent; }
 .stApp { background: linear-gradient(135deg,#0f0f1a 0%,#1a1a2e 50%,#16213e 100%); }
-
 .auth-logo { text-align:center; margin-bottom:1.8rem; }
 .auth-logo h1 {
   font-size:2.2rem; font-weight:800;
@@ -27,7 +25,6 @@ st.markdown("""
   -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin:0;
 }
 .auth-logo p { color:#9e9e9e; font-size:.95rem; margin:4px 0 0 0; }
-
 .stTabs [data-baseweb="tab-list"] {
   gap:8px; background:rgba(255,255,255,.05); border-radius:12px; padding:4px;
 }
@@ -37,7 +34,6 @@ st.markdown("""
 .stTabs [aria-selected="true"] {
   background:linear-gradient(90deg,#00e5ff22,#00c85322) !important; color:#00e5ff !important;
 }
-
 .stTextInput input {
   background:rgba(255,255,255,.07) !important;
   border:1px solid rgba(255,255,255,.15) !important;
@@ -48,7 +44,6 @@ st.markdown("""
   border-color:#00e5ff !important;
   box-shadow:0 0 0 2px rgba(0,229,255,.15) !important;
 }
-
 .stButton > button[kind="primary"] {
   background:linear-gradient(90deg,#00e5ff,#00c853) !important;
   color:#000 !important; border:none !important;
@@ -57,8 +52,6 @@ st.markdown("""
   width:100% !important; transition:opacity .2s;
 }
 .stButton > button[kind="primary"]:hover { opacity:.85; }
-
-/* Google button */
 .google-btn {
   display:flex; align-items:center; justify-content:center; gap:10px;
   background:#fff; color:#3c4043; border:1px solid #dadce0;
@@ -67,7 +60,6 @@ st.markdown("""
   text-decoration:none;
 }
 .google-btn:hover { box-shadow:0 2px 8px rgba(0,0,0,.3); }
-
 .auth-divider {
   display:flex; align-items:center; gap:12px;
   color:#555; font-size:.85rem; margin:1.2rem 0;
@@ -75,7 +67,6 @@ st.markdown("""
 .auth-divider::before,.auth-divider::after {
   content:""; flex:1; border-top:1px solid rgba(255,255,255,.1);
 }
-
 .feature-row { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:1.5rem; }
 .feature-pill {
   background:rgba(0,229,255,.1); border:1px solid rgba(0,229,255,.2);
@@ -84,20 +75,31 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Already logged in ────────────────────────────────────────────────
+# ─ Already logged in ──────────────────────────────────────────────────────
 user = get_current_user()
 if user:
     st.success(f"✅ Already signed in as **{user['full_name']}** ({user['email']})")
     c1, c2 = st.columns(2)
-    with c1: st.page_link("app.py", label="➡️ Go to Dashboard", icon="📈")
+    with c1:
+        st.page_link("app.py", label="➡️ Go to Dashboard", icon="📈")
     with c2:
-        if st.button("🚪 Sign Out", use_container_width=True):
-            logout(); st.rerun()
+        if st.button("🚧 Sign Out", use_container_width=True):
+            logout()
+            st.rerun()
     st.stop()
 
-# ── Service check ────────────────────────────────────────────────────
+# ─ Guest browse link ───────────────────────────────────────────────────────
+st.markdown("""
+<div style='text-align:center; margin-bottom:0.5rem;'>
+  <a href='/' style='color:#9e9e9e; font-size:0.9rem; text-decoration:none;'>
+    👁️ Browse as Guest (no account needed)
+  </a>
+</div>
+""", unsafe_allow_html=True)
+
+# ─ Supabase check ───────────────────────────────────────────────────────────
 if not supabase_ready():
-    st.error("❌ Supabase not configured.")
+    st.warning("⚠️ Supabase not configured — login/register unavailable.")
     with st.expander("ℹ️ Setup Guide"):
         st.markdown("""
 **1.** Create free project at [supabase.com](https://supabase.com)
@@ -108,10 +110,10 @@ if not supabase_ready():
 url      = "https://xxxx.supabase.co"
 anon_key = "eyJ..."
 ```
-**3.** Redeploy.
+**3.** Redeploy / restart.
         """)
 
-# ── Hero ─────────────────────────────────────────────────────────────
+# ─ Hero ───────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="auth-logo">
   <h1>📈 Nifty50 Tracker</h1>
@@ -132,24 +134,22 @@ st.markdown("""
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ── Tabs ─────────────────────────────────────────────────────────────
+# ─ Tabs ───────────────────────────────────────────────────────────────
 tab_login, tab_register, tab_forgot = st.tabs([
     "🔑  Sign In", "✨  Create Account", "🔒  Forgot Password",
 ])
 
-# ╔═══════════════════ SIGN IN ═══════════════════╗
 with tab_login:
     st.markdown("#### Welcome back")
 
-    # ── Google OAuth button ──────────────────────
+    # Google OAuth button (only if configured)
     try:
         google_client_id = st.secrets["google"]["client_id"]
         supabase_url     = st.secrets["supabase"]["url"]
         redirect_uri     = st.secrets["google"].get("redirect_uri", "")
         google_auth_url  = (
             f"{supabase_url}/auth/v1/authorize"
-            f"?provider=google"
-            f"&redirect_to={redirect_uri}"
+            f"?provider=google&redirect_to={redirect_uri}"
         )
         st.markdown(
             f'<a href="{google_auth_url}" class="google-btn" target="_self">'
@@ -157,24 +157,14 @@ with tab_login:
             f'Continue with Google</a>',
             unsafe_allow_html=True,
         )
-        st.markdown('<div class="auth-divider">or sign in with email</div>', unsafe_allow_html=True)
-    except (KeyError, Exception):
-        # Google not configured yet — show placeholder
-        with st.expander("🔑 Sign in with Google (setup required)"):
-            st.info("""
-**To enable Google login:**
-1. Go to [Supabase Dashboard](https://supabase.com) → Authentication → Providers → Google
-2. Create OAuth credentials at [console.cloud.google.com](https://console.cloud.google.com)
-3. Add to Streamlit Secrets:
-```toml
-[google]
-client_id    = "xxxx.apps.googleusercontent.com"
-redirect_uri = "https://your-app.streamlit.app"
-```
-            """)
+        st.markdown('<div class="auth-divider">or sign in with email</div>',
+                    unsafe_allow_html=True)
+    except Exception:
+        pass  # Google not configured — silently skip
 
-    email_li    = st.text_input("📧 Email",    placeholder="you@example.com",  key="li_email")
-    password_li = st.text_input("🔒 Password", placeholder="Your password",    key="li_pass", type="password")
+    email_li    = st.text_input("📧 Email",    placeholder="you@example.com", key="li_email")
+    password_li = st.text_input("🔒 Password", placeholder="Your password",    key="li_pass",
+                                type="password")
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("🚀  Sign In", type="primary", key="btn_login", use_container_width=True):
         if not email_li.strip() or not password_li:
@@ -184,22 +174,24 @@ redirect_uri = "https://your-app.streamlit.app"
                 ok, result = login(email_li.strip().lower(), password_li)
             if ok:
                 st.success(f"✅ Welcome back, **{result['full_name']}**!")
-                st.balloons(); st.rerun()
+                st.balloons()
+                st.rerun()
             else:
                 st.error(f"❌ {result}")
     st.markdown('<div class="auth-divider">New here?</div>', unsafe_allow_html=True)
     st.markdown("👉 Switch to the **Create Account** tab above to register.")
 
-# ╔═══════════════════ REGISTER ═══════════════════╗
 with tab_register:
     st.markdown("#### Create your free account")
     c1, c2 = st.columns(2)
-    with c1: fname = st.text_input("👤 First Name", placeholder="Rahul",               key="rg_fname")
-    with c2: lname = st.text_input("Last Name",    placeholder="Sharma",              key="rg_lname")
-    email_rg    = st.text_input("📧 Email Address",   placeholder="you@example.com",   key="rg_email")
-    phone_rg    = st.text_input("📱 Phone (optional)",  placeholder="+919876543210",     key="rg_phone")
-    password_rg = st.text_input("🔒 Password",          placeholder="Min 6 characters",   key="rg_pass",  type="password")
-    confirm_rg  = st.text_input("🔁 Confirm Password",   placeholder="Repeat password",    key="rg_conf",  type="password")
+    with c1: fname = st.text_input("👤 First Name", placeholder="Rahul",  key="rg_fname")
+    with c2: lname = st.text_input("Last Name",    placeholder="Sharma", key="rg_lname")
+    email_rg    = st.text_input("📧 Email Address",    placeholder="you@example.com",  key="rg_email")
+    phone_rg    = st.text_input("📱 Phone (optional)", placeholder="+919876543210",    key="rg_phone")
+    password_rg = st.text_input("🔒 Password",         placeholder="Min 6 characters", key="rg_pass",
+                                type="password")
+    confirm_rg  = st.text_input("🔁 Confirm Password",  placeholder="Repeat password",   key="rg_conf",
+                                type="password")
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("✨  Create Account", type="primary", key="btn_register", use_container_width=True):
         full_name = f"{fname.strip()} {lname.strip()}".strip()
@@ -213,7 +205,10 @@ with tab_register:
             for e in errors: st.error(f"❌ {e}")
         else:
             with st.spinner("Creating your account..."):
-                ok, msg = register(email_rg.strip().lower(), password_rg, full_name, phone_rg.strip())
+                ok, msg = register(
+                    email_rg.strip().lower(), password_rg,
+                    full_name, phone_rg.strip()
+                )
             if ok:
                 st.success(f"✅ {msg}")
                 st.info("👉 Switch to the **Sign In** tab to log in.")
@@ -221,10 +216,9 @@ with tab_register:
                 st.error(f"❌ {msg}")
     st.caption("🔒 Your password is encrypted and stored securely in Supabase.")
 
-# ╔═══════════════════ FORGOT PASSWORD ═══════════════════╗
 with tab_forgot:
     st.markdown("#### Reset your password")
-    st.caption("Enter your email and we’ll send a password reset link.")
+    st.caption("Enter your email and we'll send a password reset link.")
     email_fp = st.text_input("📧 Email Address", placeholder="you@example.com", key="fp_email")
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("📨  Send Reset Link", type="primary", key="btn_forgot", use_container_width=True):
@@ -235,4 +229,4 @@ with tab_forgot:
                 ok, msg = reset_password(email_fp.strip().lower())
             if ok: st.success(f"✅ {msg}")
             else:  st.error(f"❌ {msg}")
-    st.caption("💡 Check spam folder if not received.")
+    st.caption("💡 Check spam folder if not received within 2 minutes.")
