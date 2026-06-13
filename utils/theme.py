@@ -1,6 +1,6 @@
 """
-utils/theme.py  —  NSE Tracker Design System v4
-Fix: no nuclear color overrides. All text scoped properly.
+utils/theme.py  —  NSE Tracker v5
+Complete CSS: properly scoped, zero invisible text.
 """
 import streamlit as st
 
@@ -8,98 +8,93 @@ LIGHT_CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
-/* ============================================
-   BASE
-   ============================================ */
+/* ─── BASE ─────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
-.stApp {
+html, body, .stApp {
   background: #f0f2f6 !important;
-  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif !important;
+  font-family: 'Inter','Segoe UI',system-ui,sans-serif !important;
+  color: #0f172a !important;
 }
 
 .block-container {
-  padding-top: 1rem !important;
+  padding-top: 0.8rem !important;
   padding-bottom: 3rem !important;
   max-width: 1280px !important;
 }
 
-.element-container { margin-bottom: 0.5rem !important; }
+.element-container { margin-bottom: 0.45rem !important; }
 
-/* Main content text — SCOPED to block-container only, not global */
-.block-container p,
-.block-container li,
-.block-container td,
-.block-container th {
+/* ─── MAIN CONTENT TEXT (scoped to main area) ── */
+[data-testid="stMainBlockContainer"] p,
+[data-testid="stMainBlockContainer"] span,
+[data-testid="stMainBlockContainer"] li,
+[data-testid="stMainBlockContainer"] td,
+[data-testid="stMainBlockContainer"] th,
+[data-testid="stMainBlockContainer"] strong,
+[data-testid="stMainBlockContainer"] em,
+[data-testid="stMainBlockContainer"] small,
+[data-testid="stMainBlockContainer"] b {
   color: #1e293b !important;
+}
+
+[data-testid="stMainBlockContainer"] h1,
+[data-testid="stMainBlockContainer"] h2,
+[data-testid="stMainBlockContainer"] h3,
+[data-testid="stMainBlockContainer"] h4,
+[data-testid="stMainBlockContainer"] h5,
+[data-testid="stMainBlockContainer"] h6 {
+  color: #0f172a !important;
+  font-weight: 800 !important;
 }
 
 [data-testid="stMarkdownContainer"] p {
   color: #1e293b !important;
   font-size: 0.95rem !important;
   margin: 0 0 0.3rem 0 !important;
-  line-height: 1.6 !important;
+  line-height: 1.65 !important;
+}
+[data-testid="stMarkdownContainer"] span,
+[data-testid="stMarkdownContainer"] strong,
+[data-testid="stMarkdownContainer"] em {
+  color: inherit !important;
 }
 
-/* Headings in main content */
-.block-container h1,
-.block-container h2,
-.block-container h3,
-.block-container h4,
-.block-container h5,
-.block-container h6 {
-  color: #0f172a !important;
-  font-weight: 800 !important;
-}
-
-/* ============================================
-   SIDEBAR  — dark navy, all text light
-   ============================================ */
+/* ─── SIDEBAR ───────────────────────────────────
+   Dark navy gradient. ALL children get light text.
+   ─────────────────────────────────────────────── */
 [data-testid="stSidebar"] {
-  background: linear-gradient(180deg, #1e1b4b 0%, #312e81 45%, #1e1b4b 100%) !important;
+  background: linear-gradient(180deg,#1e1b4b 0%,#312e81 45%,#1e1b4b 100%) !important;
   border-right: none !important;
 }
-
-/* Light text for everything inside sidebar */
-[data-testid="stSidebar"] p,
-[data-testid="stSidebar"] span,
-[data-testid="stSidebar"] div,
-[data-testid="stSidebar"] label,
-[data-testid="stSidebar"] li,
+/* Universal light text for every element in sidebar */
+[data-testid="stSidebar"] *:not(button) {
+  color: #c7d2fe !important;
+}
 [data-testid="stSidebar"] h1,
 [data-testid="stSidebar"] h2,
 [data-testid="stSidebar"] h3,
 [data-testid="stSidebar"] strong,
 [data-testid="stSidebar"] b {
-  color: #e0e7ff !important;
+  color: #ffffff !important;
 }
-
-[data-testid="stSidebar"] .stRadio label {
-  font-size: 0.88rem !important;
-  font-weight: 500 !important;
-  color: #c7d2fe !important;
-  padding: 5px 0 !important;
-}
-[data-testid="stSidebar"] .stRadio label:hover { color: #ffffff !important; }
-
-[data-testid="stSidebar"] hr {
-  border: none !important;
-  border-top: 1px solid rgba(255,255,255,.18) !important;
-  margin: .6rem 0 !important;
-}
-
 [data-testid="stSidebar"] [data-testid="stCaption"] p,
 [data-testid="stSidebar"] [data-testid="stCaption"] span {
   color: #a5b4fc !important;
   font-size: 0.76rem !important;
 }
-
+[data-testid="stSidebar"] hr {
+  border: none !important;
+  border-top: 1px solid rgba(255,255,255,.18) !important;
+  margin: .5rem 0 !important;
+}
 [data-testid="stSidebar"] .stButton > button {
   background: rgba(255,255,255,.12) !important;
   color: #e0e7ff !important;
   border: 1px solid rgba(255,255,255,.2) !important;
   border-radius: 8px !important;
-  font-size: 0.84rem !important;
+  font-weight: 600 !important;
+  font-size: 0.85rem !important;
   width: 100% !important;
 }
 [data-testid="stSidebar"] .stButton > button:hover {
@@ -107,106 +102,96 @@ LIGHT_CSS = """
   color: #ffffff !important;
 }
 
-/* ============================================
-   TOP HEADER BAR
-   ============================================ */
+/* ─── HEADER BAR ────────────────────────────────── */
 [data-testid="stHeader"] {
-  background: rgba(240,242,246,.95) !important;
-  backdrop-filter: blur(10px) !important;
+  background: rgba(240,242,246,.96) !important;
+  backdrop-filter: blur(12px) !important;
   border-bottom: 1px solid #e2e8f0 !important;
 }
 
-/* ============================================
-   HERO BANNER
-   ============================================ */
+/* ─── HERO BANNER ───────────────────────────────── */
 .hero-banner {
-  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 55%, #a21caf 100%);
+  background: linear-gradient(135deg,#4f46e5 0%,#7c3aed 52%,#a21caf 100%);
   border-radius: 16px;
-  padding: 1.4rem 2rem 1.2rem 2rem;
+  padding: 1.4rem 2rem 1.2rem;
   margin-bottom: 1.4rem;
   display: flex;
   align-items: center;
   gap: 1.2rem;
-  box-shadow: 0 4px 24px rgba(79,70,229,.28);
+  box-shadow: 0 4px 28px rgba(79,70,229,.28);
 }
+.hero-banner * { color: #ffffff !important; }
 .hero-banner .hero-icon { font-size: 2.6rem; line-height: 1; }
 .hero-banner .hero-title {
-  font-size: 1.75rem;
-  font-weight: 900;
-  color: #ffffff !important;
+  font-size: 1.75rem !important;
+  font-weight: 900 !important;
   margin: 0;
-  letter-spacing: -0.02em;
+  letter-spacing: -.02em;
   line-height: 1.1;
 }
 .hero-banner .hero-sub {
-  font-size: 0.85rem;
+  font-size: 0.85rem !important;
   color: rgba(255,255,255,.85) !important;
-  margin: 5px 0 0 0;
+  margin: 5px 0 0;
   display: flex;
   align-items: center;
   gap: .5rem;
   flex-wrap: wrap;
 }
-/* Force all text inside hero to stay white */
-.hero-banner p,
-.hero-banner span,
-.hero-banner div,
-.hero-banner label {
-  color: #ffffff !important;
-}
 
-/* ============================================
-   BADGES  — each has its own explicit color
-   ============================================ */
+/* ─── BADGES ─────────────────────────────────────
+   Each badge has its OWN explicit color.
+   Must override the sidebar * rule when badges
+   appear inside the sidebar.
+   ─────────────────────────────────────────────── */
 .ui-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 11px;
+  padding: 3px 12px;
   border-radius: 20px;
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: .05em;
   white-space: nowrap;
   text-transform: uppercase;
+  line-height: 1.4;
 }
-.badge-live { background: #dcfce7 !important; color: #14532d !important; border: 1.5px solid #86efac; }
-.badge-hist { background: #dbeafe !important; color: #1e3a8a !important; border: 1.5px solid #93c5fd; }
-.badge-sim  { background: #fef9c3 !important; color: #713f12 !important; border: 1.5px solid #fde047; }
-.badge-nse  { background: #ede9fe !important; color: #3b0764 !important; border: 1.5px solid #c4b5fd; }
-.badge-red  { background: #ffe4e6 !important; color: #881337 !important; border: 1.5px solid #fda4af; }
+.badge-live { background:#dcfce7 !important; color:#14532d !important; border:1.5px solid #86efac; }
+.badge-hist { background:#dbeafe !important; color:#1e3a8a !important; border:1.5px solid #93c5fd; }
+.badge-sim  { background:#fef9c3 !important; color:#713f12 !important; border:1.5px solid #fde047; }
+.badge-nse  { background:#ede9fe !important; color:#3b0764 !important; border:1.5px solid #c4b5fd; }
+.badge-red  { background:#ffe4e6 !important; color:#881337 !important; border:1.5px solid #fda4af; }
+.badge-live span, .badge-hist span, .badge-sim span,
+.badge-nse  span, .badge-red  span { color: inherit !important; }
 
-/* ============================================
-   METRIC CARDS
-   ============================================ */
+/* ─── METRIC CARDS ───────────────────────────────── */
 [data-testid="metric-container"] {
   background: #ffffff !important;
   border: 1px solid #e2e8f0 !important;
-  border-radius: 14px !important;
   border-left: 4px solid #6366f1 !important;
+  border-radius: 14px !important;
   padding: .9rem 1.1rem !important;
   box-shadow: 0 2px 8px rgba(15,23,42,.07) !important;
 }
-[data-testid="metric-container"] label {
+[data-testid="metric-container"] label,
+[data-testid="metric-container"] [data-testid="stMetricLabel"] p {
   color: #475569 !important;
   font-size: 0.74rem !important;
   font-weight: 700 !important;
   text-transform: uppercase !important;
-  letter-spacing: .07em !important;
+  letter-spacing: .06em !important;
 }
-[data-testid="metric-container"] [data-testid="stMetricValue"] {
+[data-testid="stMetricValue"] {
   color: #0f172a !important;
-  font-size: 1.5rem !important;
+  font-size: 1.45rem !important;
   font-weight: 800 !important;
+  line-height: 1.2 !important;
 }
-[data-testid="stMetricDelta"] {
-  font-size: 0.84rem !important;
-  font-weight: 700 !important;
-}
+[data-testid="stMetricValue"] * { color: #0f172a !important; }
+[data-testid="stMetricDelta"]   { font-size:.84rem !important; font-weight:700 !important; }
 
-/* ============================================
-   DATAFRAMES
-   ============================================ */
+/* ─── DATAFRAMES ─────────────────────────────────── */
 [data-testid="stDataFrame"] > div {
   background: #ffffff !important;
   border: 1px solid #e2e8f0 !important;
@@ -215,9 +200,7 @@ LIGHT_CSS = """
   box-shadow: 0 1px 6px rgba(15,23,42,.06) !important;
 }
 
-/* ============================================
-   BUTTONS
-   ============================================ */
+/* ─── BUTTONS ────────────────────────────────────── */
 .stButton > button {
   border-radius: 9px !important;
   font-weight: 700 !important;
@@ -225,27 +208,23 @@ LIGHT_CSS = """
   transition: all .15s ease !important;
 }
 .stButton > button[kind="primary"] {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+  background: linear-gradient(135deg,#6366f1,#8b5cf6) !important;
   color: #ffffff !important;
   border: none !important;
   box-shadow: 0 3px 12px rgba(99,102,241,.35) !important;
 }
-.stButton > button[kind="primary"]:hover {
-  filter: brightness(1.08) !important;
-}
+.stButton > button[kind="primary"]:hover { filter:brightness(1.08) !important; }
 .stButton > button[kind="secondary"] {
   background: #f1f5f9 !important;
   color: #4338ca !important;
   border: 1.5px solid #c7d2fe !important;
 }
-.stButton > button[kind="secondary"]:hover { background: #e0e7ff !important; }
+.stButton > button[kind="secondary"]:hover { background:#e0e7ff !important; }
 
-/* ============================================
-   INPUTS
-   ============================================ */
+/* ─── INPUTS ─────────────────────────────────────── */
 .stTextInput input, .stNumberInput input,
-.stSelectbox > div > div, .stTextArea textarea,
-.stDateInput input {
+.stSelectbox > div > div,
+.stTextArea textarea, .stDateInput input {
   background: #ffffff !important;
   border: 1.5px solid #cbd5e1 !important;
   border-radius: 9px !important;
@@ -266,22 +245,15 @@ LIGHT_CSS = """
   font-size: 0.88rem !important;
 }
 
-/* ============================================
-   ALERTS
-   ============================================ */
-.stSuccess > div  { background: #f0fdf4 !important; border-left: 4px solid #22c55e !important; color: #166534 !important; font-weight: 600 !important; border-radius: 10px !important; }
-.stError   > div  { background: #fff1f2 !important; border-left: 4px solid #f43f5e !important; color: #9f1239 !important; font-weight: 600 !important; border-radius: 10px !important; }
-.stWarning > div  { background: #fffbeb !important; border-left: 4px solid #f59e0b !important; color: #92400e !important; font-weight: 600 !important; border-radius: 10px !important; }
-.stInfo    > div  { background: #eff6ff !important; border-left: 4px solid #3b82f6 !important; color: #1e3a8a !important; font-weight: 600 !important; border-radius: 10px !important; }
-/* text inside alerts */
-.stSuccess > div p, .stSuccess > div span,
-.stError   > div p, .stError   > div span,
-.stWarning > div p, .stWarning > div span,
-.stInfo    > div p, .stInfo    > div span { color: inherit !important; }
+/* ─── ALERTS ─────────────────────────────────────── */
+.stSuccess > div { background:#f0fdf4 !important; border-left:4px solid #22c55e !important; color:#166534 !important; font-weight:600 !important; border-radius:10px !important; }
+.stError   > div { background:#fff1f2 !important; border-left:4px solid #f43f5e !important; color:#9f1239 !important; font-weight:600 !important; border-radius:10px !important; }
+.stWarning > div { background:#fffbeb !important; border-left:4px solid #f59e0b !important; color:#92400e !important; font-weight:600 !important; border-radius:10px !important; }
+.stInfo    > div { background:#eff6ff !important; border-left:4px solid #3b82f6 !important; color:#1e3a8a !important; font-weight:600 !important; border-radius:10px !important; }
+.stSuccess > div *, .stError > div *,
+.stWarning > div *, .stInfo  > div * { color: inherit !important; }
 
-/* ============================================
-   TABS
-   ============================================ */
+/* ─── TABS ───────────────────────────────────────── */
 .stTabs [data-baseweb="tab-list"] {
   background: #e8edf5 !important;
   border-radius: 12px !important;
@@ -294,7 +266,7 @@ LIGHT_CSS = """
   padding: 7px 20px !important;
   font-weight: 700 !important;
   font-size: 0.88rem !important;
-  color: #475569 !important;
+  color: #374151 !important;
   background: transparent !important;
 }
 .stTabs [aria-selected="true"] {
@@ -302,44 +274,38 @@ LIGHT_CSS = """
   color: #4f46e5 !important;
   box-shadow: 0 2px 8px rgba(79,70,229,.18) !important;
 }
+.stTabs [data-baseweb="tab"] span { color: inherit !important; }
 
-/* ============================================
-   SECTION LABEL
-   ============================================ */
+/* ─── SECTION LABEL ─────────────────────────────── */
 .sec-label {
   font-size: 0.76rem !important;
   font-weight: 800 !important;
   text-transform: uppercase !important;
   letter-spacing: .1em !important;
   color: #6366f1 !important;
-  margin: 1rem 0 .5rem 0 !important;
+  margin: 1rem 0 .5rem !important;
   display: flex !important;
   align-items: center !important;
   gap: .5rem !important;
 }
 .sec-label::before {
-  content: '';
-  display: inline-block;
-  width: 3px;
-  height: 14px;
-  background: #6366f1;
-  border-radius: 2px;
-  flex-shrink: 0;
+  content:'';
+  display:inline-block;
+  width:3px; height:14px;
+  background:#6366f1;
+  border-radius:2px;
+  flex-shrink:0;
 }
 
-/* ============================================
-   DIVIDER
-   ============================================ */
+/* ─── DIVIDER ────────────────────────────────────── */
 .ui-divider {
   height: 1px;
-  background: linear-gradient(90deg, #6366f1 0%, #e2e8f0 60%, transparent 100%);
+  background: linear-gradient(90deg,#6366f1 0%,#e2e8f0 55%,transparent 100%);
   border: none;
-  margin: 1.2rem 0 .8rem 0;
+  margin: 1.2rem 0 .8rem;
 }
 
-/* ============================================
-   CARDS (ui-card + content-card)
-   ============================================ */
+/* ─── CARDS ──────────────────────────────────────── */
 .ui-card, .content-card {
   background: #ffffff !important;
   border-radius: 14px;
@@ -348,29 +314,16 @@ LIGHT_CSS = """
   box-shadow: 0 2px 10px rgba(15,23,42,.06);
   margin-bottom: .9rem;
 }
-.ui-card p, .ui-card label, .ui-card span,
-.content-card p, .content-card label, .content-card span {
-  color: #1e293b !important;
+.ui-card *, .content-card * { color: #1e293b !important; }
+
+/* ─── CAPTION ────────────────────────────────────── */
+[data-testid="stCaptionContainer"] p,
+[data-testid="stCaptionContainer"] span {
+  color: #64748b !important;
+  font-size: 0.8rem !important;
 }
 
-/* ============================================
-   STAT CHIP
-   ============================================ */
-.stat-chip {
-  display: inline-block;
-  background: linear-gradient(135deg,#4f46e5,#7c3aed);
-  color: #ffffff !important;
-  font-weight: 800;
-  font-size: 1.1rem;
-  border-radius: 10px;
-  padding: .4rem 1rem;
-  min-width: 64px;
-  text-align: center;
-}
-
-/* ============================================
-   EXPANDERS
-   ============================================ */
+/* ─── EXPANDERS ──────────────────────────────────── */
 .streamlit-expanderHeader {
   background: #f8fafc !important;
   border-radius: 9px !important;
@@ -380,32 +333,33 @@ LIGHT_CSS = """
   border: 1px solid #e0e7ff !important;
 }
 
-/* ============================================
-   SLIDERS
-   ============================================ */
+/* ─── SLIDERS ────────────────────────────────────── */
 .stSlider [data-baseweb="slider"] div[role="slider"] {
   background: #6366f1 !important;
   border: 2px solid #fff !important;
   box-shadow: 0 0 0 3px rgba(99,102,241,.25) !important;
 }
 
-/* ============================================
-   SCROLLBAR
-   ============================================ */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: #f1f5f9; }
-::-webkit-scrollbar-thumb { background: #a5b4fc; border-radius: 8px; }
-::-webkit-scrollbar-thumb:hover { background: #6366f1; }
+/* ─── SCROLLBAR ──────────────────────────────────── */
+::-webkit-scrollbar { width:5px; height:5px; }
+::-webkit-scrollbar-track { background:#f1f5f9; }
+::-webkit-scrollbar-thumb { background:#a5b4fc; border-radius:8px; }
+::-webkit-scrollbar-thumb:hover { background:#6366f1; }
 
-/* ============================================
-   PLOTLY CHART BACKGROUND
-   ============================================ */
-.js-plotly-plot .plotly .bg { fill: #ffffff !important; }
-
+/* ─── STAT CHIP ──────────────────────────────────── */
+.stat-chip {
+  display:inline-block;
+  background:linear-gradient(135deg,#4f46e5,#7c3aed);
+  color:#ffffff !important;
+  font-weight:800;
+  font-size:1.1rem;
+  border-radius:10px;
+  padding:.4rem 1rem;
+  min-width:64px;
+  text-align:center;
+}
 </style>
 """
 
-
 def inject():
-    """Call once at the top of every page."""
     st.markdown(LIGHT_CSS, unsafe_allow_html=True)
