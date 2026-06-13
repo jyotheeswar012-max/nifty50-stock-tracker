@@ -3,11 +3,17 @@ Page: Watchlist — guests can view live prices; saving requires login.
 """
 import streamlit as st
 from utils.supabase_auth import get_current_user, is_guest, login_nudge
-from utils.db import wl_load, wl_add, wl_remove
 
 st.set_page_config(page_title="Watchlist", page_icon="⭐", layout="wide")
 user  = get_current_user()
 guest = is_guest()
+
+try:
+    from utils.db import wl_load, wl_add, wl_remove
+except Exception:
+    def wl_load():              return st.session_state.get("watchlist_local", [])
+    def wl_add(n, s):           st.session_state.setdefault("watchlist_local", []).append({"stock_name": n, "symbol": s}); return True
+    def wl_remove(n):           st.session_state["watchlist_local"] = [w for w in st.session_state.get("watchlist_local", []) if w["stock_name"] != n]; return True
 
 import yfinance as yf
 import pandas as pd
@@ -55,7 +61,7 @@ if guest:
 else:
     st.caption(f"Signed in as **{user['full_name']}** • Saved to your account")
 
-# ── Live prices table (everyone sees this) ────────────────────────────────
+# ── Live prices table (everyone sees this) ───────────────────────────────
 st.subheader("📊 Live Prices — All Nifty 50")
 rows = []
 for name_s, sym in NAME_TO_SYM.items():
@@ -70,29 +76,37 @@ for name_s, sym in NAME_TO_SYM.items():
                 "Change": f"{chg:+.2f}", "Change %": f"{pct:+.2f}%",
                 "📊": "🟢" if chg >= 0 else "🔴"})
         else:
-            rows.append({"Stock": name_s, "Price (₹)": "N/A", "Change": "N/A", "Change %": "N/A", "📊": "?"})
+            rows.append({"Stock": name_s, "Price (₹)": "N/A",
+                "Change": "N/A", "Change %": "N/A", "📊": "?"})
     except Exception:
-        rows.append({"Stock": name_s, "Price (₹)": "N/A", "Change": "N/A", "Change %": "N/A", "📊": "?"})
-st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        rows.append({"Stock": name_s, "Price (₹)": "N/A",
+            "Change": "N/A", "Change %": "N/A", "📊": "?"})
+if rows:
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 st.markdown("---")
 
-# ── Personal watchlist — requires login ───────────────────────────────────
+# ── Personal watchlist — requires login ──────────────────────────────────
 st.subheader("📌 My Watchlist")
 if guest:
     login_nudge("save your personal watchlist")
 else:
     watchlist     = wl_load()
-    watched_names = [w["stock_name"] for w in watchlist]
+    # normalise key: db returns 'stock_name'
+    watched_names = [w.get("stock_name", w.get("name", "")) for w in watchlist]
     available     = [s for s in NIFTY50_NAMES if s not in watched_names]
 
     cols = st.columns([3, 1])
     with cols[0]:
-        add_stock = st.selectbox("Add Stock", available) if available else st.selectbox("Add Stock", ["All stocks added"])
+        if available:
+            add_stock = st.selectbox("Add Stock", available)
+        else:
+            st.selectbox("Add Stock", ["All stocks already added"])
+            add_stock = None
     with cols[1]:
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("➕ Add to Watchlist", use_container_width=True, disabled=not available):
-            if wl_add(add_stock, NAME_TO_SYM[add_stock]):
+        if st.button("➕ Add to Watchlist", use_container_width=True, disabled=(not available)):
+            if add_stock and wl_add(add_stock, NAME_TO_SYM[add_stock]):
                 st.success(f"✅ Added {add_stock}")
                 st.rerun()
             else:
@@ -103,7 +117,7 @@ else:
     else:
         wl_rows = []
         for w in watchlist:
-            wname = w["stock_name"]
+            wname = w.get("stock_name", w.get("name", ""))
             wsym  = w.get("symbol", NAME_TO_SYM.get(wname, ""))
             try:
                 h = yf.Ticker(wsym).history(period="5d", interval="1d")
@@ -116,10 +130,13 @@ else:
                         "Change": f"{chg:+.2f}", "Change %": f"{pct:+.2f}%",
                         "📊": "🟢" if chg >= 0 else "🔴"})
                 else:
-                    wl_rows.append({"Stock": wname, "Price (₹)": "N/A", "Change": "N/A", "Change %": "N/A", "📊": "?"})
+                    wl_rows.append({"Stock": wname, "Price (₹)": "N/A",
+                        "Change": "N/A", "Change %": "N/A", "📊": "?"})
             except Exception:
-                wl_rows.append({"Stock": wname, "Price (₹)": "N/A", "Change": "N/A", "Change %": "N/A", "📊": "?"})
-        st.dataframe(pd.DataFrame(wl_rows), use_container_width=True, hide_index=True)
+                wl_rows.append({"Stock": wname, "Price (₹)": "N/A",
+                    "Change": "N/A", "Change %": "N/A", "📊": "?"})
+        if wl_rows:
+            st.dataframe(pd.DataFrame(wl_rows), use_container_width=True, hide_index=True)
 
         remove = st.selectbox("🗑️ Remove Stock", watched_names)
         if st.button("Remove from Watchlist", type="secondary"):
