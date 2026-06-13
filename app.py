@@ -217,9 +217,10 @@ PLT_LAYOUT = dict(
 )
 
 # Axis style — passed to update_xaxes / update_yaxes
+# NOTE: use title_font (not titlefont) for Plotly >= 5.x compatibility
 AXIS_STYLE = dict(
     tickfont=dict(color="#1e293b", size=11, family="Inter, sans-serif"),
-    titlefont=dict(color="#0f172a", size=12, family="Inter, sans-serif"),
+    title_font=dict(color="#0f172a", size=12, family="Inter, sans-serif"),
     linecolor="#cbd5e1",
     gridcolor="#f1f5f9",
     zerolinecolor="#cbd5e1",
