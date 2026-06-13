@@ -1,5 +1,9 @@
+"""
+Page: Watchlist — persisted in Supabase DB
+"""
 import streamlit as st
 from utils.supabase_auth import require_login
+from utils.db import wl_load, wl_add, wl_remove
 
 st.set_page_config(page_title="Watchlist", page_icon="⭐", layout="wide")
 user = require_login()
@@ -8,8 +12,6 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from datetime import datetime
-import pytz
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -47,29 +49,35 @@ def safe_float(val, default=0.0):
     except Exception:
         return default
 
-if "watchlist" not in st.session_state:
-    st.session_state.watchlist = []
-
 st.title("⭐ My Watchlist")
-st.caption(f"Signed in as **{user['full_name']}**")
+st.caption(f"Signed in as **{user['full_name']}** • Saved to your account")
 
+# ── Load from DB ──────────────────────────────────────────────────
+watchlist = wl_load()  # list of {stock_name, symbol, ...}
+watched_names = [w["stock_name"] for w in watchlist]
+
+# ── Add stock ─────────────────────────────────────────────────────
+available = [s for s in NIFTY50_NAMES if s not in watched_names]
 cols = st.columns([3, 1])
 with cols[0]:
-    add_stock = st.selectbox("Add Stock", [s for s in NIFTY50_NAMES if s not in st.session_state.watchlist])
+    add_stock = st.selectbox("Add Stock", available) if available else st.selectbox("Add Stock", ["All stocks added"])
 with cols[1]:
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("➕ Add to Watchlist", use_container_width=True):
-        st.session_state.watchlist.append(add_stock)
-        st.rerun()
+    if st.button("➕ Add to Watchlist", use_container_width=True, disabled=not available):
+        if wl_add(add_stock, NAME_TO_SYM[add_stock]):
+            st.success(f"✅ Added {add_stock}")
+            st.rerun()
+        else:
+            st.error("❌ Could not save. Check Supabase setup.")
 
-if not st.session_state.watchlist:
-    st.info("💡 Your watchlist is empty. Add stocks above.")
+if not watchlist:
+    st.info("💡 Your watchlist is empty. Add stocks above. Data is saved to your account across sessions!")
 else:
     st.markdown("---")
     rows = []
-    for name in st.session_state.watchlist:
-        sym = NAME_TO_SYM.get(name)
-        if not sym: continue
+    for w in watchlist:
+        name = w["stock_name"]
+        sym  = w.get("symbol", NAME_TO_SYM.get(name, ""))
         try:
             h = yf.Ticker(sym).history(period="5d", interval="1d")
             if h is not None and len(h) >= 2:
@@ -80,12 +88,19 @@ else:
                 rows.append({"Stock": name, "Price (₹)": f"₹{curr:,.2f}",
                     "Change": f"{chg:+.2f}", "Change %": f"{pct:+.2f}%",
                     "📊": "🟢" if chg >= 0 else "🔴"})
+            else:
+                rows.append({"Stock": name, "Price (₹)": "N/A", "Change": "N/A", "Change %": "N/A", "📊": "?"})
         except Exception:
             rows.append({"Stock": name, "Price (₹)": "N/A", "Change": "N/A", "Change %": "N/A", "📊": "?"})
-    if rows:
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-    remove = st.selectbox("🗑️ Remove Stock", st.session_state.watchlist)
-    if st.button("Remove"):
-        st.session_state.watchlist.remove(remove)
-        st.rerun()
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    # ── Remove ────────────────────────────────────────────────────
+    st.markdown("---")
+    remove = st.selectbox("🗑️ Remove Stock", watched_names)
+    if st.button("Remove from Watchlist", type="secondary"):
+        if wl_remove(remove):
+            st.success(f"✅ Removed {remove}")
+            st.rerun()
+        else:
+            st.error("❌ Could not remove.")

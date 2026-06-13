@@ -1,3 +1,6 @@
+"""
+Page: Paper Trading Simulator with P&L History Chart + CSV Export + PDF Export
+"""
 import streamlit as st
 from utils.supabase_auth import require_login
 
@@ -7,8 +10,10 @@ user = require_login()
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import plotly.graph_objects as go
 from datetime import datetime
 import pytz
+import io
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -56,45 +61,105 @@ def get_live_price(sym):
         pass
     return None
 
-# ---- session state ----
-if "pt_balance"   not in st.session_state: st.session_state.pt_balance   = 1_000_000.0
-if "pt_holdings"  not in st.session_state: st.session_state.pt_holdings  = {}
-if "pt_trades"    not in st.session_state: st.session_state.pt_trades    = []
-if "pt_equity"    not in st.session_state: st.session_state.pt_equity    = []
+for k, v in [("pt_balance", 1_000_000.0), ("pt_holdings", {}), ("pt_trades", []), ("pt_equity", [])]:
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 IST = pytz.timezone("Asia/Kolkata")
 
 def _snapshot_equity():
-    syms = list(st.session_state.pt_holdings.keys())
-    prices = {}
-    for s in syms:
-        p = get_live_price(s)
-        if p: prices[s] = p
     port_val = sum(
-        prices.get(sym, h["avg_price"]) * h["qty"]
-        for sym, h in st.session_state.pt_holdings.items()
+        (get_live_price(s) or h["avg_price"]) * h["qty"]
+        for s, h in st.session_state.pt_holdings.items()
     )
     total = st.session_state.pt_balance + port_val
-    st.session_state.pt_equity.append({"time": datetime.now(IST).strftime("%H:%M:%S"), "equity": total})
+    st.session_state.pt_equity.append({
+        "time": datetime.now(IST).strftime("%H:%M:%S"),
+        "equity": round(total, 2),
+    })
 
+def generate_pdf():
+    try:
+        from fpdf import FPDF
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.cell(0, 10, "Nifty50 Tracker — Paper Trading Report", ln=True, align="C")
+        pdf.set_font("Helvetica", "", 10)
+        pdf.cell(0, 8, f"Generated: {datetime.now(IST).strftime('%Y-%m-%d %H:%M IST')}", ln=True, align="C")
+        pdf.cell(0, 8, f"User: {user['full_name']} ({user['email']})", ln=True, align="C")
+        pdf.ln(4)
+
+        port_val = sum(
+            (get_live_price(s) or h["avg_price"]) * h["qty"]
+            for s, h in st.session_state.pt_holdings.items()
+        )
+        total_equity = st.session_state.pt_balance + port_val
+        pnl = total_equity - 1_000_000.0
+
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.cell(0, 10, "Account Summary", ln=True)
+        pdf.set_font("Helvetica", "", 11)
+        for label, val in [
+            ("Starting Capital", "₹10,00,000.00"),
+            ("Cash Balance",     f"₹{st.session_state.pt_balance:,.2f}"),
+            ("Portfolio Value",  f"₹{port_val:,.2f}"),
+            ("Total Equity",     f"₹{total_equity:,.2f}"),
+            ("Net P&L",          f"₹{pnl:+,.2f}"),
+            ("Total Trades",     str(len(st.session_state.pt_trades))),
+        ]:
+            pdf.cell(60, 8, label + ":", border=0)
+            pdf.cell(0, 8, val, ln=True)
+
+        if st.session_state.pt_trades:
+            pdf.ln(4)
+            pdf.set_font("Helvetica", "B", 13)
+            pdf.cell(0, 10, "Trade Log", ln=True)
+            pdf.set_font("Helvetica", "B", 9)
+            headers = ["Time", "Stock", "Type", "Qty", "Price", "Value"]
+            widths  = [22, 52, 16, 16, 26, 28]
+            for h_label, w in zip(headers, widths):
+                pdf.cell(w, 7, h_label, border=1)
+            pdf.ln()
+            pdf.set_font("Helvetica", "", 9)
+            for trade in st.session_state.pt_trades[-50:]:
+                row = [
+                    str(trade.get("time", "")),
+                    str(trade.get("stock", ""))[:28],
+                    str(trade.get("type", "")),
+                    str(trade.get("qty", "")),
+                    f"₹{trade.get('price', 0):,.2f}",
+                    f"₹{trade.get('value', 0):,.2f}",
+                ]
+                for cell, w in zip(row, widths):
+                    pdf.cell(w, 6, cell, border=1)
+                pdf.ln()
+
+        return bytes(pdf.output())
+    except ImportError:
+        return None
+
+# ── UI ──────────────────────────────────────────────────────────────
 st.title("📝 Paper Trading Simulator")
-st.caption(f"Signed in as **{user['full_name']}** • Virtual money only")
+st.caption(f"Signed in as **{user['full_name']}** • Virtual money only • Starting capital ₹10,00,000")
 
-# ---- metrics ----
 port_val = sum(
     (get_live_price(sym) or h["avg_price"]) * h["qty"]
     for sym, h in st.session_state.pt_holdings.items()
 )
 total_equity = st.session_state.pt_balance + port_val
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("💵 Cash Balance",   f"₹{st.session_state.pt_balance:,.2f}")
-m2.metric("💼 Portfolio Value", f"₹{port_val:,.2f}")
-m3.metric("📊 Total Equity",   f"₹{total_equity:,.2f}")
-m4.metric("🔄 Trades",         len(st.session_state.pt_trades))
+pnl_total    = total_equity - 1_000_000.0
+
+m1, m2, m3, m4, m5 = st.columns(5)
+m1.metric("💵 Cash",       f"₹{st.session_state.pt_balance:,.2f}")
+m2.metric("💼 Portfolio", f"₹{port_val:,.2f}")
+m3.metric("📊 Equity",   f"₹{total_equity:,.2f}")
+m4.metric("📈 Net P&L",   f"₹{pnl_total:+,.2f}", delta=f"{"+" if pnl_total>=0 else ""}{pnl_total/10000:.2f}%")
+m5.metric("🔄 Trades",   len(st.session_state.pt_trades))
 
 st.markdown("---")
 
-# ---- order form ----
+# ── Order form ──────────────────────────────────────────────────────
 st.subheader("🛒 Place Order")
 col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
 with col1: stock_name = st.selectbox("Stock", NIFTY50_NAMES, key="pt_stock")
@@ -107,12 +172,12 @@ with col4:
 sym = NAME_TO_SYM[stock_name]
 live_price = get_live_price(sym)
 if live_price:
-    st.info(f"📊 Live price of **{stock_name}**: ₹{live_price:,.2f} | Order value: ₹{live_price*qty:,.2f}")
+    st.info(f"📊 **{stock_name}**: ₹{live_price:,.2f} | Order value: ₹{live_price*qty:,.2f}")
 
 if execute:
     price = live_price or 0.0
     if price <= 0:
-        st.error("❌ Could not fetch live price. Try again.")
+        st.error("❌ Could not fetch live price.")
     elif order_type == "BUY":
         cost = price * qty
         if cost > st.session_state.pt_balance:
@@ -120,8 +185,8 @@ if execute:
         else:
             st.session_state.pt_balance -= cost
             h = st.session_state.pt_holdings.get(sym, {"qty": 0, "avg_price": 0.0})
-            total_qty  = h["qty"] + qty
-            avg        = (h["avg_price"] * h["qty"] + price * qty) / total_qty
+            total_qty = h["qty"] + qty
+            avg = (h["avg_price"] * h["qty"] + price * qty) / total_qty
             st.session_state.pt_holdings[sym] = {"qty": total_qty, "avg_price": avg, "name": stock_name}
             st.session_state.pt_trades.append({
                 "time": datetime.now(IST).strftime("%H:%M:%S"), "stock": stock_name,
@@ -129,37 +194,33 @@ if execute:
             })
             _snapshot_equity()
             st.success(f"✅ BUY {qty} x {stock_name} @ ₹{price:,.2f} = ₹{cost:,.2f}")
-    else:  # SELL
+    else:
         holding = st.session_state.pt_holdings.get(sym)
         if not holding or holding["qty"] < qty:
             held = holding["qty"] if holding else 0
-            st.error(f"❌ Not enough shares. Holding {held}, trying to sell {qty}.")
+            st.error(f"❌ Not enough shares. Holding {held}.")
         else:
-            proceeds     = price * qty
-            realised_pnl = (price - holding["avg_price"]) * qty
+            proceeds = price * qty
+            pnl = (price - holding["avg_price"]) * qty
             st.session_state.pt_balance += proceeds
             new_qty = holding["qty"] - qty
-            if new_qty == 0:
-                del st.session_state.pt_holdings[sym]
-            else:
-                st.session_state.pt_holdings[sym]["qty"] = new_qty
+            if new_qty == 0: del st.session_state.pt_holdings[sym]
+            else: st.session_state.pt_holdings[sym]["qty"] = new_qty
             st.session_state.pt_trades.append({
                 "time": datetime.now(IST).strftime("%H:%M:%S"), "stock": stock_name,
-                "type": "SELL", "qty": qty, "price": price, "value": proceeds,
-                "pnl": realised_pnl,
+                "type": "SELL", "qty": qty, "price": price, "value": proceeds, "pnl": pnl,
             })
             _snapshot_equity()
-            pnl_str = f"₹{realised_pnl:+,.2f}"
-            st.success(f"✅ SELL {qty} x {stock_name} @ ₹{price:,.2f} | P&L: {pnl_str}")
+            st.success(f"✅ SELL {qty} x {stock_name} @ ₹{price:,.2f} | P&L: ₹{pnl:+,.2f}")
 
 st.markdown("---")
 
-# ---- holdings ----
+# ── Holdings ────────────────────────────────────────────────────────
 if st.session_state.pt_holdings:
     st.subheader("💼 Current Holdings")
     h_rows = []
     for sym_h, h in st.session_state.pt_holdings.items():
-        lp = get_live_price(sym_h) or h["avg_price"]
+        lp  = get_live_price(sym_h) or h["avg_price"]
         pnl = (lp - h["avg_price"]) * h["qty"]
         h_rows.append({
             "Stock": h["name"], "Qty": h["qty"],
@@ -170,15 +231,72 @@ if st.session_state.pt_holdings:
         })
     st.dataframe(pd.DataFrame(h_rows), use_container_width=True, hide_index=True)
 
-# ---- trade log ----
+# ── P&L History Chart ────────────────────────────────────────────────
+if len(st.session_state.pt_equity) >= 2:
+    st.markdown("---")
+    st.subheader("📈 Equity History")
+    eq_df = pd.DataFrame(st.session_state.pt_equity)
+    max_eq = eq_df["equity"].max()
+    min_eq = eq_df["equity"].min()
+    fig_eq = go.Figure()
+    fig_eq.add_trace(go.Scatter(
+        x=eq_df.index, y=eq_df["equity"],
+        mode="lines+markers", fill="tozeroy", name="Total Equity",
+        line=dict(color="#00c853", width=2),
+        marker=dict(size=5),
+        hovertemplate="₹%{y:,.2f}<extra></extra>",
+    ))
+    fig_eq.add_hline(y=1_000_000, line_dash="dash", line_color="#ffd600",
+                     annotation_text="Starting Capital ₹10,00,000")
+    fig_eq.add_annotation(x=eq_df["equity"].idxmax(), y=max_eq,
+        text=f"Max: ₹{max_eq:,.0f}", showarrow=True, arrowhead=2,
+        font=dict(color="#00c853"), bgcolor="rgba(0,200,83,.15)")
+    fig_eq.add_annotation(x=eq_df["equity"].idxmin(), y=min_eq,
+        text=f"Min: ₹{min_eq:,.0f}", showarrow=True, arrowhead=2,
+        font=dict(color="#ff1744"), bgcolor="rgba(255,23,68,.15)")
+    fig_eq.update_layout(
+        title="Portfolio Equity Over Time",
+        template="plotly_dark", height=380,
+        xaxis_title="Trade #", yaxis_title="Equity (₹)",
+    )
+    st.plotly_chart(fig_eq, use_container_width=True)
+
+# ── Trade log ────────────────────────────────────────────────────────
 if st.session_state.pt_trades:
     st.markdown("---")
     st.subheader("📜 Trade Log")
-    st.dataframe(pd.DataFrame(st.session_state.pt_trades), use_container_width=True, hide_index=True)
+    trade_df = pd.DataFrame(st.session_state.pt_trades)
+    st.dataframe(trade_df, use_container_width=True, hide_index=True)
 
-# ---- reset ----
+    # ── Export buttons ───────────────────────────────────────────────
+    st.markdown("**📥 Export**")
+    ec1, ec2 = st.columns(2)
+    with ec1:
+        csv_buf = io.StringIO()
+        trade_df.to_csv(csv_buf, index=False)
+        st.download_button(
+            label="📊 Download CSV",
+            data=csv_buf.getvalue(),
+            file_name=f"trade_log_{datetime.now(IST).strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with ec2:
+        pdf_bytes = generate_pdf()
+        if pdf_bytes:
+            st.download_button(
+                label="📄 Download PDF Report",
+                data=pdf_bytes,
+                file_name=f"portfolio_report_{datetime.now(IST).strftime('%Y%m%d_%H%M')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        else:
+            st.info("💡 Add `fpdf2` to requirements.txt for PDF export.")
+
+# ── Reset ────────────────────────────────────────────────────────────
 st.markdown("---")
 if st.button("🔄 Reset Paper Trading Account", type="secondary"):
-    for k in ["pt_balance","pt_holdings","pt_trades","pt_equity"]:
+    for k in ["pt_balance", "pt_holdings", "pt_trades", "pt_equity"]:
         del st.session_state[k]
     st.rerun()
