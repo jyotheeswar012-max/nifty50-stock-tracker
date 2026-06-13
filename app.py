@@ -70,6 +70,9 @@ page = st.sidebar.radio("", [
     "⏰ Time Machine",
     "🧪 Scenario Engine",
     "💼 Paper Portfolio",
+    "📰 News Sentiment",
+    "🤖 ML Predictions",
+    "🎮 Paper Trading",
     "📅 Market Calendar",
 ], label_visibility="collapsed")
 
@@ -217,7 +220,6 @@ PLT_LAYOUT = dict(
 )
 
 # Axis style — passed to update_xaxes / update_yaxes
-# NOTE: use title_font (not titlefont) for Plotly >= 5.x compatibility
 AXIS_STYLE = dict(
     tickfont=dict(color="#1e293b", size=11, family="Inter, sans-serif"),
     title_font=dict(color="#0f172a", size=12, family="Inter, sans-serif"),
@@ -228,7 +230,6 @@ AXIS_STYLE = dict(
 
 
 def style_fig(fig):
-    """Apply consistent axis + font styling to any Plotly figure."""
     fig.update_xaxes(**AXIS_STYLE)
     fig.update_yaxes(**AXIS_STYLE)
     return fig
@@ -575,7 +576,6 @@ elif page == "🏦 Market Overview":
             fig_m.add_trace(go.Scatter(x=h.index,y=norm,mode="lines",name=ni,
                 line=dict(color=meta["color"],width=2.5)))
         if fig_m.data:
-            # Build layout without duplicate legend key — PLT_LAYOUT already has legend
             fig_m.update_layout(
                 title="Normalized Performance (Base 100)",
                 template=PLT,
@@ -584,7 +584,6 @@ elif page == "🏦 Market Overview":
                 yaxis_title="Value (Base 100)",
                 **PLT_LAYOUT,
             )
-            # Override legend positioning for this specific chart
             fig_m.update_layout(
                 legend=dict(
                     orientation="h",
@@ -998,7 +997,43 @@ elif page == "💼 Paper Portfolio":
                     except Exception as e: st.warning(f"⚠️ {e}")
 
 # ============================================================
-# PAGE 10 — MARKET CALENDAR
+# PAGE 10 — NEWS SENTIMENT
+# ============================================================
+elif page == "📰 News Sentiment":
+    try:
+        from pages import news_sentiment as _ns
+        _ns.run()
+    except Exception:
+        hero("📰", "News Sentiment", "<span class='ui-badge badge-live'>● LIVE</span>",
+             "AI-powered market news analysis")
+        st.info("🚧 News Sentiment page coming soon. Add your implementation in `pages/news_sentiment.py`.")
+
+# ============================================================
+# PAGE 11 — ML PREDICTIONS
+# ============================================================
+elif page == "🤖 ML Predictions":
+    try:
+        from pages import ml_predictions as _ml
+        _ml.run()
+    except Exception:
+        hero("🤖", "ML Predictions", "<span class='ui-badge badge-sim'>ML</span>",
+             "Machine learning price forecasts")
+        st.info("🚧 ML Predictions page coming soon. Add your implementation in `pages/ml_predictions.py`.")
+
+# ============================================================
+# PAGE 12 — PAPER TRADING
+# ============================================================
+elif page == "🎮 Paper Trading":
+    try:
+        from pages import paper_trading as _pt
+        _pt.run()
+    except Exception:
+        hero("🎮", "Paper Trading", "<span class='ui-badge badge-sim'>SIMULATED</span>",
+             "Practice trading with virtual money")
+        st.info("🚧 Paper Trading page coming soon. Add your implementation in `pages/paper_trading.py`.")
+
+# ============================================================
+# PAGE 13 — MARKET CALENDAR
 # ============================================================
 elif page == "📅 Market Calendar":
     hero("📅","Market Calendar",
