@@ -1,27 +1,32 @@
 """
-Page: Watchlist — guests can view live prices; saving requires login.
+Page: Watchlist  —  light theme
 """
 import streamlit as st
 from utils.supabase_auth import get_current_user, is_guest, login_nudge
+from utils.theme import inject
 
 st.set_page_config(page_title="Watchlist", page_icon="⭐", layout="wide")
+inject()
+
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+import plotly.express as px
+import warnings
+warnings.filterwarnings("ignore")
+
 user  = get_current_user()
 guest = is_guest()
 
 try:
     from utils.db import wl_load, wl_add, wl_remove
 except Exception:
-    def wl_load():              return st.session_state.get("watchlist_local", [])
-    def wl_add(n, s):           st.session_state.setdefault("watchlist_local", []).append({"stock_name": n, "symbol": s}); return True
-    def wl_remove(n):           st.session_state["watchlist_local"] = [w for w in st.session_state.get("watchlist_local", []) if w["stock_name"] != n]; return True
+    def wl_load():       return st.session_state.get("watchlist", [])
+    def wl_add(s):       st.session_state.setdefault("watchlist",[]).append(s) if s not in st.session_state.get("watchlist",[]) else None; return True
+    def wl_remove(s):    st.session_state["watchlist"]=[x for x in st.session_state.get("watchlist",[]) if x!=s]; return True
 
-import yfinance as yf
-import pandas as pd
-import numpy as np
-import warnings
-warnings.filterwarnings("ignore")
-
-NIFTY50_NAMES = [
+NAMES = [
     "Reliance Industries","HDFC Bank","ICICI Bank","Infosys","TCS",
     "Bharti Airtel","ITC","Kotak Mahindra Bank","Larsen & Toubro","HCL Technologies",
     "Axis Bank","State Bank of India","Bajaj Finance","Wipro","Asian Paints",
@@ -34,7 +39,7 @@ NIFTY50_NAMES = [
     "Hindustan Unilever","Coal India","BPCL","Tech Mahindra","L&T Finance",
     "Shriram Finance","Bharat Electronics",
 ]
-NIFTY50_SYMS = [
+SYMS = [
     "RELIANCE.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS","TCS.NS",
     "BHARTIARTL.NS","ITC.NS","KOTAKBANK.NS","LT.NS","HCLTECH.NS",
     "AXISBANK.NS","SBIN.NS","BAJFINANCE.NS","WIPRO.NS","ASIANPAINT.NS",
@@ -46,100 +51,90 @@ NIFTY50_SYMS = [
     "TATACONSUM.NS","BRITANNIA.NS","NESTLEIND.NS","HINDUNILVR.NS","COALINDIA.NS",
     "BPCL.NS","TECHM.NS","LTF.NS","SHRIRAMFIN.NS","BEL.NS",
 ]
-NAME_TO_SYM = dict(zip(NIFTY50_NAMES, NIFTY50_SYMS))
+N2S = dict(zip(NAMES, SYMS))
 
-def safe_float(val, default=0.0):
+def safe_float(v, d=0.0):
+    try: f=float(v); return d if (np.isnan(f) or np.isinf(f)) else f
+    except: return d
+
+@st.cache_data(ttl=120)
+def fetch_quote(sym):
     try:
-        f = float(val)
-        return default if (np.isnan(f) or np.isinf(f)) else f
-    except Exception:
-        return default
+        h = yf.Ticker(sym).history(period="5d", auto_adjust=True)
+        if h is not None and len(h)>=2:
+            c=safe_float(h["Close"].iloc[-1])
+            p=safe_float(h["Close"].iloc[-2],c)
+            ch=c-p; pt=(ch/p*100) if p else 0
+            return c, ch, pt
+    except: pass
+    return None, None, None
 
-st.title("⭐ Watchlist")
+# ── Header ────────────────────────────────────────────────────────────────
+st.markdown("""
+<div style="display:flex;align-items:center;gap:1rem;margin-bottom:.5rem;">
+  <div style="width:52px;height:52px;border-radius:50%;
+              background:linear-gradient(135deg,#f59e0b,#fbbf24);
+              display:flex;align-items:center;justify-content:center;
+              font-size:1.5rem;color:#fff;box-shadow:0 4px 14px rgba(245,158,11,.35);">
+    ⭐
+  </div>
+  <div>
+    <div class="ui-page-title" style="font-size:1.7rem;">Watchlist</div>
+    <div class="ui-caption" style="margin:0;">Track your favourite Nifty 50 stocks</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 if guest:
-    st.caption("👤 Browsing as **Guest** — live prices visible, saving requires login")
+    st.markdown("<span class='ui-badge badge-hist'>👤 Guest — session only, sign in to save</span>", unsafe_allow_html=True)
 else:
-    st.caption(f"Signed in as **{user['full_name']}** • Saved to your account")
+    st.markdown(f"<span class='ui-badge badge-live'>✅ {user['full_name']} — watchlist saved</span>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
 
-# ── Live prices table (everyone sees this) ───────────────────────────────
-st.subheader("📊 Live Prices — All Nifty 50")
-rows = []
-for name_s, sym in NAME_TO_SYM.items():
-    try:
-        h = yf.Ticker(sym).history(period="5d", interval="1d")
-        if h is not None and len(h) >= 2:
-            curr = safe_float(h["Close"].iloc[-1])
-            prev = safe_float(h["Close"].iloc[-2])
-            chg  = curr - prev
-            pct  = (chg / prev * 100) if prev else 0.0
-            rows.append({"Stock": name_s, "Price (₹)": f"₹{curr:,.2f}",
-                "Change": f"{chg:+.2f}", "Change %": f"{pct:+.2f}%",
-                "📊": "🟢" if chg >= 0 else "🔴"})
+# ── Add to watchlist ──────────────────────────────────────────────────────
+st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
+st.markdown("#### ➕ Add Stock")
+cw1, cw2 = st.columns([4,1])
+with cw1: add_name = st.selectbox("Select stock to watch", NAMES, key="wl_add_sel", label_visibility="collapsed")
+with cw2:
+    if st.button("➕ Add", type="primary", use_container_width=True, key="wl_add_btn"):
+        if guest: login_nudge("save your watchlist")
         else:
-            rows.append({"Stock": name_s, "Price (₹)": "N/A",
-                "Change": "N/A", "Change %": "N/A", "📊": "?"})
-    except Exception:
-        rows.append({"Stock": name_s, "Price (₹)": "N/A",
-            "Change": "N/A", "Change %": "N/A", "📊": "?"})
-if rows:
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            if wl_add(add_name): st.success(f"✅ Added {add_name}"); st.rerun()
+st.markdown("</div>", unsafe_allow_html=True)
 
-st.markdown("---")
+st.markdown("<br>", unsafe_allow_html=True)
 
-# ── Personal watchlist — requires login ──────────────────────────────────
-st.subheader("📌 My Watchlist")
-if guest:
-    login_nudge("save your personal watchlist")
+# ── Watchlist display ─────────────────────────────────────────────────────
+watchlist = wl_load()
+if not watchlist:
+    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
+    st.info("💡 Your watchlist is empty. Add stocks above to get started!")
+    st.markdown("</div>", unsafe_allow_html=True)
 else:
-    watchlist     = wl_load()
-    # normalise key: db returns 'stock_name'
-    watched_names = [w.get("stock_name", w.get("name", "")) for w in watchlist]
-    available     = [s for s in NIFTY50_NAMES if s not in watched_names]
+    st.markdown(f"<div class='ui-card'>", unsafe_allow_html=True)
+    st.markdown(f"#### 📊 {len(watchlist)} Stocks on Watch")
+    with st.spinner("Fetching live prices…"):
+        rows = []
+        for name in watchlist:
+            sym = N2S.get(name)
+            if not sym: continue
+            c, ch, pt = fetch_quote(sym)
+            arrow = "⬆️" if (pt or 0) >= 0 else "⬇️"
+            rows.append({
+                "Stock":      name,
+                "Symbol":     sym.replace(".NS",""),
+                "Price (₹)": f"₹{c:,.2f}" if c else "N/A",
+                "Change (₹)": f"{ch:+.2f}" if ch is not None else "N/A",
+                "Change %":   f"{arrow} {pt:+.2f}%" if pt is not None else "N/A",
+            })
+    if rows:
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    cols = st.columns([3, 1])
-    with cols[0]:
-        if available:
-            add_stock = st.selectbox("Add Stock", available)
-        else:
-            st.selectbox("Add Stock", ["All stocks already added"])
-            add_stock = None
-    with cols[1]:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("➕ Add to Watchlist", use_container_width=True, disabled=(not available)):
-            if add_stock and wl_add(add_stock, NAME_TO_SYM[add_stock]):
-                st.success(f"✅ Added {add_stock}")
-                st.rerun()
-            else:
-                st.error("❌ Could not save. Check Supabase setup.")
-
-    if not watchlist:
-        st.info("💡 Your personal watchlist is empty. Add stocks above.")
-    else:
-        wl_rows = []
-        for w in watchlist:
-            wname = w.get("stock_name", w.get("name", ""))
-            wsym  = w.get("symbol", NAME_TO_SYM.get(wname, ""))
-            try:
-                h = yf.Ticker(wsym).history(period="5d", interval="1d")
-                if h is not None and len(h) >= 2:
-                    curr = safe_float(h["Close"].iloc[-1])
-                    prev = safe_float(h["Close"].iloc[-2])
-                    chg  = curr - prev
-                    pct  = (chg / prev * 100) if prev else 0.0
-                    wl_rows.append({"Stock": wname, "Price (₹)": f"₹{curr:,.2f}",
-                        "Change": f"{chg:+.2f}", "Change %": f"{pct:+.2f}%",
-                        "📊": "🟢" if chg >= 0 else "🔴"})
-                else:
-                    wl_rows.append({"Stock": wname, "Price (₹)": "N/A",
-                        "Change": "N/A", "Change %": "N/A", "📊": "?"})
-            except Exception:
-                wl_rows.append({"Stock": wname, "Price (₹)": "N/A",
-                    "Change": "N/A", "Change %": "N/A", "📊": "?"})
-        if wl_rows:
-            st.dataframe(pd.DataFrame(wl_rows), use_container_width=True, hide_index=True)
-
-        remove = st.selectbox("🗑️ Remove Stock", watched_names)
-        if st.button("Remove from Watchlist", type="secondary"):
-            if wl_remove(remove):
-                st.success(f"✅ Removed {remove}")
-                st.rerun()
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
+    st.markdown("#### 🗑️ Remove a Stock")
+    rem = st.selectbox("Remove from watchlist", watchlist, key="wl_rem_sel", label_visibility="collapsed")
+    if st.button("🗑️ Remove", key="wl_rem_btn"):
+        if wl_remove(rem): st.success(f"✅ Removed {rem}"); st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
