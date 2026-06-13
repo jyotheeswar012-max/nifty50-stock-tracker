@@ -199,14 +199,39 @@ FAMOUS_DATES = {
     "⬆️ All-time High — Sep 27 2024": date(2024,9,27),
 }
 
-PLT        = "plotly_white"
+PLT = "plotly_white"
+
+# Base layout — applied to every chart
 PLT_LAYOUT = dict(
-    paper_bgcolor="#ffffff", plot_bgcolor="#fafafa",
-    font_color="#0f172a",    font_family="Inter, sans-serif",
-    font_size=12,
-    margin=dict(l=12, r=12, t=44, b=12),
-    title_font_size=14, title_font_color="#1e293b",
+    paper_bgcolor="#ffffff",
+    plot_bgcolor="#fafafa",
+    font=dict(color="#1e293b", family="Inter, sans-serif", size=12),
+    title_font=dict(size=15, color="#0f172a", family="Inter, sans-serif"),
+    margin=dict(l=16, r=16, t=48, b=16),
+    legend=dict(
+        font=dict(color="#1e293b", size=12),
+        bgcolor="rgba(255,255,255,0.85)",
+        bordercolor="#e2e8f0",
+        borderwidth=1,
+    ),
 )
+
+# Axis style — passed to update_xaxes / update_yaxes
+AXIS_STYLE = dict(
+    tickfont=dict(color="#1e293b", size=11, family="Inter, sans-serif"),
+    titlefont=dict(color="#0f172a", size=12, family="Inter, sans-serif"),
+    linecolor="#cbd5e1",
+    gridcolor="#f1f5f9",
+    zerolinecolor="#cbd5e1",
+)
+
+
+def style_fig(fig):
+    """Apply consistent axis + font styling to any Plotly figure."""
+    fig.update_xaxes(**AXIS_STYLE)
+    fig.update_yaxes(**AXIS_STYLE)
+    return fig
+
 
 # ============================================================
 # HELPERS
@@ -220,7 +245,6 @@ def safe_float(val, default=0.0):
 
 
 def hero(icon, title, badge_html, sub=""):
-    """Gradient hero banner — white text, always visible."""
     sub_html = f"<div class='hero-sub'>{badge_html}{('&nbsp;&nbsp;' + sub) if sub else ''}</div>" if (badge_html or sub) else ""
     st.markdown(
         f"""
@@ -523,9 +547,11 @@ elif page == "🏦 Market Overview":
                 color="_pct",color_continuous_scale=["#ef4444","#f59e0b","#10b981"],
                 color_continuous_midpoint=0,text="Change (%)",
                 title="Today's % Change by Index",template=PLT,height=320,
-                labels={"_pct":"% Change"})
-            fig_b.update_traces(textposition="outside",marker_line_width=0)
+                labels={"_pct":"% Change","Index":"Index"})
+            fig_b.update_traces(textposition="outside",marker_line_width=0,
+                                textfont=dict(color="#1e293b",size=11))
             fig_b.update_layout(**PLT_LAYOUT,coloraxis_showscale=False)
+            style_fig(fig_b)
             st.plotly_chart(fig_b,use_container_width=True)
         except Exception as e: st.warning(f"⚠️ {e}")
 
@@ -549,8 +575,11 @@ elif page == "🏦 Market Overview":
                 line=dict(color=meta["color"],width=2.5)))
         if fig_m.data:
             fig_m.update_layout(title="Normalized Performance (Base 100)",template=PLT,
-                height=360,xaxis_title="",yaxis_title="Value",
-                legend=dict(orientation="h",yanchor="bottom",y=1.02),**PLT_LAYOUT)
+                height=360,xaxis_title="Date",yaxis_title="Value (Base 100)",
+                legend=dict(orientation="h",yanchor="bottom",y=1.02,
+                            font=dict(color="#1e293b")),
+                **PLT_LAYOUT)
+            style_fig(fig_m)
             st.plotly_chart(fig_m,use_container_width=True)
 
     divider()
@@ -577,6 +606,7 @@ elif page == "🏦 Market Overview":
                 textinfo="label+percent",
                 textfont=dict(size=13,color="#0f172a")))
             fig_ad.update_layout(template=PLT,height=270,showlegend=False,**PLT_LAYOUT)
+            style_fig(fig_ad)
             st.plotly_chart(fig_ad,use_container_width=True)
     except Exception as ex: st.warning(f"⚠️ {ex}")
 
@@ -612,7 +642,10 @@ elif page == "📈 Nifty 50 Index":
             fig.add_trace(go.Scatter(x=hn.index,y=hn["MA50"],mode="lines",name="MA50",
                 line=dict(color="#6366f1",width=1.5,dash="dash")))
             fig.update_layout(title=f"Nifty 50 — {p_n}",template=PLT,
-                height=450,xaxis_rangeslider_visible=False,**PLT_LAYOUT)
+                height=450,xaxis_rangeslider_visible=False,
+                xaxis_title="Date",yaxis_title="Index Value (₹)",
+                **PLT_LAYOUT)
+            style_fig(fig)
             st.plotly_chart(fig,use_container_width=True)
         except Exception as e: st.warning(f"⚠️ {e}")
         divider()
@@ -624,8 +657,10 @@ elif page == "📈 Nifty 50 Index":
                 try:
                     fig_r=px.bar(ret_df,x=ret_df.index,y="Ret%",
                         color="Ret%",color_continuous_scale=["#ef4444","#f59e0b","#10b981"],
-                        title="Daily Returns (%)",template=PLT,height=230)
+                        title="Daily Returns (%)",template=PLT,height=260,
+                        labels={"Ret%":"Return (%)","x":"Date"})
                     fig_r.update_layout(**PLT_LAYOUT,coloraxis_showscale=False)
+                    style_fig(fig_r)
                     st.plotly_chart(fig_r,use_container_width=True)
                 except Exception as e: st.warning(f"⚠️ {e}")
         with c_vol:
@@ -634,8 +669,10 @@ elif page == "📈 Nifty 50 Index":
                 if not vd.empty:
                     try:
                         fig_v=px.bar(vd,x=vd.index,y="Volume",title="Volume",
-                            template=PLT,height=230,color_discrete_sequence=["#6366f1"])
+                            template=PLT,height=260,color_discrete_sequence=["#6366f1"],
+                            labels={"Volume":"Volume","x":"Date"})
                         fig_v.update_layout(**PLT_LAYOUT)
+                        style_fig(fig_v)
                         st.plotly_chart(fig_v,use_container_width=True)
                     except Exception as e: st.warning(f"⚠️ {e}")
     else: st.warning("⚠️ Could not fetch Nifty 50 data.")
@@ -690,6 +727,8 @@ elif page == "🏆 Gainers & Losers":
                     color_continuous_midpoint=0,title="Sector Heatmap — % Change",
                     hover_data={"Price (₹)":True,"Change (%)":True,"_heat":False})
                 fig_h.update_layout(template=PLT,height=440,**PLT_LAYOUT)
+                fig_h.update_traces(textfont=dict(color="#1e293b",size=12))
+                style_fig(fig_h)
                 st.plotly_chart(fig_h,use_container_width=True)
             except Exception as e: st.warning(f"⚠️ {e}")
     else: st.info("Not enough live data.")
@@ -787,7 +826,10 @@ elif page == "🔍 Stock Chart":
             fig_lk.add_trace(go.Scatter(x=h_lk.index,y=h_lk["MA50"],mode="lines",
                 name="MA50",line=dict(color="#6366f1",width=1.5,dash="dash")))
             fig_lk.update_layout(title=f"{sel_name} — {p_lk}",template=PLT,
-                height=470,xaxis_rangeslider_visible=False,**PLT_LAYOUT)
+                height=470,xaxis_rangeslider_visible=False,
+                xaxis_title="Date",yaxis_title="Price (₹)",
+                **PLT_LAYOUT)
+            style_fig(fig_lk)
             st.plotly_chart(fig_lk,use_container_width=True)
         except Exception as e: st.warning(f"⚠️ {e}")
         if "Volume" in h_lk.columns:
@@ -795,8 +837,10 @@ elif page == "🔍 Stock Chart":
             if not vd.empty:
                 try:
                     fig_v2=px.bar(vd,x=vd.index,y="Volume",title="Volume",
-                        template=PLT,height=190,color_discrete_sequence=["#6366f1"])
+                        template=PLT,height=200,color_discrete_sequence=["#6366f1"],
+                        labels={"Volume":"Volume","x":"Date"})
                     fig_v2.update_layout(**PLT_LAYOUT)
+                    style_fig(fig_v2)
                     st.plotly_chart(fig_v2,use_container_width=True)
                 except Exception as e: st.warning(f"⚠️ {e}")
 
@@ -828,15 +872,19 @@ elif page == "⏰ Time Machine":
                     fig_tm=px.bar(snap.reset_index(),x="Symbol",y="Close",
                         color="Close",color_continuous_scale="Blues",
                         title=f"Closing Prices — {target_date}",
-                        template=PLT,height=340)
+                        template=PLT,height=340,
+                        labels={"Close":"Close Price (₹)","Symbol":"Stock"})
                     fig_tm.update_layout(**PLT_LAYOUT,coloraxis_showscale=False)
+                    style_fig(fig_tm)
                     st.plotly_chart(fig_tm,use_container_width=True)
                 except Exception as e: st.warning(f"⚠️ {e}")
             with c_box:
                 try:
                     fig_sec=px.box(snap.reset_index(),x="Sector",y="Close",
-                        title="Sector Distribution",template=PLT,height=340,color="Sector")
+                        title="Sector Distribution",template=PLT,height=340,color="Sector",
+                        labels={"Close":"Price (₹)","Sector":"Sector"})
                     fig_sec.update_layout(**PLT_LAYOUT,showlegend=False)
+                    style_fig(fig_sec)
                     st.plotly_chart(fig_sec,use_container_width=True)
                 except Exception as e: st.warning(f"⚠️ {e}")
 
@@ -871,8 +919,10 @@ elif page == "🧪 Scenario Engine":
                     color_continuous_scale=["#ef4444","#f8fafc","#10b981"],
                     color_continuous_midpoint=0,error_y="Std Dev",
                     title="Top & Bottom Reactors",template=PLT,height=360,
-                    hover_data=["Name","Sector","Best %","Worst %","Data Pts"])
+                    hover_data=["Name","Sector","Best %","Worst %","Data Pts"],
+                    labels={"Avg Return":"Avg Weekly Return (%)","Symbol":"Stock"})
                 fig_sc.update_layout(**PLT_LAYOUT,coloraxis_showscale=False)
+                style_fig(fig_sc)
                 st.plotly_chart(fig_sc,use_container_width=True)
             except Exception as e: st.warning(f"⚠️ {e}")
 
@@ -922,9 +972,11 @@ elif page == "💼 Paper Portfolio":
                             fillcolor="rgba(99,102,241,0.09)"))
                         fig_g.add_hline(y=result["invested"],line_dash="dash",
                             line_color="#f59e0b",
-                            annotation_text=f"Invested ₹{result['invested']:,.0f}")
+                            annotation_text=f"Invested ₹{result['invested']:,.0f}",
+                            annotation_font_color="#1e293b")
                         fig_g.update_layout(title="Portfolio Growth",template=PLT,
-                            height=360,xaxis_title="",yaxis_title="Value (₹)",**PLT_LAYOUT)
+                            height=360,xaxis_title="Date",yaxis_title="Value (₹)",**PLT_LAYOUT)
+                        style_fig(fig_g)
                         st.plotly_chart(fig_g,use_container_width=True)
                     except Exception as e: st.warning(f"⚠️ {e}")
 
