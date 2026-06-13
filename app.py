@@ -16,38 +16,17 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ================================================================
-# AUTH — guest-friendly: no hard block, just show login nudge
-# ================================================================
+# Inject shared light theme
+from utils.theme import inject
+inject()
+
 from utils.supabase_auth import get_current_user, logout, is_guest
 
-user = get_current_user()
+user     = get_current_user()
 name     = user["full_name"] if user else "Guest"
 username = user["email"]     if user else ""
 
-# ── Sidebar CSS ──────────────────────────────────────────────────
-st.sidebar.markdown("""
-<style>
-.tag-actual  { background:#00c853;color:black;padding:2px 10px;border-radius:20px;font-size:13px;font-weight:bold; }
-.tag-assumed { background:#ffd600;color:black;padding:2px 10px;border-radius:20px;font-size:13px;font-weight:bold; }
-.tag-nse     { background:#1565c0;color:white;padding:2px 10px;border-radius:20px;font-size:13px;font-weight:bold; }
-.tag-open    { background:#00c853;color:black;padding:3px 12px;border-radius:20px;font-size:14px;font-weight:bold; }
-.tag-closed  { background:#ff1744;color:white;padding:3px 12px;border-radius:20px;font-size:14px;font-weight:bold; }
-.stMetric label { color:#9e9e9e !important; }
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<style>
-.tag-actual  { background:#00c853;color:black;padding:2px 10px;border-radius:20px;font-size:13px;font-weight:bold; }
-.tag-assumed { background:#ffd600;color:black;padding:2px 10px;border-radius:20px;font-size:13px;font-weight:bold; }
-.tag-nse     { background:#1565c0;color:white;padding:2px 10px;border-radius:20px;font-size:13px;font-weight:bold; }
-.tag-open    { background:#00c853;color:black;padding:3px 12px;border-radius:20px;font-size:14px;font-weight:bold; }
-.tag-closed  { background:#ff1744;color:white;padding:3px 12px;border-radius:20px;font-size:14px;font-weight:bold; }
-.stMetric label { color:#9e9e9e !important; }
-</style>
-""", unsafe_allow_html=True)
-
+# ── Sidebar branding ──────────────────────────────────────────────────
 try:
     st.sidebar.image(
         "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/NSE_Logo.svg/200px-NSE_Logo.svg.png",
@@ -56,22 +35,27 @@ try:
 except Exception:
     pass
 
-st.sidebar.title("📈 NSE + Time Machine")
+st.sidebar.markdown("## 📈 NSE + Time Machine")
 
-# ── User badge ───────────────────────────────────────────────────
+# User badge
 if user:
-    st.sidebar.markdown(f"👤 **{name}** (`{username}`)")
-    if st.sidebar.button("🚪 Logout", key="sidebar_logout"):
+    st.sidebar.markdown(
+        f"<span class='ui-badge badge-live'>👤 {name}</span>",
+        unsafe_allow_html=True,
+    )
+    if st.sidebar.button("🚧 Sign Out", key="sidebar_logout"):
         logout()
         st.rerun()
 else:
-    st.sidebar.markdown("👤 **Guest** — browsing only")
-    st.sidebar.page_link("pages/00_🔐_Login.py", label="🔐 Sign In / Register", icon="🔐")
+    st.sidebar.markdown(
+        "<span class='ui-badge badge-hist'>👤 Guest — browsing only</span>",
+        unsafe_allow_html=True,
+    )
+    st.sidebar.page_link("pages/00_🔐_Login.py", label="🔐 Sign In / Register")
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("**🟦 LIVE NSE**")
 
-page = st.sidebar.radio("Navigate", [
+page = st.sidebar.radio("", [
     "🏦 NSE Market Overview",
     "📈 Nifty 50 Index",
     "🏢 All 50 Companies",
@@ -83,14 +67,15 @@ page = st.sidebar.radio("Navigate", [
     "🧪 Scenario Engine",
     "💼 Paper Portfolio",
     "📅 Market Calendar",
-])
+], label_visibility="collapsed")
 
 try:
     ist_tz  = pytz.timezone("Asia/Kolkata")
     now_ist = datetime.now(ist_tz)
-    st.sidebar.markdown(f"⌨️ **IST:** {now_ist.strftime('%d %b %Y %I:%M %p')}")
+    st.sidebar.markdown(f"⏰ **IST:** {now_ist.strftime('%d %b %Y %I:%M %p')}")
 except Exception:
     pass
+
 
 def is_nse_open():
     try:
@@ -101,16 +86,17 @@ def is_nse_open():
         mo = now.replace(hour=9,  minute=15, second=0, microsecond=0)
         mc = now.replace(hour=15, minute=30, second=0, microsecond=0)
         if mo <= now <= mc:   return True,  "Open"
-        elif now < mo:        return False, "Pre-Market (Opens 9:15 AM IST)"
-        else:                 return False, "Closed (Session ended 3:30 PM)"
+        elif now < mo:        return False, "Pre-Market (Opens 9:15 AM)"
+        else:                 return False, "Closed (3:30 PM session ended)"
     except Exception:
         return False, "Unknown"
 
+
 market_open, market_status = is_nse_open()
 if market_open:
-    st.sidebar.markdown('<span class="tag-open">● MARKET OPEN</span>', unsafe_allow_html=True)
+    st.sidebar.markdown("<span class='ui-badge badge-live'>● MARKET OPEN</span>", unsafe_allow_html=True)
 else:
-    st.sidebar.markdown(f'<span class="tag-closed">● {market_status}</span>', unsafe_allow_html=True)
+    st.sidebar.markdown(f"<span class='ui-badge' style='background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'>● {market_status}</span>", unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
 st.sidebar.caption("📊 Data: Yahoo Finance")
@@ -178,14 +164,14 @@ SYMBOLS    = [s["symbol"] for s in NIFTY50]
 sectors    = ["All"] + sorted(nifty50_df["sector"].unique().tolist())
 
 NSE_INDICES = [
-    {"symbol": "^NSEI",      "name": "Nifty 50",     "color": "#00e5ff"},
-    {"symbol": "^NSEBANK",   "name": "Nifty Bank",   "color": "#ffd600"},
-    {"symbol": "^CNXIT",     "name": "Nifty IT",     "color": "#69f0ae"},
-    {"symbol": "^CNXAUTO",   "name": "Nifty Auto",   "color": "#ff6d00"},
-    {"symbol": "^CNXPHARMA", "name": "Nifty Pharma", "color": "#ea80fc"},
-    {"symbol": "^CNXFMCG",   "name": "Nifty FMCG",   "color": "#80d8ff"},
-    {"symbol": "^CNXMETAL",  "name": "Nifty Metal",  "color": "#ff6e40"},
-    {"symbol": "^CNXREALTY", "name": "Nifty Realty", "color": "#b9f6ca"},
+    {"symbol": "^NSEI",      "name": "Nifty 50",     "color": "#6366f1"},
+    {"symbol": "^NSEBANK",   "name": "Nifty Bank",   "color": "#06b6d4"},
+    {"symbol": "^CNXIT",     "name": "Nifty IT",     "color": "#10b981"},
+    {"symbol": "^CNXAUTO",   "name": "Nifty Auto",   "color": "#f59e0b"},
+    {"symbol": "^CNXPHARMA", "name": "Nifty Pharma", "color": "#8b5cf6"},
+    {"symbol": "^CNXFMCG",   "name": "Nifty FMCG",   "color": "#ec4899"},
+    {"symbol": "^CNXMETAL",  "name": "Nifty Metal",  "color": "#ef4444"},
+    {"symbol": "^CNXREALTY", "name": "Nifty Realty", "color": "#14b8a6"},
 ]
 
 MACRO_EVENTS = {
@@ -206,6 +192,9 @@ FAMOUS_DATES = {
     "🏆 Union Budget — Feb 1 2023":     date(2023, 2, 1),
     "⬆️ All-time High — Sep 27 2024":  date(2024, 9, 27),
 }
+
+PLT = "plotly_white"   # unified Plotly template
+PLT_LAYOUT = dict(paper_bgcolor="#ffffff", plot_bgcolor="#fafafa", font_color="#1a1a2e")
 
 # ================================================================
 # HELPERS
@@ -295,7 +284,7 @@ def build_stock_rows(raw: pd.DataFrame) -> pd.DataFrame:
             "Company":    s["name"],
             "Sector":     s["sector"],
             "Beta":       s["beta"],
-            "Price (₹)":  round(curr, 2) if curr is not None else "N/A",
+            "Price (₹)": round(curr, 2) if curr is not None else "N/A",
             "Change (₹)": round(chg, 2)  if chg  is not None else "N/A",
             "Change (%)": round(pct, 2)  if pct  is not None else "N/A",
             "_curr": curr,
@@ -308,8 +297,7 @@ def safe_sort(df: pd.DataFrame, col: str, ascending: bool = True) -> pd.DataFram
     try:
         numeric = pd.to_numeric(df[col], errors="coerce").reset_index(drop=True)
         df2     = df.reset_index(drop=True)
-        if numeric.isna().all():
-            return df2
+        if numeric.isna().all(): return df2
         order = numeric.argsort(kind="stable")
         if not ascending:
             n_valid = int(numeric.notna().sum())
@@ -348,11 +336,9 @@ def tm_get_snapshot(all_hist: dict, target: date) -> pd.DataFrame:
     meta_map = {s["symbol"]: s for s in NIFTY50}
     rows: list = []
     for sym in SYMBOLS:
-        if sym not in all_hist:
-            continue
+        if sym not in all_hist: continue
         row = _nearest_row(all_hist[sym], ts)
-        if row is None:
-            continue
+        if row is None: continue
         meta = meta_map.get(sym, {})
         rows.append({
             "Symbol": sym.replace(".NS", ""),
@@ -364,32 +350,24 @@ def tm_get_snapshot(all_hist: dict, target: date) -> pd.DataFrame:
             "Close":  safe_float(row.get("Close",  np.nan)),
             "Volume": int(safe_float(row.get("Volume", 0))),
         })
-    if not rows:
-        return pd.DataFrame()
+    if not rows: return pd.DataFrame()
     return pd.DataFrame(rows).set_index("Symbol")
 
 
 def tm_paper_portfolio(all_hist, invest_date, end_date, investment, symbols_to_use):
     symbols_to_use = [s for s in symbols_to_use if s in all_hist]
-    if not symbols_to_use:
-        return None
+    if not symbols_to_use: return None
     alloc = investment / len(symbols_to_use)
     buy   = tm_get_snapshot(all_hist, invest_date)
     sell  = tm_get_snapshot(all_hist, end_date)
-    if buy.empty or sell.empty:
-        return None
-
-    rows: list = []
-    idx_labels: list = []
+    if buy.empty or sell.empty: return None
+    rows: list = []; idx_labels: list = []
     total_inv = total_final = 0.0
-
     for sym in symbols_to_use:
         short = sym.replace(".NS", "")
-        if short not in buy.index:
-            continue
+        if short not in buy.index: continue
         bp = safe_float(buy.loc[short, "Close"])
-        if bp <= 0:
-            continue
+        if bp <= 0: continue
         shares = alloc / bp
         sp_val = safe_float(sell.loc[short, "Close"]) if short in sell.index else np.nan
         pl  = (sp_val - bp) * shares   if pd.notna(sp_val) else np.nan
@@ -404,12 +382,8 @@ def tm_paper_portfolio(all_hist, invest_date, end_date, investment, symbols_to_u
         })
         idx_labels.append(short)
         total_inv += alloc
-        if pd.notna(sp_val):
-            total_final += sp_val * shares
-
-    if not rows:
-        return None
-
+        if pd.notna(sp_val): total_final += sp_val * shares
+    if not rows: return None
     pf_df   = pd.DataFrame(rows, index=idx_labels)
     abs_pl  = total_final - total_inv
     ret_pct = (abs_pl / total_inv * 100) if total_inv > 0 else 0.0
@@ -418,30 +392,23 @@ def tm_paper_portfolio(all_hist, invest_date, end_date, investment, symbols_to_u
     cagr    = ((total_final / total_inv) ** (1 / years) - 1) * 100 \
               if (total_inv > 0 and total_final > 0 and years > 0.02) else 0.0
     dur     = f"{days // 365}y {days % 365}d" if days >= 365 else f"{days} days"
-
     buy_prices = {}
     for sym in symbols_to_use:
         short = sym.replace(".NS", "")
-        if short not in buy.index:
-            continue
+        if short not in buy.index: continue
         bp = safe_float(buy.loc[short, "Close"])
-        if bp > 0:
-            buy_prices[sym] = alloc / bp
-
+        if bp > 0: buy_prices[sym] = alloc / bp
     growth: dict = {}
     for dt in pd.date_range(pd.Timestamp(invest_date), pd.Timestamp(end_date), freq="W"):
         val = 0.0
         for sym, sh in buy_prices.items():
             df_sym = all_hist.get(sym, pd.DataFrame())
-            if df_sym.empty:
-                continue
+            if df_sym.empty: continue
             row = _nearest_row(df_sym, dt, window=5)
             if row is not None:
                 val += safe_float(row.get("Close", 0)) * sh
-        if val > 0:
-            growth[dt] = val
+        if val > 0: growth[dt] = val
     growth_s = pd.Series(growth)
-
     return {"pf_df": pf_df, "growth": growth_s, "invested": total_inv,
             "final": total_final, "abs_pl": abs_pl, "ret_pct": ret_pct,
             "cagr": cagr, "dur": dur}
@@ -451,11 +418,9 @@ def tm_scenario(all_hist: dict, event_key: str, as_of_date: date) -> pd.DataFram
     ev     = MACRO_EVENTS[event_key]
     cutoff = pd.Timestamp(as_of_date)
     proxy  = ev["proxy"]
-    if proxy not in all_hist:
-        return pd.DataFrame()
+    if proxy not in all_hist: return pd.DataFrame()
     pxy = all_hist[proxy][all_hist[proxy].index <= cutoff]
-    if len(pxy) < 10:
-        return pd.DataFrame()
+    if len(pxy) < 10: return pd.DataFrame()
     try:
         weekly_pxy = pxy["Close"].resample("W-FRI").last().dropna()
         weekly_ret = weekly_pxy.pct_change().dropna()
@@ -463,17 +428,13 @@ def tm_scenario(all_hist: dict, event_key: str, as_of_date: date) -> pd.DataFram
         return pd.DataFrame()
     event_wks = weekly_ret[(weekly_ret >= ev["lo"]) & (weekly_ret <= ev["hi"])].index
     event_wks = event_wks[event_wks <= cutoff]
-    if len(event_wks) < 1:
-        return pd.DataFrame()
-
+    if len(event_wks) < 1: return pd.DataFrame()
     meta_map = {s["symbol"]: s for s in NIFTY50}
     rows: list = []
     for sym in SYMBOLS:
-        if sym not in all_hist:
-            continue
+        if sym not in all_hist: continue
         df_s = all_hist[sym][all_hist[sym].index <= cutoff]
-        if len(df_s) < 5:
-            continue
+        if len(df_s) < 5: continue
         try:
             wk_ret = df_s["Close"].resample("W-FRI").last().dropna().pct_change().dropna() * 100
         except Exception:
@@ -485,10 +446,8 @@ def tm_scenario(all_hist: dict, event_key: str, as_of_date: date) -> pd.DataFram
             w_idx = wk_ret.index[(wk_ret.index >= lo_w) & (wk_ret.index <= hi_w)]
             if not w_idx.empty:
                 v = wk_ret.get(w_idx[0], np.nan)
-                if pd.notna(v):
-                    bucket.append(float(v))
-        if not bucket:
-            continue
+                if pd.notna(v): bucket.append(float(v))
+        if not bucket: continue
         arr  = np.array(bucket)
         meta = meta_map.get(sym, {})
         rows.append({
@@ -502,9 +461,29 @@ def tm_scenario(all_hist: dict, event_key: str, as_of_date: date) -> pd.DataFram
             "Data Pts":   len(bucket),
             "Confidence": round(max(0.0, 100 - float(np.std(arr)) * 10), 1),
         })
-    if not rows:
-        return pd.DataFrame()
+    if not rows: return pd.DataFrame()
     return pd.DataFrame(rows).set_index("Symbol").sort_values("Avg Return", ascending=False)
+
+
+# ================================================================
+# PAGE HEADER HELPER
+# ================================================================
+def page_header(icon: str, title: str, badge: str, badge_class: str = "badge-nse", sub: str = ""):
+    st.markdown(
+        f"""
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:.8rem;">
+          <div style="font-size:2.2rem;">{icon}</div>
+          <div>
+            <div class="ui-page-title">{title}</div>
+            <div class="ui-caption" style="margin:0;">
+              <span class="ui-badge {badge_class}">{badge}</span>
+              {'&nbsp;' + sub if sub else ''}
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # ================================================================
@@ -518,15 +497,16 @@ if page == "─────────────────":
 # PAGE 1 — NSE MARKET OVERVIEW
 # ================================================================
 elif page == "🏦 NSE Market Overview":
-    st.title("🏦 NSE Market Overview")
-    st.markdown('<span class="tag-nse">NSE INDIA</span> &nbsp; National Stock Exchange — Live Indices', unsafe_allow_html=True)
+    page_header("🏦", "NSE Market Overview", "NSE INDIA", "badge-nse",
+                "National Stock Exchange — Live Indices")
     if market_open: st.success("✅ NSE is **OPEN** — Mon–Fri 9:15 AM – 3:30 PM IST")
     else:           st.error(f"❌ NSE **CLOSED** — {market_status}")
-    st.markdown("---")
 
-    st.subheader("📊 NSE Indices Snapshot")
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
+    st.markdown("#### 📊 NSE Indices Snapshot")
     idx_rows: list = []
-    with st.spinner("Fetching NSE indices..."):
+    with st.spinner("Fetching NSE indices…"):
         for idx in NSE_INDICES:
             h = fetch_ticker(idx["symbol"], period="5d")
             if not h.empty and len(h) >= 2:
@@ -544,22 +524,24 @@ elif page == "🏦 NSE Market Overview":
                     "High": "N/A", "Low": "N/A", "_pct": None})
     idx_df = pd.DataFrame(idx_rows)
     st.dataframe(idx_df.drop(columns=["_pct"]), use_container_width=True, hide_index=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
     valid_idx = idx_df[idx_df["_pct"].notna()].copy()
     if not valid_idx.empty:
         try:
             fig_b = px.bar(valid_idx, x="Index", y="_pct",
-                color="_pct", color_continuous_scale=["#ff1744","#ffd600","#00c853"],
+                color="_pct", color_continuous_scale=["#ef4444","#f59e0b","#10b981"],
                 color_continuous_midpoint=0, text="Change (%)",
-                title="NSE Indices % Change", template="plotly_dark", height=380,
+                title="NSE Indices % Change", template=PLT, height=380,
                 labels={"_pct": "% Change"})
             fig_b.update_traces(textposition="outside")
-            fig_b.update_layout(coloraxis_showscale=False)
+            fig_b.update_layout(**PLT_LAYOUT, coloraxis_showscale=False)
             st.plotly_chart(fig_b, use_container_width=True)
         except Exception as e: st.warning(f"⚠️ {e}")
 
-    st.markdown("---")
-    st.subheader("📉 Indices Trend Comparison")
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
+    st.markdown("#### 📉 Indices Trend Comparison")
     p_sel   = st.selectbox("Period", ["1mo","3mo","6mo","1y"], index=1, key="idx_p")
     sel_idx = st.multiselect("Indices", [i["name"] for i in NSE_INDICES],
                               default=["Nifty 50","Nifty Bank","Nifty IT"])
@@ -574,15 +556,18 @@ elif page == "🏦 NSE Market Overview":
             base = safe_float(h["Close"].iloc[0], 1)
             norm = (h["Close"] / base * 100) if base != 0 else h["Close"]
             fig_m.add_trace(go.Scatter(x=h.index, y=norm, mode="lines", name=name_idx,
-                line=dict(color=meta["color"], width=2)))
+                line=dict(color=meta["color"], width=2.5)))
         if fig_m.data:
-            fig_m.update_layout(title="Normalized Trend (Base=100)", template="plotly_dark",
+            fig_m.update_layout(title="Normalized Trend (Base=100)", template=PLT,
                 height=420, xaxis_title="Date", yaxis_title="Value",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02))
+                legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                **PLT_LAYOUT)
             st.plotly_chart(fig_m, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.subheader("📊 Advance / Decline")
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
+    st.markdown("#### 📊 Advance / Decline")
     try:
         raw_ad = fetch_batch("5d")
         adv = dec = unc = 0
@@ -599,17 +584,17 @@ elif page == "🏦 NSE Market Overview":
             fig_ad = go.Figure(go.Pie(
                 labels=["Advances","Declines","Unchanged"],
                 values=[adv, dec, max(unc,0)],
-                marker_colors=["#00c853","#ff1744","#9e9e9e"], hole=0.5))
-            fig_ad.update_layout(title="Advance/Decline", template="plotly_dark", height=300)
+                marker_colors=["#10b981","#ef4444","#9ca3af"], hole=0.5))
+            fig_ad.update_layout(title="Advance/Decline", template=PLT, height=300, **PLT_LAYOUT)
             st.plotly_chart(fig_ad, use_container_width=True)
     except Exception as ex: st.warning(f"⚠️ {ex}")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # ================================================================
 # PAGE 2 — NIFTY 50 INDEX
 # ================================================================
 elif page == "📈 Nifty 50 Index":
-    st.title("📈 Nifty 50 Index")
-    st.markdown('<span class="tag-actual">LIVE</span> &nbsp; NSE Nifty 50 Index', unsafe_allow_html=True)
+    page_header("📈", "Nifty 50 Index", "LIVE", "badge-live", "NSE Nifty 50 Index")
     p_n  = st.selectbox("Period", ["1mo","3mo","6mo","1y"], index=1, key="n50p")
     hist = fetch_ticker("^NSEI", period=p_n)
     if not hist.empty and len(hist) >= 2:
@@ -625,36 +610,44 @@ elif page == "📈 Nifty 50 Index":
         hn = hist.copy()
         hn["MA20"] = hn["Close"].rolling(20).mean()
         hn["MA50"] = hn["Close"].rolling(50).mean()
+        st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
         try:
             fig = go.Figure()
             fig.add_trace(go.Candlestick(x=hn.index, open=hn["Open"], high=hn["High"],
                 low=hn["Low"], close=hn["Close"], name="Nifty 50",
-                increasing_line_color="#00c853", decreasing_line_color="#ff1744"))
+                increasing_line_color="#10b981", decreasing_line_color="#ef4444"))
             fig.add_trace(go.Scatter(x=hn.index, y=hn["MA20"], mode="lines", name="MA20",
-                line=dict(color="#ffd600", width=1.5, dash="dot")))
+                line=dict(color="#f59e0b", width=1.5, dash="dot")))
             fig.add_trace(go.Scatter(x=hn.index, y=hn["MA50"], mode="lines", name="MA50",
-                line=dict(color="#ea80fc", width=1.5, dash="dash")))
-            fig.update_layout(title=f"Nifty 50 — {p_n}", template="plotly_dark",
-                height=480, xaxis_rangeslider_visible=False)
+                line=dict(color="#6366f1", width=1.5, dash="dash")))
+            fig.update_layout(title=f"Nifty 50 — {p_n}", template=PLT,
+                height=480, xaxis_rangeslider_visible=False, **PLT_LAYOUT)
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e: st.warning(f"⚠️ {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
         hn["Ret%"] = hn["Close"].pct_change() * 100
         ret_df = hn.dropna(subset=["Ret%"])
         if not ret_df.empty:
+            st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
             try:
                 fig_r = px.bar(ret_df, x=ret_df.index, y="Ret%",
-                    color="Ret%", color_continuous_scale=["#ff1744","#ffd600","#00c853"],
-                    title="Daily Returns (%)", template="plotly_dark", height=260)
+                    color="Ret%", color_continuous_scale=["#ef4444","#f59e0b","#10b981"],
+                    title="Daily Returns (%)", template=PLT, height=260)
+                fig_r.update_layout(**PLT_LAYOUT)
                 st.plotly_chart(fig_r, use_container_width=True)
             except Exception as e: st.warning(f"⚠️ {e}")
+            st.markdown("</div>", unsafe_allow_html=True)
         if "Volume" in hn.columns:
             vd = hn[hn["Volume"] > 0]
             if not vd.empty:
+                st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
                 try:
                     fig_v = px.bar(vd, x=vd.index, y="Volume", title="Volume",
-                        template="plotly_dark", height=230, color_discrete_sequence=["#00e5ff"])
+                        template=PLT, height=230, color_discrete_sequence=["#6366f1"])
+                    fig_v.update_layout(**PLT_LAYOUT)
                     st.plotly_chart(fig_v, use_container_width=True)
                 except Exception as e: st.warning(f"⚠️ {e}")
+                st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.warning("⚠️ Could not fetch Nifty 50 data.")
 
@@ -662,12 +655,12 @@ elif page == "📈 Nifty 50 Index":
 # PAGE 3 — ALL 50 COMPANIES
 # ================================================================
 elif page == "🏢 All 50 Companies":
-    st.title("🏢 All 50 Nifty Companies")
-    st.markdown('<span class="tag-actual">LIVE</span> &nbsp; Real-time NSE prices', unsafe_allow_html=True)
+    page_header("🏢", "All 50 Nifty Companies", "LIVE", "badge-live", "Real-time NSE prices")
+    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
     cf, cs = st.columns([2,1])
     with cf: sec_f  = st.selectbox("Sector", sectors, key="sec_f")
     with cs: sort_b = st.selectbox("Sort by", ["Name","Price ↑","Price ↓","Change % ↑","Change % ↓"], key="srt")
-    with st.spinner("Loading..."):
+    with st.spinner("Loading…"):
         raw    = fetch_batch("5d")
         all_df = build_stock_rows(raw)
     disp = all_df.copy() if sec_f == "All" else all_df[all_df["Sector"] == sec_f].copy()
@@ -679,14 +672,14 @@ elif page == "🏢 All 50 Companies":
     st.dataframe(disp[["Symbol","Company","Sector","Beta","Price (₹)","Change (₹)","Change (%)"]],
                  use_container_width=True, hide_index=True)
     st.caption(f"Showing {len(disp)} of 50 companies")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # ================================================================
 # PAGE 4 — GAINERS & LOSERS
 # ================================================================
 elif page == "🏆 Gainers & Losers":
-    st.title("🏆 Top Gainers & Losers")
-    st.markdown('<span class="tag-actual">LIVE</span>', unsafe_allow_html=True)
-    with st.spinner("Fetching..."):
+    page_header("🏆", "Top Gainers & Losers", "LIVE", "badge-live")
+    with st.spinner("Fetching…"):
         raw    = fetch_batch("5d")
         all_df = build_stock_rows(raw)
     valid = all_df[all_df["_pct"].notna()].copy()
@@ -695,18 +688,27 @@ elif page == "🏆 Gainers & Losers":
         g = valid.nlargest(top_n,  "_pct")[["Company","Sector","Price (₹)","Change (%)"]]
         l = valid.nsmallest(top_n, "_pct")[["Company","Sector","Price (₹)","Change (%)"]]
         cg, cl = st.columns(2)
-        with cg: st.markdown(f"### 🟢 Top {top_n} Gainers"); st.dataframe(g, use_container_width=True, hide_index=True)
-        with cl: st.markdown(f"### 🔴 Top {top_n} Losers");  st.dataframe(l, use_container_width=True, hide_index=True)
+        with cg:
+            st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
+            st.markdown(f"##### 🟢 Top {top_n} Gainers")
+            st.dataframe(g, use_container_width=True, hide_index=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+        with cl:
+            st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
+            st.markdown(f"##### 🔴 Top {top_n} Losers")
+            st.dataframe(l, use_container_width=True, hide_index=True)
+            st.markdown("</div>", unsafe_allow_html=True)
         valid2 = valid.copy()
         valid2["_heat"] = valid2["_pct"].abs().clip(lower=0.01)
         valid2 = valid2[valid2["_heat"] > 0]
         if not valid2.empty:
             try:
                 fig_h = px.treemap(valid2, path=["Sector","Company"], values="_heat", color="_pct",
-                    color_continuous_scale=["#ff1744","#ffd600","#00c853"], color_continuous_midpoint=0,
+                    color_continuous_scale=["#ef4444","#f59e0b","#10b981"],
+                    color_continuous_midpoint=0,
                     title="Heatmap — % Change",
                     hover_data={"Price (₹)": True, "Change (%)": True, "_heat": False})
-                fig_h.update_layout(template="plotly_dark", height=500)
+                fig_h.update_layout(template=PLT, height=500, **PLT_LAYOUT)
                 st.plotly_chart(fig_h, use_container_width=True)
             except Exception as e: st.warning(f"⚠️ {e}")
     else: st.info("Not enough live data.")
@@ -715,8 +717,8 @@ elif page == "🏆 Gainers & Losers":
 # PAGE 5 — P&L CALCULATOR
 # ================================================================
 elif page == "🧮 P&L Calculator":
-    st.title("🧮 P&L Calculator")
-    st.markdown('<span class="tag-assumed">SIMULATED</span> &nbsp; Nifty impact on your holdings', unsafe_allow_html=True)
+    page_header("🧮", "P&L Calculator", "SIMULATED", "badge-sim",
+                "Nifty impact on your holdings")
     hist_c  = fetch_ticker("^NSEI", "5d")
     live_ok = False
     cp = 22500.0; ch = 0.0; pt = 0.0
@@ -726,9 +728,10 @@ elif page == "🧮 P&L Calculator":
         ch      = cp - pp
         pt      = (ch / pp * 100) if pp != 0 else 0.0
         live_ok = True
+    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
     cl, cr = st.columns(2)
     with cl:
-        st.subheader("📊 Nifty Movement")
+        st.markdown("##### 📊 Nifty Movement")
         ab = st.number_input("Base Nifty",   value=float(round(cp, 2)), step=50.0, min_value=1.0)
         ac = st.number_input("Change (pts)", value=-200.0, step=10.0)
         an = ab + ac
@@ -741,7 +744,7 @@ elif page == "🧮 P&L Calculator":
                 "🟡 Assumed": [f"₹{ab:,.2f}",f"{ac:+.2f}",f"{ap:+.2f}%",f"₹{an:,.2f}"],
             }), use_container_width=True, hide_index=True)
     with cr:
-        st.subheader("💼 Your Stock")
+        st.markdown("##### 💼 Your Stock")
         cos = ["-- Custom --"] + nifty50_df["name"].tolist()
         sc  = st.selectbox("Company", cos)
         if sc != "-- Custom --":
@@ -753,10 +756,12 @@ elif page == "🧮 P&L Calculator":
         sp   = st.number_input("Price (₹)", value=100.0, min_value=0.01, step=10.0)
         qty  = st.number_input("Quantity",  value=10, min_value=1)
         beta = st.slider("Beta", 0.0, 3.0, float(round(db, 1)), 0.1)
-    st.markdown("---")
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     ca2, cs2 = st.columns(2)
     with ca2:
-        st.markdown("### 🟢 Actual Impact")
+        st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
+        st.markdown("##### 🟢 Actual Impact")
         if live_ok:
             a = calc_impact(pt, sp, qty, beta)
             st.metric("Stock %",   f"{a[0]:+.2f}%")
@@ -765,25 +770,30 @@ elif page == "🧮 P&L Calculator":
             show_pl(a[5])
         else:
             st.info("Live data unavailable.")
+        st.markdown("</div>", unsafe_allow_html=True)
     with cs2:
-        st.markdown("### 🟡 Assumed Impact")
+        st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
+        st.markdown("##### 🟡 Assumed Impact")
         b = calc_impact(ap, sp, qty, beta)
         st.metric("Stock %",   f"{b[0]:+.2f}%")
         st.metric("New Price", f"₹{b[2]:,.2f}", delta=f"₹{b[1]:+.2f}")
         st.metric("Portfolio", f"₹{b[4]:,.2f}", delta=f"₹{b[5]:+.2f}")
         show_pl(b[5])
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # ================================================================
 # PAGE 6 — STOCK CHART LOOKUP
 # ================================================================
 elif page == "🔍 Stock Chart Lookup":
-    st.title("🔍 Stock Chart Lookup")
-    st.markdown('<span class="tag-actual">LIVE</span>', unsafe_allow_html=True)
+    page_header("🔍", "Stock Chart Lookup", "LIVE", "badge-live")
     name_map = {s["name"]: s["symbol"] for s in NIFTY50}
-    sel_name = st.selectbox("Select Company", list(name_map.keys()))
-    sel_sym  = name_map[sel_name]
-    p_lk     = st.selectbox("Period", ["1mo","3mo","6mo","1y","2y"], index=2, key="lk_p")
-    h_lk     = fetch_ticker(sel_sym, period=p_lk)
+    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
+    c_sel, c_per = st.columns([3, 1])
+    with c_sel: sel_name = st.selectbox("Select Company", list(name_map.keys()))
+    with c_per: p_lk     = st.selectbox("Period", ["1mo","3mo","6mo","1y","2y"], index=2, key="lk_p")
+    sel_sym = name_map[sel_name]
+    h_lk    = fetch_ticker(sel_sym, period=p_lk)
+    st.markdown("</div>", unsafe_allow_html=True)
     if h_lk.empty:
         st.warning("⚠️ Could not fetch data for this stock.")
     else:
@@ -798,17 +808,18 @@ elif page == "🔍 Stock Chart Lookup":
         c5.metric("Period Low",  f"₹{safe_float(h_lk['Low'].min()):,.2f}")
         h_lk["MA20"] = h_lk["Close"].rolling(20).mean()
         h_lk["MA50"] = h_lk["Close"].rolling(50).mean()
+        st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
         try:
             fig_lk = go.Figure()
             fig_lk.add_trace(go.Candlestick(x=h_lk.index, open=h_lk["Open"],
                 high=h_lk["High"], low=h_lk["Low"], close=h_lk["Close"], name=sel_name,
-                increasing_line_color="#00c853", decreasing_line_color="#ff1744"))
+                increasing_line_color="#10b981", decreasing_line_color="#ef4444"))
             fig_lk.add_trace(go.Scatter(x=h_lk.index, y=h_lk["MA20"], mode="lines",
-                name="MA20", line=dict(color="#ffd600", width=1.5, dash="dot")))
+                name="MA20", line=dict(color="#f59e0b", width=1.5, dash="dot")))
             fig_lk.add_trace(go.Scatter(x=h_lk.index, y=h_lk["MA50"], mode="lines",
-                name="MA50", line=dict(color="#ea80fc", width=1.5, dash="dash")))
-            fig_lk.update_layout(title=f"{sel_name} — {p_lk}", template="plotly_dark",
-                height=500, xaxis_rangeslider_visible=False)
+                name="MA50", line=dict(color="#6366f1", width=1.5, dash="dash")))
+            fig_lk.update_layout(title=f"{sel_name} — {p_lk}", template=PLT,
+                height=500, xaxis_rangeslider_visible=False, **PLT_LAYOUT)
             st.plotly_chart(fig_lk, use_container_width=True)
         except Exception as e: st.warning(f"⚠️ {e}")
         if "Volume" in h_lk.columns:
@@ -816,30 +827,29 @@ elif page == "🔍 Stock Chart Lookup":
             if not vd.empty:
                 try:
                     fig_v2 = px.bar(vd, x=vd.index, y="Volume", title="Volume",
-                        template="plotly_dark", height=220,
-                        color_discrete_sequence=["#00e5ff"])
+                        template=PLT, height=220, color_discrete_sequence=["#6366f1"])
+                    fig_v2.update_layout(**PLT_LAYOUT)
                     st.plotly_chart(fig_v2, use_container_width=True)
                 except Exception as e: st.warning(f"⚠️ {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # ================================================================
 # PAGE 7 — TIME MACHINE
 # ================================================================
 elif page == "⏰ Time Machine":
-    st.title("⏰ Time Machine")
-    st.markdown('<span class="tag-assumed">HISTORICAL</span> &nbsp; Travel to any past trading date', unsafe_allow_html=True)
-    st.markdown("")
+    page_header("⏰", "Time Machine", "HISTORICAL", "badge-hist",
+                "Travel to any past trading date")
+    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
     c1, c2 = st.columns([2,1])
     with c1:
         presets = list(FAMOUS_DATES.keys())
         preset  = st.selectbox("Quick Select", ["Custom Date"] + presets)
     with c2:
-        if preset != "Custom Date":
-            default_date = FAMOUS_DATES[preset]
-        else:
-            default_date = date(2020, 3, 23)
-        target_date = st.date_input("Travel to date", value=default_date,
+        default_date = FAMOUS_DATES[preset] if preset != "Custom Date" else date(2020, 3, 23)
+        target_date  = st.date_input("Travel to date", value=default_date,
             min_value=date(2019,1,1), max_value=date.today())
-    with st.spinner("⏳ Loading 5-year history (first load may take ~30s)..."):
+    st.markdown("</div>", unsafe_allow_html=True)
+    with st.spinner("⏳ Loading 5-year history (first load ~30s)…"):
         all_hist = fetch_all_history()
     if not all_hist:
         st.error("❌ Could not fetch historical data.")
@@ -848,20 +858,23 @@ elif page == "⏰ Time Machine":
         if snap.empty:
             st.warning("⚠️ No data found near that date. Try a different date.")
         else:
-            st.success(f"✅ Showing snapshot near **{target_date}** ({len(snap)} stocks)")
+            st.success(f"✅ Snapshot near **{target_date}** ({len(snap)} stocks)")
+            st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
             st.dataframe(snap.reset_index(), use_container_width=True, hide_index=True)
+            st.markdown("</div>", unsafe_allow_html=True)
             try:
                 fig_tm = px.bar(snap.reset_index(), x="Symbol", y="Close",
-                    color="Close", color_continuous_scale="plasma",
+                    color="Close", color_continuous_scale="Blues",
                     title=f"Closing Prices — {target_date}",
-                    template="plotly_dark", height=400)
+                    template=PLT, height=400)
+                fig_tm.update_layout(**PLT_LAYOUT)
                 st.plotly_chart(fig_tm, use_container_width=True)
             except Exception as e: st.warning(f"⚠️ {e}")
             try:
                 fig_sec = px.box(snap.reset_index(), x="Sector", y="Close",
                     title=f"Sector Distribution — {target_date}",
-                    template="plotly_dark", height=380,
-                    color="Sector")
+                    template=PLT, height=380, color="Sector")
+                fig_sec.update_layout(**PLT_LAYOUT)
                 st.plotly_chart(fig_sec, use_container_width=True)
             except Exception as e: st.warning(f"⚠️ {e}")
 
@@ -869,106 +882,111 @@ elif page == "⏰ Time Machine":
 # PAGE 8 — SCENARIO ENGINE
 # ================================================================
 elif page == "🧪 Scenario Engine":
-    st.title("🧪 Scenario Engine")
-    st.markdown('<span class="tag-assumed">HISTORICAL SIM</span> &nbsp; How did Nifty50 stocks react to macro events?', unsafe_allow_html=True)
+    page_header("🧪", "Scenario Engine", "HISTORICAL SIM", "badge-sim",
+                "How did stocks react to macro events?")
+    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
-    with c1:
-        event_key = st.selectbox("Macro Event", list(MACRO_EVENTS.keys()))
-    with c2:
-        as_of = st.date_input("As of date (use historical data up to)",
+    with c1: event_key = st.selectbox("Macro Event", list(MACRO_EVENTS.keys()))
+    with c2: as_of = st.date_input("Use data up to",
             value=date(2024,1,1), min_value=date(2019,1,1), max_value=date.today())
     st.info(f"ℹ️ **{event_key}** — {MACRO_EVENTS[event_key]['desc']}")
-    with st.spinner("⏳ Loading history & computing..."):
+    st.markdown("</div>", unsafe_allow_html=True)
+    with st.spinner("⏳ Loading history & computing…"):
         all_hist = fetch_all_history()
     if not all_hist:
         st.error("❌ Could not fetch data.")
     else:
         result_df = tm_scenario(all_hist, event_key, as_of)
         if result_df.empty:
-            st.warning("⚠️ Not enough historical occurrences found. Try a different event or date range.")
+            st.warning("⚠️ Not enough historical occurrences. Try a different event or range.")
         else:
             st.success(f"✅ Found {len(result_df)} stocks with data")
+            st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
             st.dataframe(result_df.reset_index(), use_container_width=True, hide_index=True)
+            st.markdown("</div>", unsafe_allow_html=True)
             try:
                 top10 = result_df.head(10).reset_index()
                 bot10 = result_df.tail(10).reset_index()
                 comb  = pd.concat([top10, bot10]).drop_duplicates(subset=["Symbol"])
                 fig_sc = px.bar(comb, x="Symbol", y="Avg Return",
                     color="Avg Return",
-                    color_continuous_scale=["#ff1744","#ffd600","#00c853"],
-                    color_continuous_midpoint=0,
-                    error_y="Std Dev",
+                    color_continuous_scale=["#ef4444","#f59e0b","#10b981"],
+                    color_continuous_midpoint=0, error_y="Std Dev",
                     title=f"Top & Bottom Reactors — {event_key}",
-                    template="plotly_dark", height=420,
+                    template=PLT, height=420,
                     hover_data=["Name","Sector","Best %","Worst %","Data Pts"])
+                fig_sc.update_layout(**PLT_LAYOUT)
                 st.plotly_chart(fig_sc, use_container_width=True)
             except Exception as e: st.warning(f"⚠️ {e}")
 
 # ================================================================
-# PAGE 9 — PAPER PORTFOLIO
+# PAGE 9 — PAPER PORTFOLIO (backtest)
 # ================================================================
 elif page == "💼 Paper Portfolio":
-    st.title("💼 Paper Portfolio")
-    st.markdown('<span class="tag-assumed">BACKTESTING</span> &nbsp; Hypothetical past investment', unsafe_allow_html=True)
+    page_header("💼", "Paper Portfolio", "BACKTESTING", "badge-sim",
+                "Hypothetical past investment")
+    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
-    with c1:
-        invest_date = st.date_input("Invest Date", value=date(2020,4,1),
+    with c1: invest_date = st.date_input("Invest Date", value=date(2020,4,1),
             min_value=date(2019,1,1), max_value=date.today() - timedelta(days=7))
-    with c2:
-        end_date = st.date_input("Exit Date", value=date(2024,1,1),
+    with c2: end_date = st.date_input("Exit Date", value=date(2024,1,1),
             min_value=date(2019,1,2), max_value=date.today())
-    with c3:
-        investment = st.number_input("Total Investment (₹)", value=100000, step=10000, min_value=1000)
+    with c3: investment = st.number_input("Total Investment (₹)", value=100000, step=10000, min_value=1000)
+    st.markdown("</div>", unsafe_allow_html=True)
     if end_date <= invest_date:
         st.error("❌ Exit date must be after invest date.")
     else:
-        st.subheader("Select Stocks")
+        st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
         all_names  = [s["name"] for s in NIFTY50]
         selected   = st.multiselect("Stocks (equal allocation)", all_names, default=all_names[:10])
         sym_lookup = {s["name"]: s["symbol"] for s in NIFTY50}
         sel_syms   = [sym_lookup[n] for n in selected if n in sym_lookup]
+        st.markdown("</div>", unsafe_allow_html=True)
         if not sel_syms:
             st.warning("Select at least one stock.")
         else:
-            with st.spinner("⏳ Computing portfolio..."):
+            with st.spinner("⏳ Computing portfolio…"):
                 all_hist = fetch_all_history()
                 result   = tm_paper_portfolio(all_hist, invest_date, end_date, float(investment), sel_syms)
             if result is None:
                 st.error("❌ Could not compute. Check dates or data availability.")
             else:
-                c1m, c2m, c3m, c4m = st.columns(4)
+                c1m,c2m,c3m,c4m = st.columns(4)
                 c1m.metric("Invested",  f"₹{result['invested']:,.0f}")
-                c2m.metric("Final",     f"₹{result['final']:,.0f}",    delta=f"₹{result['abs_pl']:+,.0f}")
+                c2m.metric("Final",     f"₹{result['final']:,.0f}", delta=f"₹{result['abs_pl']:+,.0f}")
                 c3m.metric("Return",    f"{result['ret_pct']:+.2f}%")
                 c4m.metric("CAGR",      f"{result['cagr']:+.2f}%")
                 st.caption(f"⏱️ Duration: {result['dur']}")
                 show_pl(result["abs_pl"])
-                st.markdown("---")
-                st.subheader("📋 Stock Breakdown")
+                st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
                 disp_pf = result["pf_df"].drop(columns=["_pl"], errors="ignore")
                 st.dataframe(disp_pf, use_container_width=True)
+                st.markdown("</div>", unsafe_allow_html=True)
                 if not result["growth"].empty:
+                    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
                     try:
                         fig_g = go.Figure()
                         fig_g.add_trace(go.Scatter(
                             x=result["growth"].index, y=result["growth"].values,
                             mode="lines", fill="tozeroy", name="Portfolio Value",
-                            line=dict(color="#00c853", width=2)))
+                            line=dict(color="#10b981", width=2.5),
+                            fillcolor="rgba(16,185,129,0.1)"))
                         fig_g.add_hline(y=result["invested"],
-                            line_dash="dash", line_color="#ffd600",
+                            line_dash="dash", line_color="#f59e0b",
                             annotation_text=f"Invested ₹{result['invested']:,.0f}")
-                        fig_g.update_layout(title="Portfolio Growth", template="plotly_dark",
-                            height=420, xaxis_title="Date", yaxis_title="Value (₹)")
+                        fig_g.update_layout(title="Portfolio Growth", template=PLT,
+                            height=420, xaxis_title="Date", yaxis_title="Value (₹)",
+                            **PLT_LAYOUT)
                         st.plotly_chart(fig_g, use_container_width=True)
                     except Exception as e: st.warning(f"⚠️ {e}")
+                    st.markdown("</div>", unsafe_allow_html=True)
 
 # ================================================================
 # PAGE 10 — MARKET CALENDAR
 # ================================================================
 elif page == "📅 Market Calendar":
-    st.title("📅 Market Calendar")
-    st.markdown('<span class="tag-nse">NSE</span> &nbsp; NSE Trading Calendar & Key Events', unsafe_allow_html=True)
-    st.markdown("---")
+    page_header("📅", "Market Calendar", "NSE", "badge-nse",
+                "NSE Trading Calendar & Key Events")
     yr = st.selectbox("Year", [2023, 2024, 2025, 2026], index=3)
     NSE_HOLIDAYS = {
         2023: ["Jan 26","Mar 7","Mar 30","Apr 4","Apr 7","Apr 14","May 1",
@@ -982,20 +1000,25 @@ elif page == "📅 Market Calendar":
                "Aug 15","Oct 2","Oct 28","Nov 16","Nov 17","Dec 25"],
     }
     holidays = NSE_HOLIDAYS.get(yr, [])
-    st.subheader(f"🗓️ NSE Holidays {yr}")
+    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
+    st.markdown(f"#### 🗓️ NSE Holidays {yr}")
     if holidays:
         h_cols = st.columns(4)
         for i, h in enumerate(holidays):
             h_cols[i % 4].markdown(f"🔴 {h}")
     else:
         st.info("No holiday data for this year.")
-    st.markdown("---")
-    st.subheader("📊 Trading Days Stats")
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
+    st.markdown("#### 📊 Trading Days Stats")
     import calendar as cal_mod
-    total_days = sum(1 for m in range(1,13) for d in range(1, cal_mod.monthrange(yr,m)[1]+1)
-                     if date(yr,m,d).weekday() < 5)
+    total_days   = sum(1 for m in range(1,13)
+                       for d in range(1, cal_mod.monthrange(yr,m)[1]+1)
+                       if date(yr,m,d).weekday() < 5)
     trading_days = total_days - len(holidays)
-    tc1, tc2, tc3 = st.columns(3)
+    tc1,tc2,tc3  = st.columns(3)
     tc1.metric("Weekdays",     total_days)
     tc2.metric("Holidays",     len(holidays))
     tc3.metric("Trading Days", trading_days)
+    st.markdown("</div>", unsafe_allow_html=True)

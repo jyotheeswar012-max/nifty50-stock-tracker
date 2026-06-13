@@ -22,16 +22,13 @@ def supabase_ready() -> bool:
     return _get_client() is not None
 
 
-# ──────────────────────────────────────────────────────────────── auth ops
-
 def register(email: str, password: str, full_name: str = "", phone: str = "") -> tuple[bool, str]:
     client = _get_client()
     if not client:
         return False, "Supabase not configured. Contact app owner."
     try:
         meta = {"full_name": full_name}
-        if phone:
-            meta["phone"] = phone
+        if phone: meta["phone"] = phone
         res = client.auth.sign_up({"email": email, "password": password,
                                     "options": {"data": meta}})
         if res.user:
@@ -78,10 +75,8 @@ def login(email: str, password: str) -> tuple[bool, dict | str]:
 def logout() -> None:
     client = _get_client()
     if client:
-        try:
-            client.auth.sign_out()
-        except Exception:
-            pass
+        try: client.auth.sign_out()
+        except Exception: pass
     for key in ["sb_user", "sb_authed", "user_email", "user_phone",
                 "notify_email", "notify_sms", "profile_saved",
                 "alerts", "notified_set"]:
@@ -95,7 +90,6 @@ def get_current_user() -> Optional[dict]:
 
 
 def is_guest() -> bool:
-    """True when the visitor is NOT logged in."""
     return get_current_user() is None
 
 
@@ -129,44 +123,38 @@ def update_profile(full_name: str = "", phone: str = "") -> tuple[bool, str]:
         return False, str(e)
 
 
-# ──────────────────────────────────────────────────────────────── guards
-
 def login_nudge(feature: str = "save your data") -> None:
     """
     Soft, non-blocking banner for guests. Does NOT call st.stop().
-    Points to the CORRECT Login page path.
     """
     st.info(
         f"💡 **Sign in to {feature}.** "
-        f"You're browsing as a guest — everything is visible but nothing is saved.",
+        f"You’re browsing as a guest — everything is visible but nothing is saved.",
         icon="🔒",
     )
-    # Use the ACTUAL filename that exists on disk
-    st.page_link("pages/00_🔐_Login.py", label="➡️ Sign In / Create Account", icon="🔐")
+    try:
+        st.page_link("pages/00_🔐_Login.py", label="➡️ Sign In / Create Account", icon="🔐")
+    except Exception:
+        st.markdown("🔐 [Sign In / Create Account](/00_%F0%9F%94%90_Login)")
 
 
 def require_login(redirect_page: str = "pages/00_🔐_Login.py") -> dict:
     """
     Hard guard — use ONLY on pages that are 100% useless without an account.
-    Returns the user dict when logged in.
     """
     user = get_current_user()
     if user:
         return user
-
     st.markdown("""
-    <style>
-    .gate-wrap{display:flex;flex-direction:column;align-items:center;
-               justify-content:center;padding:5rem 1rem;text-align:center;}
-    .gate-icon{font-size:4rem;margin-bottom:1rem;}
-    .gate-title{font-size:2rem;font-weight:700;margin-bottom:.5rem;}
-    .gate-sub{color:#9e9e9e;font-size:1.1rem;margin-bottom:2rem;}
-    </style>
-    <div class="gate-wrap">
-      <div class="gate-icon">🔒</div>
-      <div class="gate-title">Login Required</div>
-      <div class="gate-sub">This page requires an account.</div>
+    <div style="display:flex;flex-direction:column;align-items:center;
+                justify-content:center;padding:5rem 1rem;text-align:center;">
+      <div style="font-size:4rem;margin-bottom:1rem;">🔒</div>
+      <div style="font-size:2rem;font-weight:700;color:#1a1a2e;margin-bottom:.5rem;">Login Required</div>
+      <div style="color:#6b7280;font-size:1.1rem;margin-bottom:2rem;">This page requires an account.</div>
     </div>
     """, unsafe_allow_html=True)
-    st.page_link(redirect_page, label="➡️ Sign In / Create Account", icon="🔐")
+    try:
+        st.page_link(redirect_page, label="➡️ Sign In / Create Account", icon="🔐")
+    except Exception:
+        st.markdown("🔐 [Sign In / Create Account](/00_%F0%9F%94%90_Login)")
     st.stop()
