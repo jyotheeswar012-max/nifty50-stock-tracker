@@ -17,33 +17,15 @@ st.set_page_config(
 )
 
 # ================================================================
-# AUTH GATE  — must come before any page content
+# AUTH — guest-friendly: no hard block, just show login nudge
 # ================================================================
-from utils.auth import get_authenticator
+from utils.supabase_auth import get_current_user, logout, is_guest
 
-authenticator = get_authenticator()
+user = get_current_user()
+name     = user["full_name"] if user else "Guest"
+username = user["email"]     if user else ""
 
-auth_status = st.session_state.get("authentication_status")
-
-if auth_status is not True:
-    st.markdown("""
-    <div style="text-align:center; padding:3rem 0 1rem 0;">
-      <h1 style="font-size:3rem;">&#128200; Nifty50 Tracker</h1>
-      <p style="color:#9e9e9e; font-size:1.15rem;">
-        NSE India • Real-Time Prices • Paper Trading • Price Alerts
-      </p>
-    </div>
-    """, unsafe_allow_html=True)
-    st.warning("🔒 **Please log in to access the app.**")
-    st.page_link("pages/00_🔐_Login.py", label="➡️ Go to Login / Register", icon="🔐")
-    st.stop()
-
-# ================================================================
-# LOGGED IN — show logout in sidebar
-# ================================================================
-name     = st.session_state.get("name",     "User")
-username = st.session_state.get("username", "")
-
+# ── Sidebar CSS ──────────────────────────────────────────────────
 st.sidebar.markdown("""
 <style>
 .tag-actual  { background:#00c853;color:black;padding:2px 10px;border-radius:20px;font-size:13px;font-weight:bold; }
@@ -75,8 +57,17 @@ except Exception:
     pass
 
 st.sidebar.title("📈 NSE + Time Machine")
-st.sidebar.markdown(f"👤 **{name}** (`{username}`)")
-authenticator.logout("🚪 Logout", "sidebar", key="sidebar_logout")
+
+# ── User badge ───────────────────────────────────────────────────
+if user:
+    st.sidebar.markdown(f"👤 **{name}** (`{username}`)")
+    if st.sidebar.button("🚪 Logout", key="sidebar_logout"):
+        logout()
+        st.rerun()
+else:
+    st.sidebar.markdown("👤 **Guest** — browsing only")
+    st.sidebar.page_link("pages/00_🔐_Login.py", label="🔐 Sign In / Register", icon="🔐")
+
 st.sidebar.markdown("---")
 st.sidebar.markdown("**🟦 LIVE NSE**")
 
@@ -983,33 +974,28 @@ elif page == "📅 Market Calendar":
         2023: ["Jan 26","Mar 7","Mar 30","Apr 4","Apr 7","Apr 14","May 1",
                "Jun 28","Aug 15","Oct 2","Oct 24","Nov 14","Nov 27","Dec 25"],
         2024: ["Jan 22","Jan 26","Mar 25","Mar 29","Apr 11","Apr 14","Apr 17",
-               "May 1","May 23","Jun 17","Jul 17","Aug 15","Oct 2","Oct 14",
-               "Nov 1","Nov 15","Nov 20","Dec 25"],
-        2025: ["Jan 26","Feb 26","Mar 14","Mar 31","Apr 10","Apr 14","Apr 18",
-               "May 1","Jun 7","Aug 15","Aug 27","Oct 2","Oct 2","Oct 20",
-               "Oct 21","Nov 5","Dec 25"],
-        2026: ["Jan 26","Mar 20","Mar 27","Apr 2","Apr 3","Apr 14",
-               "May 1","Jun 27","Aug 15","Sep 17","Oct 2","Oct 8",
-               "Oct 26","Nov 11","Nov 25","Dec 25"],
+               "May 1","May 23","Jun 17","Jul 17","Aug 15","Oct 2","Nov 1",
+               "Nov 15","Dec 25"],
+        2025: ["Jan 26","Feb 26","Mar 14","Apr 10","Apr 14","Apr 18","May 1",
+               "Aug 15","Aug 27","Oct 2","Oct 20","Oct 21","Nov 5","Dec 25"],
+        2026: ["Jan 26","Mar 20","Apr 2","Apr 3","Apr 10","Apr 14","May 1",
+               "Aug 15","Oct 2","Oct 28","Nov 16","Nov 17","Dec 25"],
     }
     holidays = NSE_HOLIDAYS.get(yr, [])
     st.subheader(f"🗓️ NSE Holidays {yr}")
     if holidays:
-        cols = st.columns(4)
-        for i, h_day in enumerate(holidays):
-            cols[i % 4].info(f"📅 {h_day} {yr}")
+        h_cols = st.columns(4)
+        for i, h in enumerate(holidays):
+            h_cols[i % 4].markdown(f"🔴 {h}")
     else:
-        st.info("No holiday data available for this year.")
+        st.info("No holiday data for this year.")
     st.markdown("---")
-    st.subheader("📌 Famous Market Dates")
-    for label, d in FAMOUS_DATES.items():
-        st.markdown(f"- **{label}** — `{d}`")
-    st.markdown("---")
-    st.subheader("📊 NSE Trading Statistics")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Trading Days/Year", "~245")
-    col2.metric("Market Hours", "9:15 AM – 3:30 PM IST")
-    col3.metric("Pre-Open Session", "9:00 – 9:15 AM IST")
-    col1.metric("Settlement", "T+1")
-    col2.metric("Circuit Limits", "5% / 10% / 20%")
-    col3.metric("Index Review", "Semi-Annual")
+    st.subheader("📊 Trading Days Stats")
+    import calendar as cal_mod
+    total_days = sum(1 for m in range(1,13) for d in range(1, cal_mod.monthrange(yr,m)[1]+1)
+                     if date(yr,m,d).weekday() < 5)
+    trading_days = total_days - len(holidays)
+    tc1, tc2, tc3 = st.columns(3)
+    tc1.metric("Weekdays",     total_days)
+    tc2.metric("Holidays",     len(holidays))
+    tc3.metric("Trading Days", trading_days)

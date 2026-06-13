@@ -1,20 +1,22 @@
 """
-Page: Real-Time Price Alerts — persisted in Supabase DB
+Page: Price Alerts — guests can see what alerts look like; creating/saving requires login.
 """
 import streamlit as st
+from utils.supabase_auth import get_current_user, is_guest, login_nudge
+from utils.notifications import send_email, send_sms
+from utils.db import al_load, al_add, al_delete, al_clear
+
 import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime
 import pytz
 import warnings
-from utils.supabase_auth import require_login
-from utils.notifications import send_email, send_sms
-from utils.db import al_load, al_add, al_delete, al_clear
 warnings.filterwarnings("ignore")
 
 st.set_page_config(page_title="Price Alerts", page_icon="🔔", layout="wide")
-user = require_login()
+user  = get_current_user()
+guest = is_guest()
 
 NIFTY50_NAMES = [
     "Reliance Industries","HDFC Bank","ICICI Bank","Infosys","TCS",
@@ -60,112 +62,118 @@ def get_live_price(sym):
         pass
     return None
 
-if "notified_set" not in st.session_state:
-    st.session_state.notified_set = set()
-
-def _ns():
-    return {
-        "email":        st.session_state.get("user_email", ""),
-        "phone":        st.session_state.get("user_phone", ""),
-        "notify_email": st.session_state.get("notify_email", False),
-        "notify_sms":   st.session_state.get("notify_sms",   False),
-    }
-
-def _fire(alert, price):
-    ns = _ns()
-    subject = f"🔔 Alert: {alert['stock']} {alert['direction']} ₹{alert['threshold']:,.2f}"
-    body = (
-        f"Stock: {alert['stock']} ({alert['symbol']})\n"
-        f"Condition: {alert['direction']} ₹{alert['threshold']:,.2f}\n"
-        f"Live Price: ₹{price:,.2f}\n"
-        f"Time: {datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M IST')}"
-    )
-    msgs = []
-    if ns["notify_email"] and ns["email"]:
-        ok, err = send_email(ns["email"], subject, body)
-        msgs.append(f"📧 Email {'sent' if ok else 'failed: '+err}")
-    if ns["notify_sms"] and ns["phone"]:
-        ok, err = send_sms(ns["phone"], f"🔔 {alert['stock']} {alert['direction']} ₹{alert['threshold']:,.2f} | Live: ₹{price:,.2f}")
-        msgs.append(f"📱 SMS {'sent' if ok else 'failed: '+err}")
-    return msgs
-
-st.title("🔔 Real-Time Price Alerts")
-st.caption(f"Signed in as **{user['full_name']}** • Alerts saved to your account")
-
-ns = _ns()
-if ns["notify_email"] and ns["email"] or ns["notify_sms"] and ns["phone"]:
-    ch = []
-    if ns["notify_email"] and ns["email"]: ch.append(f"📧 {ns['email']}")
-    if ns["notify_sms"]   and ns["phone"]: ch.append(f"📱 {ns['phone']}")
-    st.success(f"🔔 Notifications active — {' | '.join(ch)}")
+st.title("🔔 Price Alerts")
+if guest:
+    st.caption("👤 Browsing as **Guest** — live prices visible, saving alerts requires login")
 else:
-    st.warning("⚠️ No notification channels active. Configure in 👤 Profile & Notifications.")
+    st.caption(f"Signed in as **{user['full_name']}** • Alerts saved to your account")
+
+# ── Live prices preview (everyone sees this) ──────────────────────────────
+st.subheader("📊 Current Live Prices")
+preview_stock = st.selectbox("Check live price", NIFTY50_NAMES, key="alert_preview")
+preview_price = get_live_price(NAME_TO_SYM[preview_stock])
+if preview_price:
+    st.metric(preview_stock, f"₹{preview_price:,.2f}")
+else:
+    st.info("Price unavailable")
 
 st.markdown("---")
-st.subheader("➕ Add New Alert")
-cols = st.columns([3, 2, 2, 1])
-with cols[0]: sel_name  = st.selectbox("Stock", NIFTY50_NAMES, key="alert_stock")
-with cols[1]: direction = st.radio("Trigger", ["⬆️ Above", "⬇️ Below"], horizontal=True)
-with cols[2]: threshold = st.number_input("₹ Threshold", min_value=0.01, value=1000.0, step=10.0)
-with cols[3]:
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("➕ Add", use_container_width=True):
-        ok = al_add(sel_name, NAME_TO_SYM[sel_name], direction, threshold)
-        if ok:
-            st.success(f"✅ Alert added for {sel_name}")
-            st.rerun()
-        else:
-            st.error("❌ Failed to save alert.]),")
 
-st.markdown("---")
-alerts = al_load()
-
-if not alerts:
-    st.info("💡 No active alerts. Add one above — they will persist across sessions.")
+# ── Create + manage alerts — requires login ───────────────────────────────
+st.subheader("🔔 My Alerts")
+if guest:
+    login_nudge("create and save price alerts")
 else:
-    st.subheader("📊 Active Alerts")
-    auto_refresh = st.toggle("↺ Auto-check every 60s")
-    rows, fired = [], []
-    for alert in alerts:
-        price = get_live_price(alert["symbol"])
-        triggered = False
-        if price is not None:
-            above = price >= alert["threshold"]
-            if (alert["direction"] == "⬆️ Above" and above) or (alert["direction"] == "⬇️ Below" and not above):
-                status = f"🔴 TRIGGERED — ₹{price:,.2f}"; triggered = True
-            else:
-                status = f"🟢 Watching — ₹{price:,.2f}"
-        else:
-            status = "⏳ Pending"
-        if triggered: fired.append((alert, price))
-        rows.append({
-            "Stock": alert["stock"], "Trigger": alert["direction"],
-            "Threshold": f"₹{alert['threshold']:,.2f}",
-            "Live Price": f"₹{price:,.2f}" if price else "N/A",
-            "Status": status, "Added": alert["added"],
-        })
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    if "notified_set" not in st.session_state:
+        st.session_state.notified_set = set()
 
-    for alert, price in fired:
-        key = f"{alert['symbol']}_{alert['direction']}_{alert['threshold']}"
-        st.error(f"🚨 FIRED: **{alert['stock']}** {alert['direction']} ₹{alert['threshold']:,.2f}")
-        if key not in st.session_state.notified_set:
-            st.session_state.notified_set.add(key)
-            for m in _fire(alert, price): st.info(m)
-    if fired: st.snow()
+    def _ns():
+        return {
+            "email":        st.session_state.get("user_email", ""),
+            "phone":        st.session_state.get("user_phone", ""),
+            "notify_email": st.session_state.get("notify_email", False),
+            "notify_sms":   st.session_state.get("notify_sms",   False),
+        }
 
-    st.markdown("---")
-    del_stock = st.selectbox("Delete alert for:", [a["stock"] for a in alerts])
-    c1, c2 = st.columns([1, 1])
-    with c1:
-        if st.button("🗑️ Delete Selected", type="secondary"):
-            target = next((a for a in alerts if a["stock"] == del_stock), None)
-            if target and al_delete(target):
-                st.success(f"✅ Deleted alert for {del_stock}")
+    def _fire(alert, price):
+        ns = _ns()
+        subject = f"🔔 Alert: {alert['stock']} {alert['direction']} ₹{alert['threshold']:,.2f}"
+        body = (
+            f"Stock: {alert['stock']} ({alert['symbol']})\n"
+            f"Condition: {alert['direction']} ₹{alert['threshold']:,.2f}\n"
+            f"Live Price: ₹{price:,.2f}\n"
+            f"Time: {datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M IST')}"
+        )
+        msgs = []
+        if ns["notify_email"] and ns["email"]:
+            ok, err = send_email(ns["email"], subject, body)
+            msgs.append(f"📧 Email {'sent' if ok else 'failed: '+err}")
+        if ns["notify_sms"] and ns["phone"]:
+            ok, err = send_sms(ns["phone"], f"🔔 {alert['stock']} {alert['direction']} ₹{alert['threshold']:,.2f} | Live: ₹{price:,.2f}")
+            msgs.append(f"📱 SMS {'sent' if ok else 'failed: '+err}")
+        return msgs
+
+    st.markdown("##### ➕ Add New Alert")
+    cols = st.columns([3, 2, 2, 1])
+    with cols[0]: sel_name  = st.selectbox("Stock", NIFTY50_NAMES, key="alert_stock")
+    with cols[1]: direction = st.radio("Trigger", ["⬆️ Above", "⬇️ Below"], horizontal=True)
+    with cols[2]: threshold = st.number_input("₹ Threshold", min_value=0.01, value=1000.0, step=10.0)
+    with cols[3]:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("➕ Add", use_container_width=True):
+            ok = al_add(sel_name, NAME_TO_SYM[sel_name], direction, threshold)
+            if ok:
+                st.success(f"✅ Alert added for {sel_name}")
                 st.rerun()
-    with c2:
-        if st.button("🧹 Clear All Alerts", type="secondary"):
-            al_clear(); st.rerun()
+            else:
+                st.error("❌ Failed to save alert.")
 
-    if auto_refresh:
-        import time; time.sleep(60); st.rerun()
+    alerts = al_load()
+    if not alerts:
+        st.info("💡 No active alerts. Add one above.")
+    else:
+        auto_refresh = st.toggle("↺ Auto-check every 60s")
+        rows, fired = [], []
+        for alert in alerts:
+            price = get_live_price(alert["symbol"])
+            triggered = False
+            if price is not None:
+                above = price >= alert["threshold"]
+                if (alert["direction"] == "⬆️ Above" and above) or (alert["direction"] == "⬇️ Below" and not above):
+                    status = f"🔴 TRIGGERED — ₹{price:,.2f}"; triggered = True
+                else:
+                    status = f"🟢 Watching — ₹{price:,.2f}"
+            else:
+                status = "⏳ Pending"
+            if triggered: fired.append((alert, price))
+            rows.append({
+                "Stock": alert["stock"], "Trigger": alert["direction"],
+                "Threshold": f"₹{alert['threshold']:,.2f}",
+                "Live Price": f"₹{price:,.2f}" if price else "N/A",
+                "Status": status, "Added": alert["added"],
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+        for alert, price in fired:
+            key = f"{alert['symbol']}_{alert['direction']}_{alert['threshold']}"
+            st.error(f"🚨 FIRED: **{alert['stock']}** {alert['direction']} ₹{alert['threshold']:,.2f}")
+            if key not in st.session_state.notified_set:
+                st.session_state.notified_set.add(key)
+                for m in _fire(alert, price): st.info(m)
+        if fired: st.snow()
+
+        st.markdown("---")
+        del_stock = st.selectbox("Delete alert for:", [a["stock"] for a in alerts])
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            if st.button("🗑️ Delete Selected", type="secondary"):
+                target = next((a for a in alerts if a["stock"] == del_stock), None)
+                if target and al_delete(target):
+                    st.success(f"✅ Deleted alert for {del_stock}")
+                    st.rerun()
+        with c2:
+            if st.button("🧹 Clear All Alerts", type="secondary"):
+                al_clear(); st.rerun()
+
+        if auto_refresh:
+            import time; time.sleep(60); st.rerun()
