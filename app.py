@@ -1019,7 +1019,7 @@ with tabs[10]:
     try:
         st.page_link("pages/04_🤖_ML_Predictions.py", label="🤖 Open ML Predictions Page", icon="🤖")
     except Exception:
-        st.markdown("Navigate to **ML Predictions** from the sidebar.")
+        st.markdown("Navigate to **ML Predictions** from the top bar.")
 
 # ── 11: Paper Trading ────────────────────────────────────────
 with tabs[11]:
@@ -1029,26 +1029,55 @@ with tabs[11]:
     try:
         st.page_link("pages/06_📝_Paper_Trading.py", label="🎮 Open Paper Trading Page", icon="🎮")
     except Exception:
-        st.markdown("Navigate to **Paper Trading** from the sidebar.")
+        st.markdown("Navigate to **Paper Trading** from the top bar.")
 
 # ── 12: Market Calendar ──────────────────────────────────────
 with tabs[12]:
     hero("📅", "Market Calendar",
-         "<span class='ui-badge badge-nse'>NSE</span>", "NSE holidays & key market events")
-    st.info(
-        "🚧 **Market Calendar** module coming soon.\n\n"
-        "Will show NSE trading holidays, earnings dates, and RBI policy meeting schedules."
-    )
-    sec("Known NSE Holidays 2026 (Sample)")
-    holidays_2026 = [
-        {"Date": "Jan 26", "Day": "Monday",    "Event": "Republic Day"},
-        {"Date": "Mar 14", "Day": "Saturday",  "Event": "Holi"},
-        {"Date": "Apr 14", "Day": "Tuesday",   "Event": "Dr. Ambedkar Jayanti / Good Friday"},
-        {"Date": "May 1",  "Day": "Friday",    "Event": "Maharashtra Day"},
-        {"Date": "Aug 15", "Day": "Saturday",  "Event": "Independence Day"},
-        {"Date": "Oct 2",  "Day": "Friday",    "Event": "Gandhi Jayanti"},
-        {"Date": "Oct 24", "Day": "Saturday",  "Event": "Dussehra"},
-        {"Date": "Nov 14", "Day": "Saturday",  "Event": "Diwali Laxmi Pujan"},
-        {"Date": "Dec 25", "Day": "Friday",    "Event": "Christmas"},
-    ]
-    st.dataframe(pd.DataFrame(holidays_2026), use_container_width=True, hide_index=True)
+         "<span class='ui-badge badge-nse'>NSE 2026</span>", "Trading holidays, RBI dates & earnings")
+
+    col_h, col_r = st.columns(2)
+
+    with col_h:
+        sec("🏦 NSE Trading Holidays 2026")
+        holidays_2026 = pd.DataFrame([
+            {"Date": "26 Jan", "Day": "Monday",   "Holiday": "Republic Day"},
+            {"Date": "14 Mar", "Day": "Saturday", "Holiday": "Holi (observed Fri 13 Mar)"},
+            {"Date": "14 Apr", "Day": "Tuesday",  "Holiday": "Dr. Ambedkar Jayanti"},
+            {"Date": "15 Apr", "Day": "Wednesday","Holiday": "Good Friday"},
+            {"Date": "01 May", "Day": "Friday",   "Holiday": "Maharashtra Day"},
+            {"Date": "15 Aug", "Day": "Saturday", "Holiday": "Independence Day"},
+            {"Date": "02 Oct", "Day": "Friday",   "Holiday": "Gandhi Jayanti"},
+            {"Date": "24 Oct", "Day": "Saturday", "Holiday": "Dussehra"},
+            {"Date": "13 Nov", "Day": "Friday",   "Holiday": "Diwali Laxmi Pujan"},
+            {"Date": "25 Dec", "Day": "Friday",   "Holiday": "Christmas"},
+        ])
+        st.dataframe(holidays_2026, use_container_width=True, hide_index=True)
+
+    with col_r:
+        sec("🏦 RBI MPC Meeting Dates 2026")
+        rbi_2026 = pd.DataFrame([
+            {"Meeting": "MPC 1", "Date": "05–07 Feb 2026", "Decision Date": "07 Feb", "Status": "🟡 Upcoming"},
+            {"Meeting": "MPC 2", "Date": "01–03 Apr 2026", "Decision Date": "03 Apr", "Status": "🟡 Upcoming"},
+            {"Meeting": "MPC 3", "Date": "03–05 Jun 2026", "Decision Date": "05 Jun", "Status": "🟡 Upcoming"},
+            {"Meeting": "MPC 4", "Date": "05–07 Aug 2026", "Decision Date": "07 Aug", "Status": "⏳ Future"},
+            {"Meeting": "MPC 5", "Date": "30 Sep–2 Oct",  "Decision Date": "02 Oct", "Status": "⏳ Future"},
+            {"Meeting": "MPC 6", "Date": "02–04 Dec 2026", "Decision Date": "04 Dec", "Status": "⏳ Future"},
+        ])
+        st.dataframe(rbi_2026, use_container_width=True, hide_index=True)
+
+    divider()
+    sec("📈 Key Upcoming Market Events")
+    events_df = pd.DataFrame([
+        {"Date": "Jul 2026",  "Event": "Union Budget 2026–27",          "Impact": "🔴 High",   "Category": "Budget"},
+        {"Date": "Jul 2026",  "Event": "Q1 FY27 Results Season",        "Impact": "🔴 High",   "Category": "Earnings"},
+        {"Date": "Aug 2026",  "Event": "RBI MPC Policy Decision",       "Impact": "🔴 High",   "Category": "RBI"},
+        {"Date": "Sep 2026",  "Event": "US Fed FOMC Meeting",           "Impact": "🟡 Medium", "Category": "Global"},
+        {"Date": "Oct 2026",  "Event": "Q2 FY27 Results Season",        "Impact": "🔴 High",   "Category": "Earnings"},
+        {"Date": "Oct 2026",  "Event": "Dussehra (NSE Holiday)",        "Impact": "🟢 Low",    "Category": "Holiday"},
+        {"Date": "Nov 2026",  "Event": "Diwali Laxmi Pujan (Holiday)", "Impact": "🟢 Low",    "Category": "Holiday"},
+        {"Date": "Dec 2026",  "Event": "RBI MPC Policy Decision",       "Impact": "🔴 High",   "Category": "RBI"},
+        {"Date": "Dec 2026",  "Event": "US Fed FOMC Meeting",           "Impact": "🟡 Medium", "Category": "Global"},
+        {"Date": "Jan 2027",  "Event": "Q3 FY27 Results Season",        "Impact": "🔴 High",   "Category": "Earnings"},
+    ])
+    st.dataframe(events_df, use_container_width=True, hide_index=True)
