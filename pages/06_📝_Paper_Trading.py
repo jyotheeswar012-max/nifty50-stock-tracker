@@ -2,11 +2,23 @@
 Page: Paper Trading Simulator  —  light theme, fully error-proofed
 """
 import streamlit as st
-from utils.supabase_auth import get_current_user, is_guest, login_nudge
-from utils.theme import inject
 
-st.set_page_config(page_title="Paper Trading", page_icon="📝", layout="wide")
-inject()
+try:
+    st.set_page_config(page_title="Paper Trading", page_icon="📝", layout="wide")
+except Exception:
+    pass
+
+try:
+    from utils.theme import inject
+    inject()
+except Exception:
+    pass
+
+try:
+    from utils.supabase_auth import get_current_user, is_guest
+except Exception:
+    def get_current_user(): return None
+    def is_guest(): return True
 
 import yfinance as yf
 import pandas as pd
@@ -59,10 +71,21 @@ def safe_float(v, d=0.0):
 
 @st.cache_data(ttl=60)
 def get_live_price(sym: str):
+    """Fetch latest price — tries 1m intraday first, falls back to 5d daily."""
     try:
         h = yf.Ticker(sym).history(period="1d", interval="1m")
         if h is not None and not h.empty:
-            return safe_float(h["Close"].iloc[-1])
+            p = safe_float(h["Close"].iloc[-1])
+            if p > 0:
+                return p
+    except Exception:
+        pass
+    try:
+        h = yf.Ticker(sym).history(period="5d")
+        if h is not None and not h.empty:
+            p = safe_float(h["Close"].iloc[-1])
+            if p > 0:
+                return p
     except Exception:
         pass
     return None
@@ -80,8 +103,8 @@ for k, v in [
 def _snapshot_equity():
     try:
         port_val = sum(
-            safe_float(get_live_price(s) or h["avg_price"]) * safe_float(h["qty"])
-            for s, h in st.session_state.pt_holdings.items()
+            safe_float(get_live_price(s) or hd["avg_price"]) * safe_float(hd["qty"])
+            for s, hd in st.session_state.pt_holdings.items()
         )
         st.session_state.pt_equity.append({
             "time":   datetime.now(IST).strftime("%H:%M:%S"),
@@ -93,7 +116,7 @@ def _snapshot_equity():
 def generate_pdf():
     try:
         from fpdf import FPDF
-        pdf  = FPDF()
+        pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Helvetica", "B", 16)
         pdf.cell(0, 10, "Nifty50 Tracker - Paper Trading Report", ln=True, align="C")
@@ -105,8 +128,8 @@ def generate_pdf():
             ln=True, align="C")
         pdf.ln(4)
         port_val = sum(
-            safe_float(get_live_price(s) or h["avg_price"]) * safe_float(h["qty"])
-            for s, h in st.session_state.pt_holdings.items()
+            safe_float(get_live_price(s) or hd["avg_price"]) * safe_float(hd["qty"])
+            for s, hd in st.session_state.pt_holdings.items()
         )
         total_eq = st.session_state.pt_balance + port_val
         pnl      = total_eq - STARTING_CAPITAL
@@ -137,12 +160,12 @@ def generate_pdf():
             pdf.set_font("Helvetica", "", 9)
             for tr in trades[-50:]:
                 row = [
-                    str(tr.get("time","")),
-                    str(tr.get("stock",""))[:28],
-                    str(tr.get("type","")),
-                    str(tr.get("qty","")),
-                    f"{tr.get('price',0):,.2f}",
-                    f"{tr.get('value',0):,.2f}",
+                    str(tr.get("time", "")),
+                    str(tr.get("stock", ""))[:28],
+                    str(tr.get("type", "")),
+                    str(tr.get("qty", "")),
+                    f"{tr.get('price', 0):,.2f}",
+                    f"{tr.get('value', 0):,.2f}",
                 ]
                 for cell, w in zip(row, widths):
                     pdf.cell(w, 6, cell, border=1)
@@ -152,7 +175,7 @@ def generate_pdf():
         st.warning(f"⚠️ PDF generation failed: {e}")
         return None
 
-# ── Header ───────────────────────────────────────────────────────────────
+# ── Header ────────────────────────────────────────────────────────────────
 st.markdown("""
 <div style="display:flex;align-items:center;gap:1rem;margin-bottom:.5rem;">
   <div style="width:52px;height:52px;border-radius:50%;
@@ -162,27 +185,29 @@ st.markdown("""
     📝
   </div>
   <div>
-    <div class="ui-page-title" style="font-size:1.7rem;">Paper Trading Simulator</div>
-    <div class="ui-caption" style="margin:0;">Trade with virtual ₹10,00,000 — zero risk, real prices</div>
+    <div style="font-size:1.7rem;font-weight:700;">Paper Trading Simulator</div>
+    <div style="font-size:.85rem;color:#64748b;margin:0;">Trade with virtual ₹10,00,000 — zero risk, real prices</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
 if guest:
-    st.markdown("<span class='ui-badge badge-hist'>👤 Guest — session only, sign in to save progress</span>",
-                unsafe_allow_html=True)
-    login_nudge("save your paper trading progress")
+    st.markdown(
+        "<span style='background:#94a3b8;color:#fff;padding:2px 10px;border-radius:99px;font-size:.75rem;'>👤 Guest — session only, sign in to save progress</span>",
+        unsafe_allow_html=True)
 else:
-    st.markdown(f"<span class='ui-badge badge-live'>✅ {user['full_name']} — Virtual ₹10,00,000 capital</span>",
-                unsafe_allow_html=True)
+    name_display = user.get('full_name', 'User') if isinstance(user, dict) else 'User'
+    st.markdown(
+        f"<span style='background:#10b981;color:#fff;padding:2px 10px;border-radius:99px;font-size:.75rem;'>✅ {name_display} — Virtual ₹10,00,000 capital</span>",
+        unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ── Account summary ──────────────────────────────────────────────────────
+# ── Account summary ────────────────────────────────────────────────────────
 try:
     port_val = sum(
-        safe_float(get_live_price(s) or h["avg_price"]) * safe_float(h["qty"])
-        for s, h in st.session_state.pt_holdings.items()
+        safe_float(get_live_price(s) or hd["avg_price"]) * safe_float(hd["qty"])
+        for s, hd in st.session_state.pt_holdings.items()
     )
 except Exception:
     port_val = 0.0
@@ -191,14 +216,13 @@ total_eq = st.session_state.pt_balance + port_val
 pnl      = total_eq - STARTING_CAPITAL
 pnl_pct  = (pnl / STARTING_CAPITAL * 100)
 
-st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
 st.markdown("#### 💰 Account Summary")
 m1, m2, m3, m4, m5 = st.columns(5)
-m1.metric("💵 Cash Balance",    f"₹{st.session_state.pt_balance:,.0f}")
-m2.metric("💼 Portfolio Value",  f"₹{port_val:,.0f}")
-m3.metric("⚖️ Total Equity",     f"₹{total_eq:,.0f}")
-m4.metric("📈 Net P&L",         f"₹{pnl:+,.0f}",          delta=f"{pnl_pct:+.2f}%")
-m5.metric("🔄 Total Trades",    str(len(st.session_state.pt_trades)))
+m1.metric("💵 Cash Balance",   f"₹{st.session_state.pt_balance:,.0f}")
+m2.metric("💼 Portfolio Value", f"₹{port_val:,.0f}")
+m3.metric("⚖️ Total Equity",    f"₹{total_eq:,.0f}")
+m4.metric("📈 Net P&L",        f"₹{pnl:+,.0f}", delta=f"{pnl_pct:+.2f}%")
+m5.metric("🔄 Total Trades",   str(len(st.session_state.pt_trades)))
 
 col_r, col_pdf = st.columns([3, 1])
 with col_r:
@@ -219,37 +243,36 @@ with col_pdf:
                 mime="application/pdf",
                 key="pt_dl",
             )
-st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ── Trade Panel ──────────────────────────────────────────────────────────────
+# ── Trade Panel ───────────────────────────────────────────────────────────
 tab_buy, tab_sell, tab_port, tab_log, tab_chart = st.tabs([
     "🟢  Buy", "🔴  Sell", "💼  Portfolio", "📜  Trade Log", "📈  Equity Chart"
 ])
 
-# ── BUY ────────────────────────────────────────────────────────────────────
+# ── BUY ───────────────────────────────────────────────────────────────────
 with tab_buy:
-    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
     st.markdown("#### 🟢 Place a Buy Order")
     bc1, bc2, bc3 = st.columns(3)
-    with bc1: buy_stock = st.selectbox("Stock",    NAMES,            key="pt_buy_stock")
-    with bc2: buy_qty   = st.number_input("Qty",   min_value=1, value=1, step=1,    key="pt_buy_qty")
+    with bc1: buy_stock = st.selectbox("Stock", NAMES, key="pt_buy_stock")
+    with bc2: buy_qty   = st.number_input("Qty", min_value=1, value=1, step=1, key="pt_buy_qty")
     with bc3:
         buy_sym   = N2S[buy_stock]
         buy_price = get_live_price(buy_sym)
-        if buy_price:
+        if buy_price and buy_price > 0:
             st.metric("Live Price", f"₹{buy_price:,.2f}")
         else:
             st.warning("⏳ Price unavailable")
             buy_price = 0.0
 
     buy_cost = safe_float(buy_price) * int(buy_qty)
-    st.markdown(f"💰 **Order Value:** ₹{buy_cost:,.2f} &nbsp;|&nbsp; "
-                f"💵 **Available Cash:** ₹{st.session_state.pt_balance:,.2f}",
-                unsafe_allow_html=True)
+    st.markdown(
+        f"💰 **Order Value:** ₹{buy_cost:,.2f} &nbsp;|&nbsp; "
+        f"💵 **Available Cash:** ₹{st.session_state.pt_balance:,.2f}",
+        unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("🟢 Execute Buy", type="primary", key="pt_exec_buy", use_container_width=False):
+    if st.button("🟢 Execute Buy", type="primary", key="pt_exec_buy"):
         if buy_price <= 0:
             st.error("❌ Cannot fetch live price. Try again.")
         elif buy_cost > st.session_state.pt_balance:
@@ -257,9 +280,9 @@ with tab_buy:
         else:
             h = st.session_state.pt_holdings
             if buy_sym in h:
-                old = h[buy_sym]
-                total_qty  = old["qty"] + buy_qty
-                avg        = (old["avg_price"] * old["qty"] + buy_price * buy_qty) / total_qty
+                old       = h[buy_sym]
+                total_qty = old["qty"] + buy_qty
+                avg       = (old["avg_price"] * old["qty"] + buy_price * buy_qty) / total_qty
                 h[buy_sym] = {"qty": total_qty, "avg_price": round(avg, 4), "name": buy_stock}
             else:
                 h[buy_sym] = {"qty": buy_qty, "avg_price": round(buy_price, 4), "name": buy_stock}
@@ -273,11 +296,9 @@ with tab_buy:
             _snapshot_equity()
             st.success(f"✅ Bought {buy_qty} × {buy_stock} @ ₹{buy_price:,.2f}")
             st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
 
-# ── SELL ────────────────────────────────────────────────────────────────────
+# ── SELL ───────────────────────────────────────────────────────────────────
 with tab_sell:
-    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
     st.markdown("#### 🔴 Place a Sell Order")
     holdings = st.session_state.pt_holdings
     if not holdings:
@@ -286,13 +307,13 @@ with tab_sell:
         held_names = [holdings[s]["name"] for s in holdings]
         held_syms  = list(holdings.keys())
         sc1, sc2, sc3 = st.columns(3)
-        with sc1: sell_name = st.selectbox("Stock",  held_names, key="pt_sell_stock")
+        with sc1: sell_name = st.selectbox("Stock", held_names, key="pt_sell_stock")
         sell_sym  = held_syms[held_names.index(sell_name)]
         held_qty  = holdings[sell_sym]["qty"]
-        with sc2: sell_qty  = st.number_input("Qty", min_value=1, max_value=held_qty, value=1, key="pt_sell_qty")
+        with sc2: sell_qty = st.number_input("Qty", min_value=1, max_value=held_qty, value=1, key="pt_sell_qty")
         with sc3:
             sell_price = get_live_price(sell_sym)
-            if sell_price:
+            if sell_price and sell_price > 0:
                 st.metric("Live Price", f"₹{sell_price:,.2f}")
             else:
                 st.warning("⏳ Price unavailable")
@@ -303,11 +324,11 @@ with tab_sell:
         est_pnl    = (safe_float(sell_price) - avg_price) * sell_qty
         st.markdown(
             f"💰 **Order Value:** ₹{sell_value:,.2f} &nbsp;|&nbsp; "
-            f"📊 **Avg Buy Price:** ₹{avg_price:,.2f} &nbsp;|&nbsp; "
+            f"📊 **Avg Buy:** ₹{avg_price:,.2f} &nbsp;|&nbsp; "
             f"📈 **Est. P&L:** ₹{est_pnl:+,.2f}",
             unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🔴 Execute Sell", type="primary", key="pt_exec_sell", use_container_width=False):
+        if st.button("🔴 Execute Sell", type="primary", key="pt_exec_sell"):
             if sell_price <= 0:
                 st.error("❌ Cannot fetch live price. Try again.")
             else:
@@ -326,48 +347,46 @@ with tab_sell:
                 _snapshot_equity()
                 st.success(f"✅ Sold {sell_qty} × {sell_name} @ ₹{sell_price:,.2f} | P&L: ₹{est_pnl:+,.2f}")
                 st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
 
-# ── PORTFOLIO ───────────────────────────────────────────────────────────
+# ── PORTFOLIO ──────────────────────────────────────────────────────────────
 with tab_port:
-    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
     st.markdown("#### 💼 Current Holdings")
     if not st.session_state.pt_holdings:
         st.info("💡 No open positions. Go to Buy tab to start trading.")
     else:
         rows = []
-        for sym, h in st.session_state.pt_holdings.items():
-            lp  = safe_float(get_live_price(sym) or h["avg_price"])
-            val = lp * h["qty"]
-            pl  = (lp - h["avg_price"]) * h["qty"]
-            pct = ((lp - h["avg_price"]) / h["avg_price"] * 100) if h["avg_price"] else 0
-            rows.append({
-                "Stock":        h["name"],
-                "Symbol":       sym.replace(".NS",""),
-                "Qty":          h["qty"],
-                "Avg Price (₹)": f"₹{h['avg_price']:,.2f}",
-                "Live Price (₹)":f"₹{lp:,.2f}",
-                "Value (₹)":    f"₹{val:,.2f}",
-                "P&L (₹)":      f"₹{pl:+,.2f}",
-                "P&L %":        f"{pct:+.2f}%",
-            })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+        for sym, hd in st.session_state.pt_holdings.items():
+            try:
+                lp  = safe_float(get_live_price(sym) or hd["avg_price"])
+                val = lp * hd["qty"]
+                pl  = (lp - hd["avg_price"]) * hd["qty"]
+                pct = ((lp - hd["avg_price"]) / hd["avg_price"] * 100) if hd["avg_price"] else 0
+                rows.append({
+                    "Stock":         hd["name"],
+                    "Symbol":        sym.replace(".NS", ""),
+                    "Qty":           hd["qty"],
+                    "Avg Price (₹)": f"₹{hd['avg_price']:,.2f}",
+                    "Live Price (₹)":f"₹{lp:,.2f}",
+                    "Value (₹)":     f"₹{val:,.2f}",
+                    "P&L (₹)":       f"₹{pl:+,.2f}",
+                    "P&L %":         f"{pct:+.2f}%",
+                })
+            except Exception:
+                continue
+        if rows:
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-# ── TRADE LOG ───────────────────────────────────────────────────────────
+# ── TRADE LOG ─────────────────────────────────────────────────────────────
 with tab_log:
-    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
     st.markdown("#### 📜 Trade History")
     if not st.session_state.pt_trades:
         st.info("💡 No trades yet.")
     else:
         log_df = pd.DataFrame(st.session_state.pt_trades[::-1])
         st.dataframe(log_df, use_container_width=True, hide_index=True)
-    st.markdown("</div>", unsafe_allow_html=True)
 
-# ── EQUITY CHART ─────────────────────────────────────────────────────────
+# ── EQUITY CHART ───────────────────────────────────────────────────────────
 with tab_chart:
-    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
     st.markdown("#### 📈 Equity Curve")
     eq = st.session_state.pt_equity
     if len(eq) < 2:
@@ -395,4 +414,3 @@ with tab_chart:
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
             st.warning(f"⚠️ Chart error: {e}")
-    st.markdown("</div>", unsafe_allow_html=True)
