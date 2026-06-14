@@ -1,5 +1,5 @@
 """
-utils/theme.py  —  NSE Tracker v14  —  Full-width Fixed Top Navbar
+utils/theme.py  -  NSE Tracker v14  -  Full-width Fixed Top Navbar
 """
 import streamlit as st
 
@@ -58,6 +58,14 @@ html, body { background: #f0f2f6 !important; }
   font-weight: 600 !important; font-size: 0.85rem !important; width: 100% !important;
 }
 [data-testid="stSidebar"] .stButton > button:hover { background: rgba(255,255,255,.22) !important; color: #ffffff !important; }
+
+/* Hide Streamlit default sidebar bottom footer (app name + broken icon + user/guest button) */
+[data-testid="stSidebarFooter"],
+[data-testid="stSidebarUserContent"] ~ div,
+.st-emotion-cache-1cypcdb,
+.st-emotion-cache-h5rgaw,
+[data-testid="stSidebar"] > div > div > div:last-child > div:last-child,
+[data-testid="stSidebarNav"] ~ div { display: none !important; }
 
 /* TOP NAVBAR */
 .nse-topbar {
@@ -213,30 +221,30 @@ def inject_topbar(user=None):
     name = user.get("full_name", user.get("email", "User")) if user else None
 
     if name:
-        auth_html = f'<div class="nse-topbar-auth"><a href="/Profile" target="_self">👤 {name}</a></div>'
+        auth_html = '<div class="nse-topbar-auth"><a href="/Profile" target="_self">User: ' + name + '</a></div>'
     else:
-        auth_html = '<div class="nse-topbar-auth"><a href="/Login" target="_self">🔐 Sign In</a></div>'
+        auth_html = '<div class="nse-topbar-auth"><a href="/Login" target="_self">Sign In</a></div>'
 
-    html = f"""
+    html = """
     <div class="nse-topbar">
       <a class="nse-topbar-brand" href="/" target="_self">
-        📈 NSE Tracker <span class="sub">NIFTY 50</span>
+        NSE Tracker <span class="sub">NIFTY 50</span>
       </a>
       <div class="nse-topbar-links">
-        <a href="/" target="_self">🏦 Overview</a>
+        <a href="/" target="_self">Overview</a>
         <div class="nav-sep"></div>
-        <a href="/Scenario_Engine" target="_self">🧪 Scenario</a>
-        <a href="/Paper_Portfolio" target="_self">💼 Portfolio</a>
-        <a href="/Paper_Trading" target="_self">🎮 Trading</a>
+        <a href="/Scenario_Engine" target="_self">Scenario</a>
+        <a href="/Paper_Portfolio" target="_self">Portfolio</a>
+        <a href="/Paper_Trading" target="_self">Trading</a>
         <div class="nav-sep"></div>
-        <a href="/News_Sentiment" target="_self">📰 News</a>
-        <a href="/ML_Predictions" target="_self">🤖 ML</a>
-        <a href="/Market_Calendar" target="_self">📅 Calendar</a>
+        <a href="/News_Sentiment" target="_self">News</a>
+        <a href="/ML_Predictions" target="_self">ML</a>
+        <a href="/Market_Calendar" target="_self">Calendar</a>
         <div class="nav-sep"></div>
-        <a href="/Alerts" target="_self">🔔 Alerts</a>
-        <a href="/Watchlist" target="_self">⭐ Watchlist</a>
+        <a href="/Alerts" target="_self">Alerts</a>
+        <a href="/Watchlist" target="_self">Watchlist</a>
       </div>
-      {auth_html}
+      """ + auth_html + """
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
