@@ -1,5 +1,5 @@
 """
-utils/theme.py  —  NSE Tracker v8  —  Sticky Top Navbar + Full CSS
+utils/theme.py  —  NSE Tracker v9  —  Full-width Fixed Top Navbar
 """
 import streamlit as st
 
@@ -13,8 +13,20 @@ html, body { background: #f0f2f6 !important; }
   background: #f0f2f6 !important;
   font-family: 'Inter','Segoe UI',system-ui,sans-serif !important;
 }
+
+/* ── Hide Streamlit's native top header so our bar takes its place ── */
+[data-testid="stHeader"] {
+  display: none !important;
+}
+
+/* ── Push content down so it doesn't hide under our fixed bar ── */
+[data-testid="stAppViewContainer"] > section:first-child,
+[data-testid="stMain"] {
+  padding-top: 56px !important;
+}
+
 .block-container {
-  padding-top: 1rem !important;
+  padding-top: 0.8rem !important;
   padding-bottom: 3rem !important;
   max-width: 1280px !important;
 }
@@ -48,6 +60,7 @@ html, body { background: #f0f2f6 !important; }
 [data-testid="stSidebar"] {
   background: linear-gradient(180deg,#1e1b4b 0%,#312e81 45%,#1e1b4b 100%) !important;
   border-right: none !important;
+  margin-top: 56px !important;
 }
 [data-testid="stSidebar"] p, [data-testid="stSidebar"] span,
 [data-testid="stSidebar"] div, [data-testid="stSidebar"] label,
@@ -65,53 +78,110 @@ html, body { background: #f0f2f6 !important; }
 }
 [data-testid="stSidebar"] .stButton > button:hover { background: rgba(255,255,255,.22) !important; color: #ffffff !important; }
 
-/* STREAMLIT HEADER */
-[data-testid="stHeader"] {
-  background: rgba(240,242,246,.96) !important;
-  backdrop-filter: blur(12px) !important;
-  border-bottom: 1px solid #e2e8f0 !important;
-}
-
-/* CUSTOM STICKY TOP NAVBAR */
+/* ══════════════════════════════════════════════════════
+   FULL-WIDTH FIXED TOP NAVBAR
+   Uses position:fixed so it spans the entire viewport,
+   not just the content column.
+══════════════════════════════════════════════════════ */
 .nse-topbar {
-  position: sticky;
-  top: 0;
-  z-index: 9999;
-  background: linear-gradient(90deg, #1e1b4b 0%, #312e81 55%, #4f46e5 100%);
-  padding: 0 1.5rem;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100vw !important;
+  z-index: 99999 !important;
+  background: linear-gradient(90deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%);
   height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 2px solid rgba(99,102,241,.5);
-  box-shadow: 0 2px 16px rgba(30,27,75,.35);
-  margin-bottom: 1.2rem;
-  border-radius: 0 0 10px 10px;
+  padding: 0 1.2rem;
+  border-bottom: 2px solid rgba(99,102,241,.6);
+  box-shadow: 0 3px 20px rgba(30,27,75,.45);
+  gap: 0.5rem;
 }
+
+/* Brand */
 .nse-topbar-brand {
-  display: flex; align-items: center; gap: .6rem;
-  font-size: 1.05rem; font-weight: 900;
-  color: #ffffff !important; letter-spacing: -.01em; white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.98rem;
+  font-weight: 900;
+  color: #ffffff !important;
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: -0.01em;
 }
-.nse-topbar-brand .sub { color: #a5b4fc !important; font-weight: 500; font-size: .78rem; margin-left: .3rem; }
-.nse-topbar-links { display: flex; align-items: center; gap: .2rem; flex-wrap: nowrap; }
+.nse-topbar-brand .sub {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #a5b4fc !important;
+  background: rgba(255,255,255,0.12);
+  border-radius: 4px;
+  padding: 1px 6px;
+  letter-spacing: 0.04em;
+}
+
+/* Nav links */
+.nse-topbar-links {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex: 1;
+  justify-content: center;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
 .nse-topbar-links a {
-  display: inline-flex; align-items: center; gap: .35rem;
-  padding: 6px 13px; border-radius: 8px;
-  font-size: .82rem; font-weight: 700;
-  color: #c7d2fe !important; text-decoration: none !important;
-  transition: background .15s, color .15s; white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #c7d2fe !important;
+  text-decoration: none !important;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
 }
-.nse-topbar-links a:hover { background: rgba(255,255,255,.16); color: #ffffff !important; }
-.nse-topbar-links .nav-sep { width: 1px; height: 20px; background: rgba(255,255,255,.2); margin: 0 .25rem; flex-shrink: 0; }
+.nse-topbar-links a:hover {
+  background: rgba(255,255,255,0.16);
+  color: #ffffff !important;
+}
+.nav-sep {
+  width: 1px;
+  height: 18px;
+  background: rgba(255,255,255,0.2);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+/* Auth button */
+.nse-topbar-auth {
+  flex-shrink: 0;
+}
 .nse-topbar-auth a {
-  display: inline-flex; align-items: center; gap: .4rem;
-  padding: 6px 14px; border-radius: 8px; font-size: .82rem; font-weight: 800;
-  background: rgba(255,255,255,.14); color: #e0e7ff !important;
-  border: 1.5px solid rgba(255,255,255,.25); text-decoration: none !important;
-  transition: background .15s; white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 5px 12px;
+  border-radius: 7px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  background: rgba(255,255,255,0.15);
+  color: #e0e7ff !important;
+  border: 1.5px solid rgba(255,255,255,0.28);
+  text-decoration: none !important;
+  white-space: nowrap;
+  transition: background 0.15s;
 }
-.nse-topbar-auth a:hover { background: rgba(255,255,255,.26); color: #ffffff !important; }
+.nse-topbar-auth a:hover {
+  background: rgba(255,255,255,0.28);
+  color: #ffffff !important;
+}
 
 /* HERO BANNER */
 .hero-banner {
@@ -254,13 +324,13 @@ def inject():
 
 
 def inject_topbar(user=None):
-    """Renders a sticky top navigation bar. Call right after inject()."""
+    """Renders a full-width fixed top navigation bar."""
     name = user.get("full_name", user.get("email", "User")) if user else None
 
     if name:
         auth_html = f'<div class="nse-topbar-auth"><a href="#">👤 {name}</a></div>'
     else:
-        auth_html = '<div class="nse-topbar-auth"><a href="/Login" target="_self">🔐 Sign In / Register</a></div>'
+        auth_html = '<div class="nse-topbar-auth"><a href="/Login" target="_self">🔐 Sign In</a></div>'
 
     html = f"""
     <div class="nse-topbar">
@@ -271,10 +341,10 @@ def inject_topbar(user=None):
         <a href="/Alerts" target="_self">🔔 Alerts</a>
         <a href="/Watchlist" target="_self">⭐ Watchlist</a>
         <div class="nav-sep"></div>
-        <a href="/Market_Calendar" target="_self">📅 Market Calendar</a>
-        <a href="/News_Sentiment" target="_self">📰 News Sentiment</a>
+        <a href="/Market_Calendar" target="_self">📅 Calendar</a>
+        <a href="/News_Sentiment" target="_self">📰 News</a>
         <div class="nav-sep"></div>
-        <a href="/ML_Predictions" target="_self">🤖 ML Predictions</a>
+        <a href="/ML_Predictions" target="_self">🤖 ML</a>
         <a href="/Paper_Trading" target="_self">🎮 Paper Trading</a>
       </div>
       {auth_html}
