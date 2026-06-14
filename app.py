@@ -16,7 +16,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-from utils.theme import inject
+from utils.theme import inject, inject_topbar
 inject()
 
 try:
@@ -30,6 +30,9 @@ except Exception:
 user     = get_current_user()
 name     = user["full_name"] if user else "Guest"
 username = user["email"]     if user else ""
+
+# Render sticky top navbar
+inject_topbar(user=user)
 
 # ============================================================
 # SIDEBAR
@@ -68,37 +71,8 @@ try:
     st.sidebar.page_link("pages/00_👤_Profile_&_Notifications.py", label="👤 Profile & Notifications")
 except Exception:
     pass
-try:
-    st.sidebar.page_link("pages/01_🔔_Alerts.py", label="🔔 Alerts")
-except Exception:
-    pass
-try:
-    st.sidebar.page_link("pages/05_⭐_Watchlist.py", label="⭐ Watchlist")
-except Exception:
-    pass
 
 st.sidebar.markdown("---")
-
-# ── TOOLS section ────────────────────────────────────────────
-st.sidebar.markdown("<p style='color:#94a3b8;font-size:.72rem;letter-spacing:.06em;margin:0 0 .3rem 0;'>TOOLS</p>", unsafe_allow_html=True)
-try:
-    st.sidebar.page_link("pages/06_📝_Paper_Trading.py", label="🎮 Paper Trading")
-except Exception:
-    pass
-try:
-    st.sidebar.page_link("pages/04_🤖_ML_Predictions.py", label="🤖 ML Predictions")
-except Exception:
-    pass
-
-st.sidebar.markdown("---")
-
-# ── Auth link ────────────────────────────────────────────────
-if not user:
-    try:
-        st.sidebar.page_link("pages/00_🔐_Login.py", label="🔐 Sign In / Register")
-    except Exception:
-        pass
-    st.sidebar.markdown("---")
 
 # ── Market status & footer ───────────────────────────────────
 def is_nse_open():
@@ -733,4 +707,182 @@ with tabs[4]:
     pl=(sell_p-buy_p)*qty
     inv=buy_p*qty; ret=(pl/inv*100) if inv>0 else 0
     divider()
-    mc1,mc2,mc3=st.columns(
+    mc1,mc2,mc3=st.columns(3)
+    mc1.metric("Investment",f"₹{inv:,.2f}")
+    mc2.metric("P&L",f"₹{pl:+,.2f}")
+    mc3.metric("Return",f"{ret:+.2f}%")
+    show_pl(pl)
+
+# ── 5: Stock Chart ───────────────────────────────────────────
+with tabs[5]:
+    hero("🔍","Stock Chart","<span class='ui-badge badge-live'>LIVE</span>","Detailed chart for any Nifty 50 stock")
+    c1,c2,c3=st.columns([2,1,1])
+    with c1: sc_name=st.selectbox("Stock",[s["name"] for s in NIFTY50],key="sc_s")
+    with c2: sc_per =st.selectbox("Period",["1mo","3mo","6mo","1y","2y","5y"],index=2,key="sc_p")
+    with c3: sc_ct  =st.radio("Chart",["Line","Candlestick","Area"],horizontal=True,key="sc_ct")
+    sc_sym=next(s["symbol"] for s in NIFTY50 if s["name"]==sc_name)
+    with st.spinner(f"Fetching {sc_name}…"):
+        sc_h=fetch_ticker(sc_sym,sc_per)
+    if sc_h.empty:
+        st.error("❌ No data.")
+    else:
+        c=safe_float(sc_h["Close"].iloc[-1])
+        p=safe_float(sc_h["Close"].iloc[-2]) if len(sc_h)>1 else c
+        ch=c-p; pt=ch/p*100 if p else 0
+        m1,m2,m3,m4=st.columns(4)
+        m1.metric("Price",f"₹{c:,.2f}")
+        m2.metric("Change",f"{ch:+.2f}",delta=f"{pt:+.2f}%")
+        m3.metric("High",f"₹{safe_float(sc_h['High'].max()):,.2f}")
+        m4.metric("Low",f"₹{safe_float(sc_h['Low'].min()):,.2f}")
+        fig=go.Figure()
+        if sc_ct=="Candlestick":
+            fig.add_trace(go.Candlestick(x=sc_h.index,open=sc_h["Open"],high=sc_h["High"],
+                low=sc_h["Low"],close=sc_h["Close"],name=sc_name,
+                increasing_line_color="#10b981",decreasing_line_color="#ef4444"))
+        elif sc_ct=="Area":
+            fig.add_trace(go.Scatter(x=sc_h.index,y=sc_h["Close"],fill="tozeroy",
+                name=sc_name,line=dict(color="#6366f1",width=2),
+                fillcolor="rgba(99,102,241,0.12)"))
+        else:
+            fig.add_trace(go.Scatter(x=sc_h.index,y=sc_h["Close"],name=sc_name,
+                line=dict(color="#6366f1",width=2.5)))
+        fig.update_layout(**PLT_LAYOUT,title=f"{sc_name} — {sc_per}",height=460,
+                          xaxis_title="Date",yaxis_title="Price (₹)")
+        style_fig(fig)
+        st.plotly_chart(fig,use_container_width=True)
+
+# ── 6: Time Machine ─────────────────────────────────────────
+with tabs[6]:
+    hero("⏰","Time Machine","<span class='ui-badge badge-hist'>HISTORICAL</span>","Travel back to any NSE trading day")
+    sec("Select Date")
+    preset=st.selectbox("Famous dates",["Custom…"]+list(FAMOUS_DATES.keys()),key="tm_preset")
+    if preset=="Custom…":
+        tm_date=st.date_input("Date",value=date(2020,3,23),
+                              min_value=date(2010,1,1),max_value=date.today(),key="tm_date")
+    else:
+        tm_date=FAMOUS_DATES[preset]
+        st.info(f"📅 Loaded: **{preset}** — {tm_date}")
+    if st.button("🚀 Travel to this date",key="tm_go"):
+        with st.spinner("Loading historical data…"):
+            all_hist=fetch_all_history()
+        snap=tm_get_snapshot(all_hist,tm_date)
+        if snap.empty:
+            st.error("❌ No data for this date.")
+        else:
+            st.success(f"✅ Snapshot for {tm_date}")
+            st.dataframe(snap,use_container_width=True)
+            try:
+                fig=px.bar(snap.reset_index(),x="Symbol",y="Close",
+                    color="Close",color_continuous_scale=["#6366f1","#06b6d4","#10b981"],
+                    title=f"Closing Prices — {tm_date}",template=PLT,height=380)
+                fig.update_layout(**PLT_LAYOUT,coloraxis_showscale=False)
+                style_fig(fig)
+                st.plotly_chart(fig,use_container_width=True)
+            except Exception as e: st.warning(f"⚠️ {e}")
+
+# ── 7: Scenario Engine ──────────────────────────────────────
+with tabs[7]:
+    hero("🧪","Scenario Engine","<span class='ui-badge badge-sim'>SIMULATOR</span>","How do stocks behave during macro events?")
+    c1,c2=st.columns(2)
+    with c1: ev_key=st.selectbox("Event",list(MACRO_EVENTS.keys()),key="sc_ev")
+    with c2: sc_asof=st.date_input("As of date",value=date.today(),
+                                    min_value=date(2015,1,1),max_value=date.today(),key="sc_asof")
+    if st.button("🔍 Analyse",key="sc_run"):
+        with st.spinner("Crunching historical data…"):
+            all_hist=fetch_all_history()
+        sc_df=tm_scenario(all_hist,ev_key,sc_asof)
+        if sc_df.empty:
+            st.warning("⚠️ Not enough historical data for this scenario.")
+        else:
+            st.success(f"✅ Found {len(sc_df)} stocks with data for '{ev_key}'")
+            st.dataframe(sc_df,use_container_width=True)
+            try:
+                fig=px.bar(sc_df.reset_index().head(20),x="Symbol",y="Avg Return",
+                    color="Avg Return",color_continuous_scale=["#ef4444","#f59e0b","#10b981"],
+                    color_continuous_midpoint=0,text="Avg Return",
+                    title=f"Avg Weekly Return during '{ev_key}'",template=PLT,height=380)
+                fig.update_traces(textposition="outside",texttemplate="%{text:.1f}%")
+                fig.update_layout(**PLT_LAYOUT,coloraxis_showscale=False)
+                style_fig(fig)
+                st.plotly_chart(fig,use_container_width=True)
+            except Exception as e: st.warning(f"⚠️ {e}")
+
+# ── 8: Paper Portfolio ──────────────────────────────────────
+with tabs[8]:
+    hero("💼","Paper Portfolio","<span class='ui-badge badge-sim'>BACKTESTING</span>","Simulate investing in the past")
+    c1,c2,c3=st.columns(3)
+    with c1:
+        pp_preset=st.selectbox("Start date preset",["Custom…"]+list(FAMOUS_DATES.keys()),key="pp_preset")
+        if pp_preset=="Custom…":
+            pp_start=st.date_input("Buy date",value=date(2020,3,23),
+                                   min_value=date(2010,1,1),max_value=date.today()-timedelta(days=7),key="pp_start")
+        else:
+            pp_start=FAMOUS_DATES[pp_preset]
+    with c2:
+        pp_end=st.date_input("Sell date",value=date.today(),
+                             min_value=date(2010,1,8),max_value=date.today(),key="pp_end")
+    with c3:
+        pp_inv=st.number_input("Investment (₹)",min_value=1000,value=100000,step=5000,key="pp_inv")
+    pp_secs=st.multiselect("Sectors to include",
+                            sorted(nifty50_df["sector"].unique().tolist()),
+                            default=sorted(nifty50_df["sector"].unique().tolist()),key="pp_secs")
+    pp_syms=[s["symbol"] for s in NIFTY50 if s["sector"] in pp_secs]
+    if st.button("📊 Run Backtest",key="pp_run"):
+        if pp_start>=pp_end:
+            st.error("❌ Buy date must be before sell date.")
+        elif not pp_syms:
+            st.warning("⚠️ Select at least one sector.")
+        else:
+            with st.spinner("Running backtest…"):
+                all_hist=fetch_all_history()
+            res=tm_paper_portfolio(all_hist,pp_start,pp_end,pp_inv,pp_syms)
+            if res is None:
+                st.error("❌ Not enough data.")
+            else:
+                m1,m2,m3,m4=st.columns(4)
+                m1.metric("Invested",f"₹{res['invested']:,.0f}")
+                m2.metric("Final Value",f"₹{res['final']:,.0f}")
+                m3.metric("P&L",f"₹{res['abs_pl']:+,.0f}",delta=f"{res['ret_pct']:+.1f}%")
+                m4.metric("CAGR",f"{res['cagr']:+.1f}%  ({res['dur']})")
+                show_pl(res["abs_pl"])
+                divider()
+                st.dataframe(res["pf_df"],use_container_width=True)
+                if not res["growth"].empty:
+                    fig=go.Figure()
+                    fig.add_trace(go.Scatter(x=res["growth"].index,y=res["growth"].values,
+                        fill="tozeroy",name="Portfolio Value",
+                        line=dict(color="#6366f1",width=2.5),
+                        fillcolor="rgba(99,102,241,0.12)"))
+                    fig.add_hline(y=res["invested"],line_dash="dot",line_color="#94a3b8",
+                                  annotation_text="Invested")
+                    fig.update_layout(**PLT_LAYOUT,title="Portfolio Growth",height=380,
+                                      xaxis_title="Date",yaxis_title="Value (₹)")
+                    style_fig(fig)
+                    st.plotly_chart(fig,use_container_width=True)
+
+# ── 9: News Sentiment ───────────────────────────────────────
+with tabs[9]:
+    hero("📰","News Sentiment","<span class='ui-badge badge-nse'>AI POWERED</span>","Market news sentiment analysis")
+    st.info("🚧 News Sentiment module coming soon. Connect a news API (NewsAPI / Finshots / Moneycontrol) to enable live sentiment scoring.")
+
+# ── 10: ML Predictions ──────────────────────────────────────
+with tabs[10]:
+    hero("🤖","ML Predictions","<span class='ui-badge badge-sim'>BETA</span>","Machine learning price predictions")
+    try:
+        import importlib, sys
+        if "pages.04_🤖_ML_Predictions" in sys.modules:
+            del sys.modules["pages.04_🤖_ML_Predictions"]
+        mod = importlib.import_module("pages.04_🤖_ML_Predictions")
+    except Exception as e:
+        st.info("🚧 ML Predictions page not loaded inline. Navigate via sidebar or run the page directly.")
+        st.caption(f"Details: {e}")
+
+# ── 11: Paper Trading ───────────────────────────────────────
+with tabs[11]:
+    hero("🎮","Paper Trading","<span class='ui-badge badge-sim'>SIMULATOR</span>","Practice trading without real money")
+    st.info("🚧 Paper Trading module — navigate via sidebar for full experience, or check pages/06_📝_Paper_Trading.py.")
+
+# ── 12: Market Calendar ─────────────────────────────────────
+with tabs[12]:
+    hero("📅","Market Calendar","<span class='ui-badge badge-nse'>NSE</span>","NSE holidays & key market events")
+    st.info("🚧 Market Calendar module coming soon. Will show NSE trading holidays, earnings dates, and RBI policy meetings.")
