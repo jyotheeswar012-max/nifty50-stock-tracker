@@ -1,5 +1,5 @@
 """
-utils/theme.py  —  NSE Tracker v13  —  Full-width Fixed Top Navbar
+utils/theme.py  —  NSE Tracker v14  —  Full-width Fixed Top Navbar
 """
 import streamlit as st
 
@@ -209,13 +209,13 @@ def inject():
 
 
 def inject_topbar(user=None):
-    """Full-width fixed top navbar with clean short URL paths."""
+    """Full-width fixed top navbar. URLs match Streamlit page filenames."""
     name = user.get("full_name", user.get("email", "User")) if user else None
 
     if name:
-        auth_html = f'<div class="nse-topbar-auth"><a href="/profile" target="_self">👤 {name}</a></div>'
+        auth_html = f'<div class="nse-topbar-auth"><a href="/Profile" target="_self">👤 {name}</a></div>'
     else:
-        auth_html = '<div class="nse-topbar-auth"><a href="/login" target="_self">🔐 Sign In</a></div>'
+        auth_html = '<div class="nse-topbar-auth"><a href="/Login" target="_self">🔐 Sign In</a></div>'
 
     html = f"""
     <div class="nse-topbar">
@@ -225,16 +225,16 @@ def inject_topbar(user=None):
       <div class="nse-topbar-links">
         <a href="/" target="_self">🏦 Overview</a>
         <div class="nav-sep"></div>
-        <a href="/scenario" target="_self">🧪 Scenario</a>
-        <a href="/portfolio" target="_self">💼 Portfolio</a>
-        <a href="/trading" target="_self">🎮 Trading</a>
+        <a href="/Scenario_Engine" target="_self">🧪 Scenario</a>
+        <a href="/Paper_Portfolio" target="_self">💼 Portfolio</a>
+        <a href="/Paper_Trading" target="_self">🎮 Trading</a>
         <div class="nav-sep"></div>
-        <a href="/news" target="_self">📰 News</a>
-        <a href="/ml" target="_self">🤖 ML</a>
-        <a href="/calendar" target="_self">📅 Calendar</a>
+        <a href="/News_Sentiment" target="_self">📰 News</a>
+        <a href="/ML_Predictions" target="_self">🤖 ML</a>
+        <a href="/Market_Calendar" target="_self">📅 Calendar</a>
         <div class="nav-sep"></div>
-        <a href="/alerts" target="_self">🔔 Alerts</a>
-        <a href="/watchlist" target="_self">⭐ Watchlist</a>
+        <a href="/Alerts" target="_self">🔔 Alerts</a>
+        <a href="/Watchlist" target="_self">⭐ Watchlist</a>
       </div>
       {auth_html}
     </div>
