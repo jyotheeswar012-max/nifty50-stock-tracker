@@ -195,16 +195,15 @@ def divider():
 # ---- Market state (computed once per session render) ----
 market_open, market_status, last_close_label = is_nse_open()
 
-# TTL: 3 min when live, 30 min when closed (prices won't change anyway)
-_BATCH_TTL   = 180 if market_open else 1800
-_INDICES_TTL = 180 if market_open else 1800
-_TICKER_TTL  = 300 if market_open else 1800
+# TTL: 3 min when live, 30 min when closed
+_BATCH_TTL  = 180 if market_open else 1800
+_TICKER_TTL = 300 if market_open else 1800
 
 # ---- Cached data fetchers ----
 
 @st.cache_data(ttl=_TICKER_TTL)
 def fetch_ticker(symbol, period="3mo"):
-    """Single ticker. TTL adjusts based on market state."""
+    """Fetch a single ticker — handles flat and MultiIndex columns."""
     try:
         df = yf.download(symbol, period=period, auto_adjust=True,
                          progress=False, show_errors=False)
@@ -216,6 +215,24 @@ def fetch_ticker(symbol, period="3mo"):
     except Exception:
         pass
     return pd.DataFrame()
+
+
+@st.cache_data(ttl=_TICKER_TTL)
+def fetch_indices_individually():
+    """Fetch each NSE index one by one — avoids batch MultiIndex parsing bugs."""
+    result = {}
+    for idx in NSE_INDICES:
+        try:
+            df = yf.download(idx["symbol"], period="5d", auto_adjust=True,
+                             progress=False, show_errors=False)
+            if df is not None and not df.empty:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                df.index = pd.to_datetime(df.index).tz_localize(None).normalize()
+                result[idx["symbol"]] = df
+        except Exception:
+            pass
+    return result
 
 
 @st.cache_data(ttl=_BATCH_TTL)
@@ -234,41 +251,6 @@ def fetch_batch():
         return raw
     except Exception:
         return pd.DataFrame()
-
-
-@st.cache_data(ttl=_INDICES_TTL)
-def fetch_indices_batch():
-    """All NSE indices in ONE download call."""
-    syms = [i["symbol"] for i in NSE_INDICES]
-    try:
-        raw = yf.download(
-            syms, period="5d", auto_adjust=True,
-            progress=False, group_by="ticker", threads=True,
-            show_errors=False,
-        )
-        if raw is None or raw.empty:
-            return {}
-        if isinstance(raw.index, pd.DatetimeIndex):
-            raw.index = raw.index.tz_localize(None).normalize()
-        result = {}
-        for sym in syms:
-            try:
-                if isinstance(raw.columns, pd.MultiIndex):
-                    if sym in raw.columns.get_level_values(1):
-                        sub = raw.xs(sym, axis=1, level=1)
-                    elif sym in raw.columns.get_level_values(0):
-                        sub = raw[sym]
-                    else:
-                        continue
-                else:
-                    sub = raw
-                if sub is not None and not sub.empty:
-                    result[sym] = sub
-            except Exception:
-                pass
-        return result
-    except Exception:
-        return {}
 
 
 @st.cache_data(ttl=3600)
@@ -332,7 +314,6 @@ def get_curr_prev(raw, sym):
 @st.cache_data(ttl=_BATCH_TTL)
 def build_stock_rows_cached():
     raw = fetch_batch()
-    # price_label: "Price" when live, "Last Close" when market shut
     p_lbl = "Price (Rs.)" if market_open else "Last Close (Rs.)"
     rows = []
     for s in NIFTY50:
@@ -427,7 +408,6 @@ TAB_LABELS = [
 
 tabs = st.tabs(TAB_LABELS)
 
-# Helper: market status banner shown at top of every tab
 def _market_banner():
     if market_open:
         st.success("NSE OPEN - Live prices updating every 3 min")
@@ -446,7 +426,7 @@ with tabs[0]:
     _market_banner()
     sec("NSE Indices Snapshot")
     with st.spinner("Fetching indices..."):
-        idx_data = fetch_indices_batch()
+        idx_data = fetch_indices_individually()   # <-- fixed: per-symbol fetch
     val_lbl = "Value" if market_open else "Last Close"
     idx_rows = []
     for idx in NSE_INDICES:
@@ -618,7 +598,6 @@ with tabs[3]:
     else:
         gainers = safe_sort(valid, "_pct", ascending=False).head(top_n)
         losers  = safe_sort(valid, "_pct", ascending=True).head(top_n)
-        # find the price column name (changes when market closed)
         price_col = next((c for c in df_rows.columns if "Price" in c or "Last Close" in c), "_curr")
         cg, cl  = st.columns(2)
         with cg:
