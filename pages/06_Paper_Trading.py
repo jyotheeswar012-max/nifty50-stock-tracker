@@ -80,7 +80,7 @@ st.markdown(f"""
   <div>
     <div class="hero-title">Paper Trading</div>
     <div class="hero-sub">
-      <span class='ui-badge {'badge-live' if user else 'badge-hist'}'>{'✅ '+name if user else '👤 Guest'}</span>&nbsp;&nbsp;
+      <span class='ui-badge {'badge-live' if user else 'badge-hist'}'>{'\u2705 '+name if user else '\ud83d\udc64 Guest'}</span>&nbsp;&nbsp;
       Virtual ₹10,00,000 — zero risk, real prices
     </div>
   </div>
@@ -194,7 +194,7 @@ with tab_port:
         for sym,hd in st.session_state.pt_holdings.items():
             try:
                 lp=_sf(_live_price(sym) or hd["avg_price"]); val=lp*hd["qty"]; pl=(lp-hd["avg_price"])*hd["qty"]; pct=((lp-hd["avg_price"])/hd["avg_price"]*100) if hd["avg_price"] else 0
-                rows_port.append({"Stock":hd["name"],"Qty":hd["qty"],"Avg Buy":₹f"{hd['avg_price']:,.2f}","Live":₹f"{lp:,.2f}","Value":₹f"{val:,.2f}","P&L":₹f"{pl:+,.2f}","P&L %":f"{pct:+.2f}%"})
+                rows_port.append({"Stock":hd["name"],"Qty":hd["qty"],"Avg Buy":f"₹{hd['avg_price']:,.2f}","Live":f"₹{lp:,.2f}","Value":f"₹{val:,.2f}","P&L":f"₹{pl:+,.2f}","P&L %":f"{pct:+.2f}%"})
             except: continue
         if rows_port: st.dataframe(pd.DataFrame(rows_port),use_container_width=True,hide_index=True)
 
