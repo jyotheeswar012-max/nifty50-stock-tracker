@@ -1,5 +1,5 @@
 """
-utils/theme.py  —  NSE Tracker v9  —  Full-width Fixed Top Navbar
+utils/theme.py  —  NSE Tracker v10  —  Full-width Fixed Top Navbar
 """
 import streamlit as st
 
@@ -79,9 +79,8 @@ html, body { background: #f0f2f6 !important; }
 [data-testid="stSidebar"] .stButton > button:hover { background: rgba(255,255,255,.22) !important; color: #ffffff !important; }
 
 /* ══════════════════════════════════════════════════════
-   FULL-WIDTH FIXED TOP NAVBAR
-   Uses position:fixed so it spans the entire viewport,
-   not just the content column.
+   FULL-WIDTH FIXED TOP NAVBAR  v10
+   Uses position:fixed so it spans the entire viewport.
 ══════════════════════════════════════════════════════ */
 .nse-topbar {
   position: fixed !important;
@@ -98,7 +97,7 @@ html, body { background: #f0f2f6 !important; }
   padding: 0 1.2rem;
   border-bottom: 2px solid rgba(99,102,241,.6);
   box-shadow: 0 3px 20px rgba(30,27,75,.45);
-  gap: 0.5rem;
+  gap: 0.4rem;
 }
 
 /* Brand */
@@ -106,7 +105,7 @@ html, body { background: #f0f2f6 !important; }
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.98rem;
+  font-size: 0.95rem;
   font-weight: 900;
   color: #ffffff !important;
   white-space: nowrap;
@@ -114,12 +113,12 @@ html, body { background: #f0f2f6 !important; }
   letter-spacing: -0.01em;
 }
 .nse-topbar-brand .sub {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 500;
   color: #a5b4fc !important;
   background: rgba(255,255,255,0.12);
   border-radius: 4px;
-  padding: 1px 6px;
+  padding: 1px 5px;
   letter-spacing: 0.04em;
 }
 
@@ -136,10 +135,10 @@ html, body { background: #f0f2f6 !important; }
 .nse-topbar-links a {
   display: inline-flex;
   align-items: center;
-  gap: 0.28rem;
-  padding: 5px 10px;
+  gap: 0.22rem;
+  padding: 5px 8px;
   border-radius: 7px;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 700;
   color: #c7d2fe !important;
   text-decoration: none !important;
@@ -151,11 +150,15 @@ html, body { background: #f0f2f6 !important; }
   background: rgba(255,255,255,0.16);
   color: #ffffff !important;
 }
+.nse-topbar-links a.active {
+  background: rgba(255,255,255,0.18);
+  color: #ffffff !important;
+}
 .nav-sep {
   width: 1px;
   height: 18px;
   background: rgba(255,255,255,0.2);
-  margin: 0 4px;
+  margin: 0 3px;
   flex-shrink: 0;
 }
 
@@ -167,9 +170,9 @@ html, body { background: #f0f2f6 !important; }
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 5px 12px;
+  padding: 5px 11px;
   border-radius: 7px;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 800;
   background: rgba(255,255,255,0.15);
   color: #e0e7ff !important;
@@ -324,7 +327,7 @@ def inject():
 
 
 def inject_topbar(user=None):
-    """Renders a full-width fixed top navigation bar."""
+    """Renders a full-width fixed top navigation bar with all feature links."""
     name = user.get("full_name", user.get("email", "User")) if user else None
 
     if name:
@@ -338,14 +341,18 @@ def inject_topbar(user=None):
         📈 NSE Tracker <span class="sub">NIFTY 50</span>
       </div>
       <div class="nse-topbar-links">
+        <a href="/" target="_self">🏦 Overview</a>
+        <div class="nav-sep"></div>
+        <a href="/Scenario_Engine" target="_self">🧪 Scenario</a>
+        <a href="/Paper_Portfolio" target="_self">💼 Portfolio</a>
+        <a href="/Paper_Trading" target="_self">🎮 Trading</a>
+        <div class="nav-sep"></div>
+        <a href="/News_Sentiment" target="_self">📰 News</a>
+        <a href="/ML_Predictions" target="_self">🤖 ML</a>
+        <a href="/Market_Calendar" target="_self">📅 Calendar</a>
+        <div class="nav-sep"></div>
         <a href="/Alerts" target="_self">🔔 Alerts</a>
         <a href="/Watchlist" target="_self">⭐ Watchlist</a>
-        <div class="nav-sep"></div>
-        <a href="/Market_Calendar" target="_self">📅 Calendar</a>
-        <a href="/News_Sentiment" target="_self">📰 News</a>
-        <div class="nav-sep"></div>
-        <a href="/ML_Predictions" target="_self">🤖 ML</a>
-        <a href="/Paper_Trading" target="_self">🎮 Paper Trading</a>
       </div>
       {auth_html}
     </div>
