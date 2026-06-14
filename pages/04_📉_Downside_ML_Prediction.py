@@ -4,8 +4,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
-from datetime import datetime, timedelta
-import pytz
+from datetime import datetime
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -13,10 +12,19 @@ st.set_page_config(
     page_title="Downside ML Prediction — NSE Tracker",
     page_icon="📉",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 from utils.theme import inject
 inject()
+
+try:
+    from utils.supabase_auth import get_current_user, logout, is_guest, login_nudge
+except Exception:
+    def get_current_user(): return None
+    def logout(): pass
+    def is_guest(): return True
+    def login_nudge(f=""): st.info("💡 Sign in to save your data.")
 
 try:
     from sklearn.linear_model import LinearRegression
@@ -81,24 +89,18 @@ NIFTY50 = [
 ]
 
 PLT_LAYOUT = dict(
-    paper_bgcolor="#ffffff",
-    plot_bgcolor="#fafafa",
+    paper_bgcolor="#ffffff", plot_bgcolor="#fafafa",
     font=dict(color="#1e293b", family="Inter, sans-serif", size=12),
     title_font=dict(size=15, color="#0f172a", family="Inter, sans-serif"),
     margin=dict(l=16, r=16, t=48, b=16),
-    legend=dict(
-        font=dict(color="#1e293b", size=12),
-        bgcolor="rgba(255,255,255,0.85)",
-        bordercolor="#e2e8f0",
-        borderwidth=1,
-    ),
+    legend=dict(font=dict(color="#1e293b", size=12),
+                bgcolor="rgba(255,255,255,0.85)",
+                bordercolor="#e2e8f0", borderwidth=1),
 )
 AXIS_STYLE = dict(
-    tickfont=dict(color="#1e293b", size=11),
-    title_font=dict(color="#0f172a", size=12),
-    linecolor="#cbd5e1",
-    gridcolor="#f1f5f9",
-    zerolinecolor="#cbd5e1",
+    tickfont=dict(color="#1e293b", size=11, family="Inter, sans-serif"),
+    title_font=dict(color="#0f172a", size=12, family="Inter, sans-serif"),
+    linecolor="#cbd5e1", gridcolor="#f1f5f9", zerolinecolor="#cbd5e1",
 )
 
 def style_fig(fig):
@@ -113,7 +115,46 @@ def safe_float(v, d=0.0):
     except Exception:
         return d
 
-# ── Hero banner ──────────────────────────────────────────────
+def sec_label(lbl):
+    st.markdown(
+        f"<p style='color:#94a3b8;font-size:.75rem;font-weight:600;"
+        f"letter-spacing:.08em;text-transform:uppercase;margin:.6rem 0 .3rem 0;'>{lbl}</p>",
+        unsafe_allow_html=True)
+
+# ─ Sidebar ──────────────────────────────────────────────────────────
+user = get_current_user()
+name = user["full_name"] if user else "Guest"
+try:
+    st.sidebar.image(
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/NSE_Logo.svg/200px-NSE_Logo.svg.png",
+        width=110)
+except Exception:
+    pass
+st.sidebar.markdown("<h3 style='color:#fff;margin:0 0 .4rem 0;font-size:1rem;'>Downside ML</h3>",
+                    unsafe_allow_html=True)
+if user:
+    st.sidebar.markdown(f"<span class='ui-badge badge-live'>👤 {name}</span>",
+                        unsafe_allow_html=True)
+    if st.sidebar.button("🚧 Sign Out", key="dml_logout"):
+        logout(); st.rerun()
+else:
+    st.sidebar.markdown(
+        "<span class='ui-badge badge-hist' style='background:rgba(255,255,255,.15);color:#e0e7ff!important;'>👤 Guest</span>",
+        unsafe_allow_html=True)
+    try:
+        st.sidebar.page_link("pages/00_🔐_Login.py", label="🔐 Sign In")
+    except Exception:
+        pass
+st.sidebar.markdown("---")
+try:
+    st.sidebar.page_link("app.py", label="🏠 Back to Main")
+except Exception:
+    pass
+st.sidebar.markdown("---")
+st.sidebar.caption("📊 Data: Yahoo Finance")
+st.sidebar.caption("⚠️ Educational use only")
+
+# ─ Hero ──────────────────────────────────────────────────────────
 st.markdown("""
 <div style='background:linear-gradient(135deg,#1e1b4b 0%,#312e81 50%,#4c1d95 100%);
      border-radius:14px;padding:1.4rem 1.8rem;margin-bottom:1.2rem;
@@ -134,15 +175,15 @@ if not SK_OK:
     st.error("❌ `scikit-learn` not installed. Add it to requirements.txt and redeploy.")
     st.stop()
 
-ML_N2S = {s["name"]: s["symbol"] for s in NIFTY50}
+ML_N2S   = {s["name"]: s["symbol"] for s in NIFTY50}
 ML_NAMES = [s["name"] for s in NIFTY50]
 
-# ── Controls ─────────────────────────────────────────────────
+# ─ Controls ──────────────────────────────────────────────────────────
 c1, c2, c3, c4 = st.columns(4)
-with c1: ml_stock   = st.selectbox("🏢 Company",        ML_NAMES,              key="dml_stock")
-with c2: ml_period  = st.selectbox("📅 History",        ["6mo","1y","2y"],     key="dml_period")
-with c3: ml_horizon = st.slider(  "📆 Forecast days",  5, 30, 10,              key="dml_horizon")
-with c4: dd_pct     = st.slider(  "📉 Drawdown trigger %", 1, 20, 5,           key="dml_dd")
+with c1: ml_stock   = st.selectbox("🏢 Company",           ML_NAMES,          key="dml_stock")
+with c2: ml_period  = st.selectbox("📅 History",           ["6mo","1y","2y"], key="dml_period")
+with c3: ml_horizon = st.slider(  "📆 Forecast days",    5, 30, 10,          key="dml_horizon")
+with c4: dd_pct     = st.slider(  "📉 Drawdown trigger %", 1, 20, 5,          key="dml_dd")
 
 @st.cache_data(ttl=300)
 def _load(sym, period):
@@ -155,7 +196,7 @@ def _load(sym, period):
         pass
     return pd.DataFrame()
 
-with st.spinner("🔮 Fetching data & running models…"):
+with st.spinner("🔮 Fetching data & training models…"):
     hist = _load(ML_N2S[ml_stock], ml_period)
 
 if hist.empty or len(hist) < 40:
@@ -163,7 +204,7 @@ if hist.empty or len(hist) < 40:
     st.stop()
 
 try:
-    # ── Extract close ──────────────────────────────────────
+    # ─ Extract Close safely (handles MultiIndex) ─────────────────
     _c = hist["Close"]
     if isinstance(_c, pd.DataFrame):
         _c = _c.iloc[:, 0]
@@ -171,46 +212,45 @@ try:
     dates = hist.index[:len(close)]
 
     if len(close) < 40:
-        st.warning("⚠️ Not enough clean price data.")
+        st.warning("⚠️ Not enough clean price data. Try a longer period.")
         st.stop()
 
-    # ── Feature engineering ────────────────────────────────
+    # ─ Feature engineering ───────────────────────────────────────
     def make_features(prices):
         n = len(prices)
         feats = []
         for i in range(10, n):
-            p  = prices[i]
-            r1 = (p - prices[i-1]) / prices[i-1] * 100
-            r5 = (p - prices[i-5]) / prices[i-5] * 100
-            r10= (p - prices[i-10])/ prices[i-10]* 100
+            p   = prices[i]
+            r1  = (p - prices[i-1]) / prices[i-1] * 100 if prices[i-1] != 0 else 0
+            r5  = (p - prices[i-5]) / prices[i-5] * 100 if prices[i-5] != 0 else 0
+            r10 = (p - prices[i-10])/ prices[i-10]* 100 if prices[i-10]!= 0 else 0
             ma5  = prices[i-5:i].mean()
             ma10 = prices[i-10:i].mean()
             std5 = prices[i-5:i].std()
             hi5  = prices[i-5:i].max()
             lo5  = prices[i-5:i].min()
-            drawdown = (p - hi5) / hi5 * 100
+            drawdown = (p - hi5) / hi5 * 100 if hi5 != 0 else 0
             feats.append([i, r1, r5, r10, ma5, ma10, std5, hi5, lo5, drawdown])
         return np.array(feats)
 
     feats = make_features(close)
-    X_all = feats[:, :-1]   # all cols except last (drawdown)
-    y_dd  = feats[:, -1]    # target = rolling 5-day drawdown %
+    X_all = feats[:, :-1]
+    y_dd  = feats[:, -1]
 
     scaler = StandardScaler()
     X_sc   = scaler.fit_transform(X_all)
 
-    # ── Train models ──────────────────────────────────────
+    # ─ Train ───────────────────────────────────────────────────────
     rf  = RandomForestRegressor(n_estimators=150, random_state=42)
     gb  = GradientBoostingRegressor(n_estimators=150, learning_rate=0.05, random_state=42)
     lr  = LinearRegression()
-
     rf.fit(X_sc, y_dd)
     gb.fit(X_sc, y_dd)
     lr.fit(X_sc, y_dd)
 
-    rf_pred_hist  = rf.predict(X_sc)
-    gb_pred_hist  = gb.predict(X_sc)
-    lr_pred_hist  = lr.predict(X_sc)
+    rf_pred_hist = rf.predict(X_sc)
+    gb_pred_hist = gb.predict(X_sc)
+    lr_pred_hist = lr.predict(X_sc)
 
     rf_mae = mean_absolute_error(y_dd, rf_pred_hist)
     gb_mae = mean_absolute_error(y_dd, gb_pred_hist)
@@ -218,32 +258,30 @@ try:
     rf_r2  = r2_score(y_dd, rf_pred_hist)
     gb_r2  = r2_score(y_dd, gb_pred_hist)
 
-    # ── Future forecast features ───────────────────────────
+    # ─ Future forecast features (safe list-length guards) ──────
     fut_feats = []
-    ext = close.copy().tolist()
+    ext = close.tolist()
     for i in range(ml_horizon):
         last_idx = len(ext) - 1
-        p  = ext[-1]
-        r1 = (p - ext[-2]) / ext[-2] * 100 if ext[-2] != 0 else 0
-        r5 = (p - ext[-6]) / ext[-6] * 100 if len(ext) >= 6 and ext[-6] != 0 else 0
-        r10= (p - ext[-11])/ ext[-11]* 100 if len(ext) >= 11 and ext[-11] != 0 else 0
-        ma5  = np.mean(ext[-5:])
-        ma10 = np.mean(ext[-10:])
-        std5 = np.std(ext[-5:])
-        hi5  = max(ext[-5:])
-        lo5  = min(ext[-5:])
+        p   = ext[-1]
+        r1  = (p - ext[-2]) / ext[-2]   * 100 if len(ext) >= 2  and ext[-2]  != 0 else 0
+        r5  = (p - ext[-6]) / ext[-6]   * 100 if len(ext) >= 6  and ext[-6]  != 0 else 0
+        r10 = (p - ext[-11])/ ext[-11]  * 100 if len(ext) >= 11 and ext[-11] != 0 else 0
+        ma5  = float(np.mean(ext[-5:]))
+        ma10 = float(np.mean(ext[-10:]))
+        std5 = float(np.std(ext[-5:]))
+        hi5  = float(max(ext[-5:]))
+        lo5  = float(min(ext[-5:]))
         fut_feats.append([last_idx + i + 1, r1, r5, r10, ma5, ma10, std5, hi5, lo5])
-        # naive next price: last + small noise for continuity
-        ext.append(p * (1 + np.random.normal(0, 0.005)))
+        ext.append(p * (1 + float(np.random.normal(0, 0.005))))
 
-    fut_X   = np.array(fut_feats)
-    fut_X_sc= scaler.transform(fut_X)
+    fut_X    = np.array(fut_feats)
+    fut_X_sc = scaler.transform(fut_X)
+    rf_fut   = rf.predict(fut_X_sc)
+    gb_fut   = gb.predict(fut_X_sc)
+    lr_fut   = lr.predict(fut_X_sc)
 
-    rf_fut  = rf.predict(fut_X_sc)
-    gb_fut  = gb.predict(fut_X_sc)
-    lr_fut  = lr.predict(fut_X_sc)
-
-    # ── Forecast dates (weekdays only) ─────────────────────
+    # ─ Weekday-only forecast dates ────────────────────────────
     last_date = pd.Timestamp(dates[-1])
     fut_dates = []
     _d = last_date
@@ -252,19 +290,17 @@ try:
         if _d.weekday() < 5:
             fut_dates.append(_d)
 
-    # ── Estimated price from drawdown ──────────────────────
     last_price = float(close[-1])
     rf_prices  = [last_price * (1 + dd/100) for dd in rf_fut]
     gb_prices  = [last_price * (1 + dd/100) for dd in gb_fut]
     lr_prices  = [last_price * (1 + dd/100) for dd in lr_fut]
 
-    # ── Worst-case estimate ────────────────────────────────
-    worst_pct  = min(rf_fut.min(), gb_fut.min())
-    worst_price= last_price * (1 + worst_pct/100)
-    trigger    = last_price * (1 - dd_pct/100)
+    worst_pct   = min(float(rf_fut.min()), float(gb_fut.min()))
+    worst_price = last_price * (1 + worst_pct/100)
+    trigger     = last_price * (1 - dd_pct/100)
 
-    # ── Metrics row ───────────────────────────────────────
-    st.markdown("<p style='color:#94a3b8;font-size:.75rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin:.6rem 0 .3rem 0;'>Model Performance</p>", unsafe_allow_html=True)
+    # ─ Metrics ─────────────────────────────────────────────────────
+    sec_label("Model Performance")
     m1, m2, m3, m4, m5, m6 = st.columns(6)
     m1.metric("Current Price",  f"₹{last_price:,.2f}")
     m2.metric("RF MAE",         f"{rf_mae:.3f}%")
@@ -272,55 +308,56 @@ try:
     m4.metric("RF R²",          f"{rf_r2:.3f}")
     m5.metric("GB R²",          f"{gb_r2:.3f}")
     m6.metric("Worst Drawdown", f"{worst_pct:.2f}%",
-              delta=f"₹{worst_price:,.2f}",
-              delta_color="inverse")
+              delta=f"₹{worst_price:,.2f}", delta_color="inverse")
 
-    st.markdown('<hr style="border:none;border-top:1px solid #e2e8f0;margin:.6rem 0;">', unsafe_allow_html=True)
+    st.markdown('<hr style="border:none;border-top:1px solid #e2e8f0;margin:.6rem 0;">',
+                unsafe_allow_html=True)
 
-    # ── Risk Alert ────────────────────────────────────────
-    best_model_worst = min(rf_fut.min(), gb_fut.min())
+    # ─ Risk Alert ───────────────────────────────────────────────────
+    best_model_worst = min(float(rf_fut.min()), float(gb_fut.min()))
     if best_model_worst <= -dd_pct:
-        st.error(f"🚨 **HIGH DOWNSIDE RISK** — Models predict a drawdown of up to **{best_model_worst:.1f}%** within {ml_horizon} trading days. Trigger level: ₹{trigger:,.2f}")
+        st.error(
+            f"🚨 **HIGH DOWNSIDE RISK** — Models predict a drawdown of up to "
+            f"**{best_model_worst:.1f}%** within {ml_horizon} trading days. "
+            f"Trigger level: ₹{trigger:,.2f}")
     elif best_model_worst <= -dd_pct * 0.5:
-        st.warning(f"⚠️ **MODERATE RISK** — Predicted drawdown: **{best_model_worst:.1f}%**. Watch ₹{trigger:,.2f} support.")
+        st.warning(
+            f"⚠️ **MODERATE RISK** — Predicted drawdown: **{best_model_worst:.1f}%**. "
+            f"Watch ₹{trigger:,.2f} support.")
     else:
-        st.success(f"✅ **LOW DOWNSIDE RISK** — Max predicted drawdown: **{best_model_worst:.1f}%** over {ml_horizon} days.")
+        st.success(
+            f"✅ **LOW DOWNSIDE RISK** — Max predicted drawdown: "
+            f"**{best_model_worst:.1f}%** over {ml_horizon} days.")
 
-    # ── Main chart: Historical drawdown + forecast ─────────
+    # ─ Tabs ──────────────────────────────────────────────────────────
     tab1, tab2, tab3 = st.tabs(["📉 Drawdown Forecast", "💹 Price Forecast", "📊 Model Comparison"])
 
     with tab1:
         fig_dd = go.Figure()
         fig_dd.add_trace(go.Scatter(
-            x=dates[10:], y=y_dd,
-            mode="lines", name="Actual Drawdown",
+            x=dates[10:], y=y_dd, mode="lines", name="Actual Drawdown",
             line=dict(color="#1e293b", width=1.5)))
         fig_dd.add_trace(go.Scatter(
-            x=dates[10:], y=rf_pred_hist,
-            mode="lines", name="RF (hist)",
+            x=dates[10:], y=rf_pred_hist, mode="lines", name="RF (hist)",
             line=dict(color="#ef4444", width=1.5, dash="dot")))
         fig_dd.add_trace(go.Scatter(
-            x=dates[10:], y=gb_pred_hist,
-            mode="lines", name="GB (hist)",
+            x=dates[10:], y=gb_pred_hist, mode="lines", name="GB (hist)",
             line=dict(color="#f59e0b", width=1.5, dash="dash")))
-        # forecast zone
         fig_dd.add_trace(go.Scatter(
-            x=fut_dates, y=rf_fut,
-            mode="lines+markers", name="RF Forecast",
+            x=fut_dates, y=rf_fut, mode="lines+markers", name="RF Forecast",
             line=dict(color="#ef4444", width=2.5),
             marker=dict(size=6, symbol="triangle-down")))
         fig_dd.add_trace(go.Scatter(
-            x=fut_dates, y=gb_fut,
-            mode="lines+markers", name="GB Forecast",
+            x=fut_dates, y=gb_fut, mode="lines+markers", name="GB Forecast",
             line=dict(color="#f59e0b", width=2.5),
             marker=dict(size=6, symbol="triangle-down")))
         fig_dd.add_trace(go.Scatter(
-            x=fut_dates, y=lr_fut,
-            mode="lines+markers", name="Linear Forecast",
+            x=fut_dates, y=lr_fut, mode="lines+markers", name="Linear Forecast",
             line=dict(color="#8b5cf6", width=2, dash="dash"),
             marker=dict(size=5)))
         fig_dd.add_hline(y=-dd_pct, line_dash="dash", line_color="#ef4444",
-                         annotation_text=f"Trigger −{dd_pct}%", annotation_position="bottom right")
+                         annotation_text=f"Trigger −{dd_pct}%",
+                         annotation_position="bottom right")
         fig_dd.add_hline(y=0, line_dash="dot", line_color="#94a3b8")
         if len(fut_dates) >= 2:
             try:
@@ -330,7 +367,8 @@ try:
                     annotation_text="Forecast Zone", annotation_position="top left")
             except Exception:
                 pass
-        fig_dd.update_layout(**PLT_LAYOUT,
+        fig_dd.update_layout(
+            **PLT_LAYOUT,
             title=f"{ml_stock} — {ml_horizon}-Day Drawdown Forecast",
             height=460, xaxis_title="Date",
             yaxis_title="Drawdown from 5-Day High (%)",
@@ -342,22 +380,18 @@ try:
     with tab2:
         fig_pr = go.Figure()
         fig_pr.add_trace(go.Scatter(
-            x=dates, y=close,
-            mode="lines", name="Actual Price",
+            x=dates, y=close, mode="lines", name="Actual Price",
             line=dict(color="#1e293b", width=2)))
         fig_pr.add_trace(go.Scatter(
-            x=fut_dates, y=rf_prices,
-            mode="lines+markers", name="RF Implied Price",
+            x=fut_dates, y=rf_prices, mode="lines+markers", name="RF Implied Price",
             line=dict(color="#ef4444", width=2.5),
             marker=dict(size=6, symbol="triangle-down")))
         fig_pr.add_trace(go.Scatter(
-            x=fut_dates, y=gb_prices,
-            mode="lines+markers", name="GB Implied Price",
+            x=fut_dates, y=gb_prices, mode="lines+markers", name="GB Implied Price",
             line=dict(color="#f59e0b", width=2.5),
             marker=dict(size=6, symbol="triangle-down")))
         fig_pr.add_trace(go.Scatter(
-            x=fut_dates, y=lr_prices,
-            mode="lines+markers", name="Linear Implied Price",
+            x=fut_dates, y=lr_prices, mode="lines+markers", name="Linear Implied",
             line=dict(color="#8b5cf6", width=2, dash="dash"),
             marker=dict(size=5)))
         fig_pr.add_hline(y=trigger, line_dash="dash", line_color="#ef4444",
@@ -371,7 +405,8 @@ try:
                     annotation_text="Forecast Zone", annotation_position="top left")
             except Exception:
                 pass
-        fig_pr.update_layout(**PLT_LAYOUT,
+        fig_pr.update_layout(
+            **PLT_LAYOUT,
             title=f"{ml_stock} — Implied Price from Drawdown Models",
             height=460, xaxis_title="Date", yaxis_title="Price (₹)",
             legend=dict(orientation="h", yanchor="bottom", y=1.02))
@@ -379,25 +414,29 @@ try:
         st.plotly_chart(fig_pr, use_container_width=True)
 
     with tab3:
-        sec_label = lambda lbl: st.markdown(f"<p style='color:#94a3b8;font-size:.75rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin:.6rem 0 .3rem 0;'>{lbl}</p>", unsafe_allow_html=True)
         sec_label("Forecast Comparison — All Models")
         cmp_df = pd.DataFrame({
-            "Date":           [d.strftime("%d %b %Y") for d in fut_dates],
-            "RF Drawdown %":  [f"{v:.2f}%" for v in rf_fut],
-            "GB Drawdown %":  [f"{v:.2f}%" for v in gb_fut],
-            "LR Drawdown %":  [f"{v:.2f}%" for v in lr_fut],
-            "RF Price ₹":     [f"₹{v:,.2f}" for v in rf_prices],
-            "GB Price ₹":     [f"₹{v:,.2f}" for v in gb_prices],
-            "Risk Level":     ["🔴 High" if min(rf_fut[i], gb_fut[i]) <= -dd_pct
-                               else ("🟡 Moderate" if min(rf_fut[i], gb_fut[i]) <= -dd_pct*0.5
-                               else "🟢 Low") for i in range(ml_horizon)]
+            "Date":          [d.strftime("%d %b %Y") for d in fut_dates],
+            "RF Drawdown %": [f"{v:.2f}%" for v in rf_fut],
+            "GB Drawdown %": [f"{v:.2f}%" for v in gb_fut],
+            "LR Drawdown %": [f"{v:.2f}%" for v in lr_fut],
+            "RF Price ₹":    [f"₹{v:,.2f}" for v in rf_prices],
+            "GB Price ₹":    [f"₹{v:,.2f}" for v in gb_prices],
+            "Risk Level":    [
+                "🔴 High" if min(rf_fut[i], gb_fut[i]) <= -dd_pct
+                else ("🟡 Moderate" if min(rf_fut[i], gb_fut[i]) <= -dd_pct*0.5
+                else "🟢 Low")
+                for i in range(ml_horizon)],
         })
         st.dataframe(cmp_df, use_container_width=True, hide_index=True)
 
-        # Feature importance (RF)
         sec_label("🌲 Random Forest Feature Importance")
-        feat_names = ["Index","Return 1D","Return 5D","Return 10D","MA5","MA10","StdDev5","High5","Low5"]
-        fi_df = pd.DataFrame({"Feature": feat_names, "Importance": rf.feature_importances_}).sort_values("Importance", ascending=True)
+        feat_names = ["Index","Return 1D","Return 5D","Return 10D",
+                      "MA5","MA10","StdDev5","High5","Low5"]
+        fi_df = pd.DataFrame({
+            "Feature":    feat_names,
+            "Importance": rf.feature_importances_,
+        }).sort_values("Importance", ascending=True)
         fig_fi = px.bar(fi_df, x="Importance", y="Feature", orientation="h",
             color="Importance", color_continuous_scale="Reds_r",
             title="Feature Importance — Random Forest",
@@ -406,8 +445,11 @@ try:
         style_fig(fig_fi)
         st.plotly_chart(fig_fi, use_container_width=True)
 
-    st.markdown('<hr style="border:none;border-top:1px solid #e2e8f0;margin:.6rem 0;">', unsafe_allow_html=True)
-    st.caption("⚠️ Statistical downside projections for educational purposes only — not investment advice. Past drawdowns do not guarantee future losses.")
+    st.markdown('<hr style="border:none;border-top:1px solid #e2e8f0;margin:.6rem 0;">',
+                unsafe_allow_html=True)
+    st.caption(
+        "⚠️ Statistical downside projections for educational purposes only — "
+        "not investment advice. Past drawdowns do not guarantee future losses.")
 
 except Exception as e:
     st.error(f"❌ Model error: {e}")
