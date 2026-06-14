@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 from datetime import datetime
 import pytz
 import warnings
@@ -25,6 +26,12 @@ except Exception:
     def logout(): pass
     def is_guest(): return True
     def login_nudge(f=""): st.info("💡 Sign in to save your data.")
+
+try:
+    from textblob import TextBlob
+    TEXTBLOB_OK = True
+except ImportError:
+    TEXTBLOB_OK = False
 
 NIFTY50 = [
     {"symbol":"RELIANCE.NS",   "name":"Reliance Industries"},
@@ -399,7 +406,6 @@ with tab_port:
         if rows_port:
             st.dataframe(pd.DataFrame(rows_port), use_container_width=True, hide_index=True)
             try:
-                import plotly.express as px
                 vals_pie = [_sf(_live_price(s) or hd["avg_price"]) * _sf(hd["qty"])
                             for s, hd in st.session_state.pt_holdings.items()]
                 names_pie= [hd["name"] for hd in st.session_state.pt_holdings.values()]
@@ -445,3 +451,194 @@ with tab_chart:
             st.plotly_chart(fig_eq, use_container_width=True)
         except Exception as e:
             st.warning(f"⚠️ Chart error: {e}")
+
+# ═══════════════════════════════════════════════════════════════════
+# NEWS SENTIMENT SECTION
+# ═══════════════════════════════════════════════════════════════════
+st.markdown('<hr class="ui-divider">', unsafe_allow_html=True)
+st.markdown("""
+<div class="hero-banner" style="margin-top:1rem;">
+  <div class="hero-icon">📰</div>
+  <div>
+    <div class="hero-title">News Sentiment Analyser</div>
+    <div class="hero-sub">
+      <span class='ui-badge badge-live'>LIVE</span>&nbsp;&nbsp;
+      Analyse market mood from recent headlines
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+if not TEXTBLOB_OK:
+    st.warning("⚠️ `textblob` not installed. News sentiment is unavailable.")
+else:
+    ns_c1, ns_c2, ns_c3 = st.columns([3, 1, 1])
+    with ns_c1: ns_stock  = st.selectbox("🏛️ Select Company", PT_NAMES, key="ns_stock")
+    with ns_c2: ns_period = st.selectbox("📅 History Period", ["1mo","3mo","6mo"], key="ns_period")
+    with ns_c3: max_news  = st.slider("📊 Headlines", 5, 30, 15, key="ns_max")
+
+    @st.cache_data(ttl=600)
+    def _ns_fetch(sym, period):
+        try:
+            t = yf.Ticker(sym)
+            h = t.history(period=period, auto_adjust=True)
+            if h is not None and not h.empty:
+                h.index = pd.to_datetime(h.index).tz_localize(None).normalize()
+            try:
+                n = t.news or []
+            except Exception:
+                n = []
+            return h, n
+        except Exception:
+            return pd.DataFrame(), []
+
+    with st.spinner("🔍 Fetching price history & headlines…"):
+        ns_hist, ns_news = _ns_fetch(PT_N2S[ns_stock], ns_period)
+
+    if not ns_hist.empty:
+        try:
+            close_s = ns_hist["Close"]
+            if isinstance(close_s, pd.DataFrame):
+                close_s = close_s.iloc[:, 0]
+            cp  = _sf(close_s.iloc[-1])
+            pp2 = _sf(close_s.iloc[-2]) if len(close_s) > 1 else cp
+            ch  = cp - pp2
+            pt  = (ch / pp2 * 100) if pp2 else 0
+
+            high_s = ns_hist["High"]
+            if isinstance(high_s, pd.DataFrame): high_s = high_s.iloc[:, 0]
+            low_s  = ns_hist["Low"]
+            if isinstance(low_s, pd.DataFrame):  low_s  = low_s.iloc[:, 0]
+            vol_s  = ns_hist["Volume"]
+            if isinstance(vol_s, pd.DataFrame):  vol_s  = vol_s.iloc[:, 0]
+
+            nm1, nm2, nm3, nm4, nm5 = st.columns(5)
+            nm1.metric("Price",        f"₹{cp:,.2f}")
+            nm2.metric("Change",       f"{ch:+.2f}",   delta=f"{pt:+.2f}%")
+            nm3.metric("Period High",  f"₹{_sf(high_s.max()):,.2f}")
+            nm4.metric("Period Low",   f"₹{_sf(low_s.min()):,.2f}")
+            nm5.metric("Avg Volume",   f"{int(vol_s.mean()):,}")
+
+            fig_price = go.Figure()
+            fig_price.add_trace(go.Scatter(
+                x=ns_hist.index, y=close_s,
+                mode="lines", fill="tozeroy", name=ns_stock,
+                line=dict(color="#6366f1", width=2),
+                fillcolor="rgba(99,102,241,0.10)"
+            ))
+            fig_price.update_layout(
+                **PLT_LAYOUT,
+                title=f"{ns_stock} — Price History ({ns_period})",
+                height=300, xaxis_title="Date", yaxis_title="Price (₹)"
+            )
+            style_fig(fig_price)
+            st.plotly_chart(fig_price, use_container_width=True)
+        except Exception as e:
+            st.warning(f"⚠️ Price chart error: {e}")
+    else:
+        st.warning("⚠️ Could not fetch price data.")
+
+    st.markdown("<p class='sec-label'>🧠 Headline Sentiment Analysis</p>", unsafe_allow_html=True)
+
+    if not ns_news:
+        st.info("💬 No recent news found via Yahoo Finance for this stock.")
+    else:
+        from textblob import TextBlob
+        rows_ns = []
+        for item in ns_news[:max_news]:
+            try:
+                if isinstance(item, dict):
+                    title = (
+                        item.get("title")
+                        or (item.get("content", {}) or {}).get("title", "")
+                        or ""
+                    )
+                else:
+                    title = str(item)
+                title = title.strip()
+                if not title:
+                    continue
+                blob  = TextBlob(title)
+                pol   = blob.sentiment.polarity
+                sub   = blob.sentiment.subjectivity
+                label = ("🟢 Positive" if pol > 0.1
+                         else ("🔴 Negative" if pol < -0.1 else "⚪ Neutral"))
+                rows_ns.append({
+                    "Headline":     title,
+                    "Sentiment":    label,
+                    "Polarity":     round(pol, 3),
+                    "Subjectivity": round(sub, 3),
+                })
+            except Exception:
+                continue
+
+        if not rows_ns:
+            st.info("💬 Headlines fetched but none had readable text.")
+        else:
+            df_ns  = pd.DataFrame(rows_ns)
+            pos_n  = len(df_ns[df_ns["Sentiment"] == "🟢 Positive"])
+            neg_n  = len(df_ns[df_ns["Sentiment"] == "🔴 Negative"])
+            neu_n  = len(df_ns[df_ns["Sentiment"] == "⚪ Neutral"])
+            total  = pos_n + neg_n + neu_n
+
+            ka, kb, kc, kd = st.columns(4)
+            ka.metric("🟢 Positive",   pos_n)
+            kb.metric("🔴 Negative",   neg_n)
+            kc.metric("⚪ Neutral",    neu_n)
+            avg_pol = round(df_ns["Polarity"].mean(), 3) if total else 0
+            mood    = "🟢 Bullish" if avg_pol > 0.05 else ("🔴 Bearish" if avg_pol < -0.05 else "⚪ Neutral")
+            kd.metric("Overall Mood",  mood, delta=str(avg_pol))
+
+            st.markdown('<hr class="ui-divider">', unsafe_allow_html=True)
+
+            ch1, ch2 = st.columns(2)
+            with ch1:
+                if total > 0:
+                    try:
+                        fig_pie2 = px.pie(
+                            values=[pos_n, neg_n, neu_n],
+                            names=["🟢 Positive", "🔴 Negative", "⚪ Neutral"],
+                            color_discrete_sequence=["#10b981", "#ef4444", "#9ca3af"],
+                            title="Sentiment Distribution",
+                            template="plotly_white", height=320)
+                        fig_pie2.update_layout(**PLT_LAYOUT)
+                        st.plotly_chart(fig_pie2, use_container_width=True)
+                    except Exception as e:
+                        st.warning(f"⚠️ {e}")
+            with ch2:
+                try:
+                    fig_pol = px.histogram(
+                        df_ns, x="Polarity", nbins=20,
+                        color_discrete_sequence=["#6366f1"],
+                        title="Polarity Distribution",
+                        template="plotly_white", height=320,
+                        labels={"Polarity": "Sentiment Polarity"})
+                    fig_pol.add_vline(x=0, line_dash="dash", line_color="#94a3b8")
+                    fig_pol.update_layout(**PLT_LAYOUT)
+                    style_fig(fig_pol)
+                    st.plotly_chart(fig_pol, use_container_width=True)
+                except Exception as e:
+                    st.warning(f"⚠️ {e}")
+
+            try:
+                df_bar = df_ns.copy()
+                df_bar["Short"] = df_bar["Headline"].str[:55] + "…"
+                fig_bar = px.bar(
+                    df_bar, x="Polarity", y="Short", orientation="h",
+                    color="Polarity",
+                    color_continuous_scale=["#ef4444", "#f59e0b", "#10b981"],
+                    color_continuous_midpoint=0,
+                    title="Polarity per Headline",
+                    template="plotly_white", height=max(320, len(df_bar) * 28),
+                    labels={"Short": "", "Polarity": "Polarity"})
+                fig_bar.update_layout(**PLT_LAYOUT, coloraxis_showscale=False,
+                                      yaxis=dict(autorange="reversed"))
+                style_fig(fig_bar)
+                st.plotly_chart(fig_bar, use_container_width=True)
+            except Exception as e:
+                st.warning(f"⚠️ Bar chart error: {e}")
+
+            st.markdown('<hr class="ui-divider">', unsafe_allow_html=True)
+            st.markdown("<p class='sec-label'>📝 All Headlines</p>", unsafe_allow_html=True)
+            st.dataframe(df_ns, use_container_width=True, hide_index=True)
+            st.caption("⚠️ Sentiment is computed from headline text only via TextBlob — not investment advice.")
