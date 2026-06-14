@@ -209,6 +209,7 @@ FAMOUS_DATES = {
 
 PLT = "plotly_white"
 
+# PLT_LAYOUT has horizontal legend baked in — never pass legend= again in update_layout
 PLT_LAYOUT = dict(
     paper_bgcolor="#ffffff",
     plot_bgcolor="#fafafa",
@@ -220,6 +221,9 @@ PLT_LAYOUT = dict(
         bgcolor="rgba(255,255,255,0.85)",
         bordercolor="#e2e8f0",
         borderwidth=1,
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
     ),
 )
 
@@ -1073,9 +1077,7 @@ elif page == "🤖 ML Predictions":
         st.warning("⚠️ Not enough data. Try a longer period.")
     else:
         try:
-            # ── Safely extract Close as a flat 1-D numpy array ──────────
             _close_col = ml_hist["Close"]
-            # yfinance may return a DataFrame with ticker as column level
             if isinstance(_close_col, pd.DataFrame):
                 _close_col = _close_col.iloc[:, 0]
             close = _close_col.dropna().astype(float).values.flatten()
@@ -1100,13 +1102,12 @@ elif page == "🤖 ML Predictions":
             poly_pred = np.clip(plr.predict(future_Xp), close[-1] * 0.5, close[-1] * 1.5)
             rf_pred   = rf.predict(future_X)
 
-            # ── Generate weekday-only forecast dates ────────────────────
             last_date = pd.Timestamp(ml_hist.index[-1])
             fut_dates = []
             _d = last_date
             while len(fut_dates) < ml_horizon:
                 _d += pd.Timedelta(days=1)
-                if _d.weekday() < 5:   # Mon–Fri only
+                if _d.weekday() < 5:
                     fut_dates.append(_d)
 
             lr_mae = mean_absolute_error(y, lr.predict(X))
@@ -1139,7 +1140,6 @@ elif page == "🤖 ML Predictions":
                 name="Random Forest", line=dict(color="#10b981", width=2),
                 marker=dict(size=5)))
 
-            # ── Safe vrect: only add if we have at least 2 forecast dates ──
             if len(fut_dates) >= 2:
                 try:
                     fig_ml.add_vrect(
@@ -1151,13 +1151,13 @@ elif page == "🤖 ML Predictions":
                 except Exception:
                     pass
 
+            # No legend= here — it's already defined in PLT_LAYOUT
             fig_ml.update_layout(
                 **PLT_LAYOUT,
                 title=f"{ml_stock} — {ml_horizon}-Day Forecast",
                 height=460,
                 xaxis_title="Date",
-                yaxis_title="Price (₹)",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02))
+                yaxis_title="Price (₹)")
             style_fig(fig_ml)
             st.plotly_chart(fig_ml, use_container_width=True)
 
