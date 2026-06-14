@@ -80,13 +80,13 @@ st.sidebar.markdown(
     unsafe_allow_html=True,
 )
 try:
-    st.sidebar.page_link("pages/00_👤_Profile_&_Notifications.py", label="👤 Profile & Notifications")
+    st.sidebar.page_link("pages/10_Profile.py", label="👤 Profile & Notifications")
 except Exception:
     pass
 
 if not user:
     try:
-        st.sidebar.page_link("pages/00_🖐_Login.py", label="🔐 Sign In / Register")
+        st.sidebar.page_link("pages/09_Login.py", label="🔐 Sign In / Register")
     except Exception:
         pass
 
@@ -429,7 +429,7 @@ def tm_get_snapshot(all_hist, target):
 
 
 # ============================================================
-# MAIN TABS  (7 tabs only — heavy tools moved to top navbar)
+# MAIN TABS
 # ============================================================
 TAB_LABELS = [
     "🏦 Market Overview",
