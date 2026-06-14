@@ -1,5 +1,5 @@
 """
-utils/theme.py  —  NSE Tracker v10  —  Full-width Fixed Top Navbar
+utils/theme.py  —  NSE Tracker v11  —  Full-width Fixed Top Navbar
 """
 import streamlit as st
 
@@ -79,7 +79,7 @@ html, body { background: #f0f2f6 !important; }
 [data-testid="stSidebar"] .stButton > button:hover { background: rgba(255,255,255,.22) !important; color: #ffffff !important; }
 
 /* ══════════════════════════════════════════════════════
-   FULL-WIDTH FIXED TOP NAVBAR  v10
+   FULL-WIDTH FIXED TOP NAVBAR  v11
    Uses position:fixed so it spans the entire viewport.
 ══════════════════════════════════════════════════════ */
 .nse-topbar {
@@ -327,13 +327,13 @@ def inject():
 
 
 def inject_topbar(user=None):
-    """Renders a full-width fixed top navigation bar with all feature links."""
+    """Renders a full-width fixed top navigation bar with correct Streamlit page routes."""
     name = user.get("full_name", user.get("email", "User")) if user else None
 
     if name:
         auth_html = f'<div class="nse-topbar-auth"><a href="#">👤 {name}</a></div>'
     else:
-        auth_html = '<div class="nse-topbar-auth"><a href="/Login" target="_self">🔐 Sign In</a></div>'
+        auth_html = '<div class="nse-topbar-auth"><a href="/00_%F0%9F%94%90_Login" target="_self">🔐 Sign In</a></div>'
 
     html = f"""
     <div class="nse-topbar">
@@ -343,16 +343,13 @@ def inject_topbar(user=None):
       <div class="nse-topbar-links">
         <a href="/" target="_self">🏦 Overview</a>
         <div class="nav-sep"></div>
-        <a href="/Scenario_Engine" target="_self">🧪 Scenario</a>
-        <a href="/Paper_Portfolio" target="_self">💼 Portfolio</a>
-        <a href="/Paper_Trading" target="_self">🎮 Trading</a>
+        <a href="/06_%F0%9F%93%9D_Paper_Trading" target="_self">🎮 Paper Trading</a>
+        <a href="/04_%F0%9F%A4%96_ML_Predictions" target="_self">🤖 ML Predictions</a>
         <div class="nav-sep"></div>
-        <a href="/News_Sentiment" target="_self">📰 News</a>
-        <a href="/ML_Predictions" target="_self">🤖 ML</a>
-        <a href="/Market_Calendar" target="_self">📅 Calendar</a>
+        <a href="/01_%F0%9F%94%94_Alerts" target="_self">🔔 Alerts</a>
+        <a href="/05_%E2%AD%90_Watchlist" target="_self">⭐ Watchlist</a>
         <div class="nav-sep"></div>
-        <a href="/Alerts" target="_self">🔔 Alerts</a>
-        <a href="/Watchlist" target="_self">⭐ Watchlist</a>
+        <a href="/00_%F0%9F%91%A4_Profile_%26_Notifications" target="_self">👤 Profile</a>
       </div>
       {auth_html}
     </div>
