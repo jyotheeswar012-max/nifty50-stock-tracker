@@ -88,14 +88,18 @@ NIFTY50 = [
     {"symbol":"BEL.NS",        "name":"Bharat Electronics"},
 ]
 
+# PLT_LAYOUT uses a horizontal legend so charts look clean — no duplicate key
 PLT_LAYOUT = dict(
     paper_bgcolor="#ffffff", plot_bgcolor="#fafafa",
     font=dict(color="#1e293b", family="Inter, sans-serif", size=12),
     title_font=dict(size=15, color="#0f172a", family="Inter, sans-serif"),
     margin=dict(l=16, r=16, t=48, b=16),
-    legend=dict(font=dict(color="#1e293b", size=12),
-                bgcolor="rgba(255,255,255,0.85)",
-                bordercolor="#e2e8f0", borderwidth=1),
+    legend=dict(
+        font=dict(color="#1e293b", size=12),
+        bgcolor="rgba(255,255,255,0.85)",
+        bordercolor="#e2e8f0", borderwidth=1,
+        orientation="h", yanchor="bottom", y=1.02,
+    ),
 )
 AXIS_STYLE = dict(
     tickfont=dict(color="#1e293b", size=11, family="Inter, sans-serif"),
@@ -218,10 +222,10 @@ try:
         n = len(prices)
         feats = []
         for i in range(10, n):
-            p   = prices[i]
-            r1  = (p - prices[i-1]) / prices[i-1] * 100 if prices[i-1] != 0 else 0
-            r5  = (p - prices[i-5]) / prices[i-5] * 100 if prices[i-5] != 0 else 0
-            r10 = (p - prices[i-10])/ prices[i-10]* 100 if prices[i-10]!= 0 else 0
+            p    = prices[i]
+            r1   = (p - prices[i-1]) / prices[i-1] * 100 if prices[i-1] != 0 else 0
+            r5   = (p - prices[i-5]) / prices[i-5] * 100 if prices[i-5] != 0 else 0
+            r10  = (p - prices[i-10])/ prices[i-10]* 100 if prices[i-10]!= 0 else 0
             ma5  = prices[i-5:i].mean()
             ma10 = prices[i-10:i].mean()
             std5 = prices[i-5:i].std()
@@ -251,7 +255,6 @@ try:
 
     rf_mae = mean_absolute_error(y_dd, rf_pred_hist)
     gb_mae = mean_absolute_error(y_dd, gb_pred_hist)
-    lr_mae = mean_absolute_error(y_dd, lr_pred_hist)
     rf_r2  = r2_score(y_dd, rf_pred_hist)
     gb_r2  = r2_score(y_dd, gb_pred_hist)
 
@@ -363,8 +366,7 @@ try:
             **PLT_LAYOUT,
             title=f"{ml_stock} — {ml_horizon}-Day Drawdown Forecast",
             height=460, xaxis_title="Date",
-            yaxis_title="Drawdown from 5-Day High (%)",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02))
+            yaxis_title="Drawdown from 5-Day High (%)")
         style_fig(fig_dd)
         st.plotly_chart(fig_dd, use_container_width=True)
         st.caption("Drawdown = (Price − 5-day rolling high) / 5-day high × 100")
@@ -400,8 +402,7 @@ try:
         fig_pr.update_layout(
             **PLT_LAYOUT,
             title=f"{ml_stock} — Implied Price from Drawdown Models",
-            height=460, xaxis_title="Date", yaxis_title="Price (₹)",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02))
+            height=460, xaxis_title="Date", yaxis_title="Price (₹)")
         style_fig(fig_pr)
         st.plotly_chart(fig_pr, use_container_width=True)
 
