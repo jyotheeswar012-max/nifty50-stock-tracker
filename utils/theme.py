@@ -1,5 +1,5 @@
 """
-utils/theme.py  —  NSE Tracker v6  —  Bulletproof CSS
+utils/theme.py  —  NSE Tracker v7  —  Sticky Top Navbar + Bulletproof CSS
 """
 import streamlit as st
 
@@ -7,9 +7,6 @@ LIGHT_CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
-/* ─────────────────────────────────────────────
-   BASE
-   ───────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
 html, body { background: #f0f2f6 !important; }
@@ -27,10 +24,7 @@ html, body { background: #f0f2f6 !important; }
 
 .element-container { margin-bottom: 0.45rem !important; }
 
-/* ─────────────────────────────────────────────
-   MAIN CONTENT TEXT
-   Multiple selectors = works across all Streamlit versions
-   ───────────────────────────────────────────── */
+/* ─── MAIN CONTENT TEXT ─────────────────────── */
 .block-container p,
 .block-container li,
 .block-container td,
@@ -64,12 +58,9 @@ html, body { background: #f0f2f6 !important; }
   line-height: 1.65 !important;
 }
 
-/* span inside markdown inherits, doesn't override */
 [data-testid="stMarkdownContainer"] span { color: inherit; }
 
-/* ─────────────────────────────────────────────
-   SIDEBAR  (dark navy, all text light)
-   ───────────────────────────────────────────── */
+/* ─── SIDEBAR ────────────────────────────────── */
 [data-testid="stSidebar"] {
   background: linear-gradient(180deg,#1e1b4b 0%,#312e81 45%,#1e1b4b 100%) !important;
   border-right: none !important;
@@ -113,18 +104,100 @@ html, body { background: #f0f2f6 !important; }
   color: #ffffff !important;
 }
 
-/* ─────────────────────────────────────────────
-   TOP HEADER BAR
-   ───────────────────────────────────────────── */
+/* ─── STREAMLIT HEADER ───────────────────────── */
 [data-testid="stHeader"] {
   background: rgba(240,242,246,.96) !important;
   backdrop-filter: blur(12px) !important;
   border-bottom: 1px solid #e2e8f0 !important;
 }
 
-/* ─────────────────────────────────────────────
-   HERO BANNER  (purple gradient, all text WHITE)
-   ───────────────────────────────────────────── */
+/* ─── CUSTOM STICKY TOP NAVBAR ──────────────── */
+.nse-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 9999;
+  background: linear-gradient(90deg, #1e1b4b 0%, #312e81 60%, #4f46e5 100%);
+  padding: 0 1.5rem;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 2px solid rgba(99,102,241,.5);
+  box-shadow: 0 2px 16px rgba(30,27,75,.35);
+  margin-bottom: 1rem;
+}
+
+.nse-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  font-size: 1.05rem;
+  font-weight: 900;
+  color: #ffffff !important;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+}
+
+.nse-topbar-brand span { color: #a5b4fc !important; font-weight: 500; font-size: .8rem; margin-left: .3rem; }
+
+.nse-topbar-links {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+}
+
+.nse-topbar-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: .82rem;
+  font-weight: 700;
+  color: #c7d2fe !important;
+  text-decoration: none !important;
+  transition: background .15s, color .15s;
+  white-space: nowrap;
+}
+
+.nse-topbar-links a:hover {
+  background: rgba(255,255,255,.15);
+  color: #ffffff !important;
+}
+
+.nse-topbar-links a.active {
+  background: rgba(255,255,255,.18);
+  color: #ffffff !important;
+}
+
+.nse-topbar-links .nav-divider {
+  width: 1px;
+  height: 22px;
+  background: rgba(255,255,255,.2);
+  margin: 0 .3rem;
+}
+
+.nse-topbar-auth a {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: 6px 16px;
+  border-radius: 8px;
+  font-size: .82rem;
+  font-weight: 800;
+  background: rgba(255,255,255,.15);
+  color: #e0e7ff !important;
+  border: 1.5px solid rgba(255,255,255,.25);
+  text-decoration: none !important;
+  transition: background .15s;
+}
+
+.nse-topbar-auth a:hover {
+  background: rgba(255,255,255,.28);
+  color: #ffffff !important;
+}
+
+/* ─── HERO BANNER ────────────────────────────── */
 .hero-banner {
   background: linear-gradient(135deg,#4f46e5 0%,#7c3aed 52%,#a21caf 100%);
   border-radius: 16px;
@@ -135,7 +208,6 @@ html, body { background: #f0f2f6 !important; }
   gap: 1.2rem;
   box-shadow: 0 4px 28px rgba(79,70,229,.28);
 }
-/* Force EVERY descendant of hero to white */
 .hero-banner,
 .hero-banner p, .hero-banner span, .hero-banner div,
 .hero-banner strong, .hero-banner em, .hero-banner small,
@@ -161,9 +233,7 @@ html, body { background: #f0f2f6 !important; }
   flex-wrap: wrap;
 }
 
-/* ─────────────────────────────────────────────
-   BADGES  (self-contained colors, override everything)
-   ───────────────────────────────────────────── */
+/* ─── BADGES ─────────────────────────────────── */
 .ui-badge {
   display: inline-flex !important;
   align-items: center !important;
@@ -183,9 +253,7 @@ html, body { background: #f0f2f6 !important; }
 .badge-nse,  .badge-nse  * { background:#ede9fe !important; color:#3b0764 !important; border:1.5px solid #c4b5fd; }
 .badge-red,  .badge-red  * { background:#ffe4e6 !important; color:#881337 !important; border:1.5px solid #fda4af; }
 
-/* ─────────────────────────────────────────────
-   PAGE TITLE + CAPTION  (used in other pages)
-   ───────────────────────────────────────────── */
+/* ─── PAGE TITLE + CAPTION ───────────────────── */
 .ui-page-title {
   font-size: 1.7rem !important;
   font-weight: 900 !important;
@@ -200,9 +268,7 @@ html, body { background: #f0f2f6 !important; }
   margin: 0 !important;
 }
 
-/* ─────────────────────────────────────────────
-   METRIC CARDS
-   ───────────────────────────────────────────── */
+/* ─── METRIC CARDS ───────────────────────────── */
 [data-testid="metric-container"] {
   background: #ffffff !important;
   border: 1px solid #e2e8f0 !important;
@@ -234,9 +300,7 @@ html, body { background: #f0f2f6 !important; }
   font-weight: 700 !important;
 }
 
-/* ─────────────────────────────────────────────
-   DATAFRAMES
-   ───────────────────────────────────────────── */
+/* ─── DATAFRAMES ─────────────────────────────── */
 [data-testid="stDataFrame"] > div {
   background: #ffffff !important;
   border: 1px solid #e2e8f0 !important;
@@ -245,9 +309,7 @@ html, body { background: #f0f2f6 !important; }
   box-shadow: 0 1px 6px rgba(15,23,42,.06) !important;
 }
 
-/* ─────────────────────────────────────────────
-   BUTTONS
-   ───────────────────────────────────────────── */
+/* ─── BUTTONS ────────────────────────────────── */
 .stButton > button {
   border-radius: 9px !important;
   font-weight: 700 !important;
@@ -268,9 +330,7 @@ html, body { background: #f0f2f6 !important; }
 }
 .stButton > button[kind="secondary"]:hover { background: #e0e7ff !important; }
 
-/* ─────────────────────────────────────────────
-   INPUTS & LABELS
-   ───────────────────────────────────────────── */
+/* ─── INPUTS & LABELS ────────────────────────── */
 .stTextInput input, .stNumberInput input,
 .stSelectbox > div > div,
 .stTextArea textarea, .stDateInput input {
@@ -294,9 +354,7 @@ html, body { background: #f0f2f6 !important; }
   font-size: 0.88rem !important;
 }
 
-/* ─────────────────────────────────────────────
-   ALERTS (success/error/warning/info)
-   ───────────────────────────────────────────── */
+/* ─── ALERTS ─────────────────────────────────── */
 .stSuccess > div { background:#f0fdf4 !important; border-left:4px solid #22c55e !important; color:#166534 !important; font-weight:600 !important; border-radius:10px !important; }
 .stError   > div { background:#fff1f2 !important; border-left:4px solid #f43f5e !important; color:#9f1239 !important; font-weight:600 !important; border-radius:10px !important; }
 .stWarning > div { background:#fffbeb !important; border-left:4px solid #f59e0b !important; color:#92400e !important; font-weight:600 !important; border-radius:10px !important; }
@@ -304,9 +362,7 @@ html, body { background: #f0f2f6 !important; }
 .stSuccess > div *, .stError > div *,
 .stWarning > div *, .stInfo  > div * { color: inherit !important; }
 
-/* ─────────────────────────────────────────────
-   TABS
-   ───────────────────────────────────────────── */
+/* ─── TABS ───────────────────────────────────── */
 .stTabs [data-baseweb="tab-list"] {
   background: #e8edf5 !important;
   border-radius: 12px !important;
@@ -330,9 +386,7 @@ html, body { background: #f0f2f6 !important; }
 }
 .stTabs [aria-selected="true"] span { color: #4f46e5 !important; }
 
-/* ─────────────────────────────────────────────
-   SECTION LABEL
-   ───────────────────────────────────────────── */
+/* ─── SECTION LABEL ──────────────────────────── */
 .sec-label {
   font-size: 0.76rem !important;
   font-weight: 800 !important;
@@ -353,9 +407,7 @@ html, body { background: #f0f2f6 !important; }
   flex-shrink: 0;
 }
 
-/* ─────────────────────────────────────────────
-   DIVIDER
-   ───────────────────────────────────────────── */
+/* ─── DIVIDER ────────────────────────────────── */
 .ui-divider {
   height: 1px;
   background: linear-gradient(90deg,#6366f1 0%,#e2e8f0 55%,transparent 100%);
@@ -363,9 +415,7 @@ html, body { background: #f0f2f6 !important; }
   margin: 1.2rem 0 .8rem;
 }
 
-/* ─────────────────────────────────────────────
-   CARDS
-   ───────────────────────────────────────────── */
+/* ─── CARDS ──────────────────────────────────── */
 .ui-card, .content-card {
   background: #ffffff !important;
   border-radius: 14px;
@@ -381,18 +431,14 @@ html, body { background: #f0f2f6 !important; }
   color: #1e293b !important;
 }
 
-/* ─────────────────────────────────────────────
-   CAPTION
-   ───────────────────────────────────────────── */
+/* ─── CAPTION ────────────────────────────────── */
 [data-testid="stCaptionContainer"] p,
 [data-testid="stCaptionContainer"] span {
   color: #64748b !important;
   font-size: 0.8rem !important;
 }
 
-/* ─────────────────────────────────────────────
-   EXPANDERS
-   ───────────────────────────────────────────── */
+/* ─── EXPANDERS ──────────────────────────────── */
 .streamlit-expanderHeader {
   background: #f8fafc !important;
   border-radius: 9px !important;
@@ -402,9 +448,7 @@ html, body { background: #f0f2f6 !important; }
   border: 1px solid #e0e7ff !important;
 }
 
-/* ─────────────────────────────────────────────
-   SLIDERS & SCROLLBAR
-   ───────────────────────────────────────────── */
+/* ─── SLIDERS & SCROLLBAR ────────────────────── */
 .stSlider [data-baseweb="slider"] div[role="slider"] {
   background: #6366f1 !important;
   border: 2px solid #fff !important;
@@ -415,9 +459,7 @@ html, body { background: #f0f2f6 !important; }
 ::-webkit-scrollbar-thumb { background:#a5b4fc; border-radius:8px; }
 ::-webkit-scrollbar-thumb:hover { background:#6366f1; }
 
-/* ─────────────────────────────────────────────
-   STAT CHIP
-   ───────────────────────────────────────────── */
+/* ─── STAT CHIP ──────────────────────────────── */
 .stat-chip {
   display: inline-block;
   background: linear-gradient(135deg,#4f46e5,#7c3aed);
@@ -430,13 +472,70 @@ html, body { background: #f0f2f6 !important; }
   text-align: center;
 }
 
-/* ─────────────────────────────────────────────
-   PLOTLY CHART BACKGROUND
-   ───────────────────────────────────────────── */
+/* ─── PLOTLY CHART BACKGROUND ────────────────── */
 .js-plotly-plot .plotly .bg { fill: #ffffff !important; }
 
 </style>
 """
 
+
+TOPBAR_HTML = """
+<div class="nse-topbar">
+  <div class="nse-topbar-brand">
+    📈 NSE Tracker
+    <span>NIFTY 50</span>
+  </div>
+  <div class="nse-topbar-links">
+    <a href="/Alerts" target="_self">🔔 Alerts</a>
+    <a href="/Watchlist" target="_self">⭐ Watchlist</a>
+    <div class="nav-divider"></div>
+    <a href="/?tab=calendar" target="_self">📅 Market Calendar</a>
+    <a href="/?tab=news" target="_self">📰 News Sentiment</a>
+    <div class="nav-divider"></div>
+  </div>
+  <div class="nse-topbar-auth">
+    <a href="/Login" target="_self">🔐 Sign In / Register</a>
+  </div>
+</div>
+"""
+
+
 def inject():
     st.markdown(LIGHT_CSS, unsafe_allow_html=True)
+
+
+def inject_topbar(user=None):
+    """Call after inject(). Renders the sticky top navbar.
+    Pass user dict to show logged-in state instead of Sign In button."""
+    if user:
+        name = user.get("full_name", user.get("email", "User"))
+        auth_html = f"""
+        <div class="nse-topbar-auth">
+          <a href="#" style="cursor:default;">👤 {name}</a>
+        </div>
+        """
+    else:
+        auth_html = """
+        <div class="nse-topbar-auth">
+          <a href="/Login" target="_self">🔐 Sign In / Register</a>
+        </div>
+        """
+
+    html = f"""
+    <div class="nse-topbar">
+      <div class="nse-topbar-brand">
+        📈 NSE Tracker
+        <span>NIFTY 50</span>
+      </div>
+      <div class="nse-topbar-links">
+        <a href="/Alerts" target="_self">🔔 Alerts</a>
+        <a href="/Watchlist" target="_self">⭐ Watchlist</a>
+        <div class="nav-divider"></div>
+        <a href="/?tab=12" target="_self">📅 Market Calendar</a>
+        <a href="/?tab=9" target="_self">📰 News Sentiment</a>
+        <div class="nav-divider"></div>
+      </div>
+      {auth_html}
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
