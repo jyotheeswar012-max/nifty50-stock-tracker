@@ -119,6 +119,12 @@ FAMOUS_DATES = {
     "All-time High Sep 27 2024":  date(2024,9,27),
 }
 
+PERIOD_MAP = {
+    "1mo": "1mo", "3mo": "3mo", "6mo": "6mo",
+    "1y": "1y",  "2y": "2y",  "5y": "5y",
+    "5d": "5d",
+}
+
 PLT = "plotly_white"
 PLT_LAYOUT = dict(
     paper_bgcolor="#ffffff", plot_bgcolor="#fafafa",
@@ -152,8 +158,39 @@ def safe_float(val, default=0.0):
     except Exception:
         return default
 
+
+def _clean_df(df):
+    """Flatten MultiIndex columns and strip timezone from index."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    # Flatten MultiIndex: take level-0 if it contains OHLCV names, else level-1
+    if isinstance(df.columns, pd.MultiIndex):
+        lvl0 = list(df.columns.get_level_values(0))
+        ohlcv = {"Open", "High", "Low", "Close", "Volume"}
+        if ohlcv.intersection(set(lvl0)):
+            df.columns = lvl0
+        else:
+            df.columns = list(df.columns.get_level_values(1))
+    # Strip timezone
+    if hasattr(df.index, "tz") and df.index.tz is not None:
+        df.index = df.index.tz_localize(None)
+    df.index = pd.to_datetime(df.index).normalize()
+    return df
+
+
+def _ticker_history(symbol, period):
+    """Use yf.Ticker.history() — always returns a clean flat DataFrame."""
+    try:
+        t = yf.Ticker(symbol)
+        df = t.history(period=period, auto_adjust=True)
+        if df is not None and not df.empty:
+            return _clean_df(df)
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
 def is_nse_open():
-    """Returns (is_open: bool, status: str, last_close_label: str)."""
     try:
         ist = pytz.timezone("Asia/Kolkata")
         now = datetime.now(ist)
@@ -175,6 +212,7 @@ def is_nse_open():
     except Exception:
         return False, "Unknown", ""
 
+
 def hero(icon, title, badge_html, sub=""):
     sub_html = (
         "<div class='hero-sub'>" + badge_html + ("&nbsp;&nbsp;" + sub if sub else "") + "</div>"
@@ -192,132 +230,71 @@ def sec(label):
 def divider():
     st.markdown('<hr class="ui-divider">', unsafe_allow_html=True)
 
-# ---- Market state (computed once per session render) ----
+# ---- Market state ----
 market_open, market_status, last_close_label = is_nse_open()
+_TTL = 300 if market_open else 1800   # 5 min live, 30 min closed
 
-# TTL: 3 min when live, 30 min when closed
-_BATCH_TTL  = 180 if market_open else 1800
-_TICKER_TTL = 300 if market_open else 1800
 
-# ---- Cached data fetchers ----
+# ============================================================
+# DATA FETCHERS  (all use Ticker.history for reliability)
+# ============================================================
 
-@st.cache_data(ttl=_TICKER_TTL)
+@st.cache_data(ttl=_TTL)
 def fetch_ticker(symbol, period="3mo"):
-    """Fetch a single ticker — handles flat and MultiIndex columns."""
-    try:
-        df = yf.download(symbol, period=period, auto_adjust=True,
-                         progress=False, show_errors=False)
-        if df is not None and not df.empty:
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            df.index = pd.to_datetime(df.index).tz_localize(None).normalize()
-            return df
-    except Exception:
-        pass
-    return pd.DataFrame()
+    return _ticker_history(symbol, period)
 
 
-@st.cache_data(ttl=_TICKER_TTL)
-def fetch_indices_individually():
-    """Fetch each NSE index one by one — avoids batch MultiIndex parsing bugs."""
+@st.cache_data(ttl=_TTL)
+def fetch_indices():
+    """Fetch all 8 NSE indices individually."""
     result = {}
     for idx in NSE_INDICES:
-        try:
-            df = yf.download(idx["symbol"], period="5d", auto_adjust=True,
-                             progress=False, show_errors=False)
-            if df is not None and not df.empty:
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = df.columns.get_level_values(0)
-                df.index = pd.to_datetime(df.index).tz_localize(None).normalize()
-                result[idx["symbol"]] = df
-        except Exception:
-            pass
+        df = _ticker_history(idx["symbol"], "5d")
+        if not df.empty:
+            result[idx["symbol"]] = df
     return result
 
 
-@st.cache_data(ttl=_BATCH_TTL)
-def fetch_batch():
-    """All 50 stocks in ONE download call."""
-    try:
-        raw = yf.download(
-            SYMBOLS, period="5d", auto_adjust=True,
-            progress=False, group_by="ticker", threads=True,
-            show_errors=False,
-        )
-        if raw is None or raw.empty:
-            return pd.DataFrame()
-        if isinstance(raw.index, pd.DatetimeIndex):
-            raw.index = raw.index.tz_localize(None).normalize()
-        return raw
-    except Exception:
-        return pd.DataFrame()
+@st.cache_data(ttl=_TTL)
+def fetch_all_stocks_5d():
+    """Fetch all 50 Nifty stocks for the snapshot table."""
+    result = {}
+    for s in NIFTY50:
+        df = _ticker_history(s["symbol"], "5d")
+        if not df.empty:
+            result[s["symbol"]] = df
+    return result
 
 
 @st.cache_data(ttl=3600)
 def fetch_all_history():
-    """All 50 stocks + macro proxies 5Y history. Only called on demand."""
+    """5Y history for all stocks + macro proxies (Time Machine)."""
     result = {}
     all_syms = SYMBOLS + ["USDINR=X", "CL=F", "GC=F", "^NSEI"]
-    try:
-        raw = yf.download(
-            all_syms, period="5y", auto_adjust=True,
-            progress=False, group_by="ticker", threads=True,
-            show_errors=False,
-        )
-        if raw is None or raw.empty:
-            return result
-        if isinstance(raw.index, pd.DatetimeIndex):
-            raw.index = raw.index.tz_localize(None).normalize()
-        for sym in all_syms:
-            try:
-                if isinstance(raw.columns, pd.MultiIndex):
-                    if sym in raw.columns.get_level_values(1):
-                        sub = raw.xs(sym, axis=1, level=1).dropna(how="all")
-                    else:
-                        continue
-                else:
-                    sub = raw.dropna(how="all")
-                if sub is not None and not sub.empty:
-                    result[sym] = sub
-            except Exception:
-                pass
-    except Exception:
-        pass
+    for sym in all_syms:
+        df = _ticker_history(sym, "5y")
+        if not df.empty:
+            result[sym] = df
     return result
 
 
-def _extract_close(raw, sym):
-    if raw is None or raw.empty:
-        return pd.Series(dtype=float)
-    try:
-        if isinstance(raw.columns, pd.MultiIndex):
-            lvl0 = raw.columns.get_level_values(0)
-            lvl1 = raw.columns.get_level_values(1)
-            if "Close" in lvl0 and sym in lvl1:
-                return raw["Close"][sym].dropna()
-            if sym in lvl0 and "Close" in lvl1:
-                return raw[sym]["Close"].dropna()
-        elif "Close" in raw.columns:
-            return raw["Close"].dropna()
-    except Exception:
-        pass
-    return pd.Series(dtype=float)
-
-
-def get_curr_prev(raw, sym):
-    s = _extract_close(raw, sym)
+def get_curr_prev(sym, stock_data):
+    df = stock_data.get(sym)
+    if df is None or df.empty or "Close" not in df.columns:
+        return None, None
+    s = df["Close"].dropna()
     if len(s) >= 2: return safe_float(s.iloc[-1]), safe_float(s.iloc[-2])
     if len(s) == 1: return safe_float(s.iloc[0]), None
     return None, None
 
 
-@st.cache_data(ttl=_BATCH_TTL)
+@st.cache_data(ttl=_TTL)
 def build_stock_rows_cached():
-    raw = fetch_batch()
+    stock_data = fetch_all_stocks_5d()
     p_lbl = "Price (Rs.)" if market_open else "Last Close (Rs.)"
     rows = []
     for s in NIFTY50:
-        curr, prev = get_curr_prev(raw, s["symbol"])
+        curr, prev = get_curr_prev(s["symbol"], stock_data)
         chg = (curr - prev) if (curr is not None and prev is not None) else None
         pct = (chg / prev * 100) if (chg is not None and prev and prev != 0) else None
         rows.append({
@@ -405,18 +382,19 @@ TAB_LABELS = [
     "Stock Chart",
     "Time Machine",
 ]
-
 tabs = st.tabs(TAB_LABELS)
+
 
 def _market_banner():
     if market_open:
-        st.success("NSE OPEN - Live prices updating every 3 min")
+        st.success("NSE OPEN - Live prices updating every 5 min")
     else:
         st.warning(
             "NSE CLOSED - " + market_status +
             (" | " + last_close_label if last_close_label else "") +
             " | Showing last closing prices"
         )
+
 
 # -- 0: Market Overview ---------------------------------------
 with tabs[0]:
@@ -426,7 +404,7 @@ with tabs[0]:
     _market_banner()
     sec("NSE Indices Snapshot")
     with st.spinner("Fetching indices..."):
-        idx_data = fetch_indices_individually()   # <-- fixed: per-symbol fetch
+        idx_data = fetch_indices()
     val_lbl = "Value" if market_open else "Last Close"
     idx_rows = []
     for idx in NSE_INDICES:
@@ -500,10 +478,13 @@ with tabs[0]:
         style_fig(fig_m)
         st.plotly_chart(fig_m, use_container_width=True)
 
+
 # -- 1: Nifty 50 Index ----------------------------------------
 with tabs[1]:
     hero("[N50]", "Nifty 50 Index",
-         "<span class='ui-badge badge-live'>LIVE</span>", "^NSEI - NSE Flagship Index")
+         "<span class='ui-badge badge-live'>LIVE</span>" if market_open
+         else "<span class='ui-badge badge-hist'>LAST CLOSE</span>",
+         "^NSEI - NSE Flagship Index")
     _market_banner()
     c1, c2 = st.columns([1, 3])
     with c1:
@@ -513,7 +494,7 @@ with tabs[1]:
     with st.spinner("Fetching Nifty 50..."):
         nifty = fetch_ticker("^NSEI", n_period)
     if nifty.empty or "Close" not in nifty.columns:
-        st.error("Could not fetch Nifty 50 data.")
+        st.warning("Could not fetch Nifty 50 data. Please try again later.")
     else:
         c  = safe_float(nifty["Close"].iloc[-1])
         p  = safe_float(nifty["Close"].iloc[-2]) if len(nifty) > 1 else c
@@ -525,7 +506,7 @@ with tabs[1]:
         m2.metric("Change",         format(ch, "+.2f"), delta=format(pt, "+.2f") + "%")
         m3.metric("Period High",    "Rs." + format(safe_float(nifty["High"].max()), ",.2f"))
         m4.metric("Period Low",     "Rs." + format(safe_float(nifty["Low"].min()),  ",.2f"))
-        m5.metric("Avg Volume",     format(int(nifty["Volume"].mean()), ","))
+        m5.metric("Avg Volume",     format(int(safe_float(nifty["Volume"].mean())), ","))
         divider()
         fig = go.Figure()
         if chart_type == "Candlestick":
@@ -551,11 +532,12 @@ with tabs[1]:
         style_fig(fig)
         st.plotly_chart(fig, use_container_width=True)
 
+
 # -- 2: All 50 Companies --------------------------------------
 with tabs[2]:
     hero("[50]", "All 50 Companies",
          "<span class='ui-badge badge-nse'>NSE</span>",
-         "Live prices" if market_open else "Last closing prices for all Nifty 50 stocks")
+         "Live prices" if market_open else "Last closing prices")
     _market_banner()
     sec("Sector Filter")
     sel_sec = st.selectbox("Sector", sectors, key="all_sec")
@@ -583,6 +565,7 @@ with tabs[2]:
             except Exception:
                 pass
 
+
 # -- 3: Gainers & Losers --------------------------------------
 with tabs[3]:
     hero("[GL]", "Gainers & Losers",
@@ -591,15 +574,15 @@ with tabs[3]:
     _market_banner()
     with st.spinner("Fetching..."):
         df_rows = build_stock_rows_cached()
-    valid   = df_rows[df_rows["_pct"].notna()].copy()
-    top_n   = st.slider("Top N", 3, 10, 5, key="gl_n")
+    valid = df_rows[df_rows["_pct"].notna()].copy()
+    top_n = st.slider("Top N", 3, 10, 5, key="gl_n")
     if valid.empty:
         st.warning("No data available.")
     else:
         gainers = safe_sort(valid, "_pct", ascending=False).head(top_n)
         losers  = safe_sort(valid, "_pct", ascending=True).head(top_n)
         price_col = next((c for c in df_rows.columns if "Price" in c or "Last Close" in c), "_curr")
-        cg, cl  = st.columns(2)
+        cg, cl = st.columns(2)
         with cg:
             sec("Top Gainers")
             st.dataframe(gainers[["Symbol", "Company", price_col, "Change (%)"]], use_container_width=True, hide_index=True)
@@ -622,13 +605,14 @@ with tabs[3]:
         except Exception:
             pass
 
+
 # -- 4: P&L Calculator ----------------------------------------
 with tabs[4]:
     hero("[PL]", "P&L Calculator",
          "<span class='ui-badge badge-sim'>SIMULATOR</span>", "Calculate profit / loss")
     _market_banner()
     stock_names = [s["name"] for s in NIFTY50]
-    c1, c2, c3  = st.columns(3)
+    c1, c2, c3 = st.columns(3)
     with c1:
         sel_name = st.selectbox("Stock", stock_names, key="pl_s")
     sel_s = next(s for s in NIFTY50 if s["name"] == sel_name)
@@ -645,7 +629,7 @@ with tabs[4]:
         )
     with c3:
         qty = st.number_input("Quantity", min_value=1, value=10, step=1, key="pl_q")
-    sell_lbl = "Sell / Current Price (Rs.)" if market_open else "Sell Price (Rs.) - market closed, enter manually"
+    sell_lbl = "Sell / Current Price (Rs.)" if market_open else "Sell Price (Rs.) - enter manually"
     sell_p = st.number_input(
         sell_lbl, min_value=0.01,
         value=round(lp, 2) if lp > 0 else 100.0, step=0.5, key="pl_sp",
@@ -678,6 +662,7 @@ with tabs[4]:
         b3.metric("New Price",    "Rs." + format(nsp,     ".2f"))
         b4.metric("P&L Impact",   "Rs." + format(pl_beta, "+,.2f"))
 
+
 # -- 5: Stock Chart -------------------------------------------
 with tabs[5]:
     hero("[SC]", "Stock Chart",
@@ -689,14 +674,14 @@ with tabs[5]:
     with c1:
         sc_name = st.selectbox("Stock", [s["name"] for s in NIFTY50], key="sc_s")
     with c2:
-        sc_per  = st.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=2, key="sc_p")
+        sc_per = st.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=2, key="sc_p")
     with c3:
-        sc_ct   = st.radio("Chart", ["Line", "Candlestick", "Area"], horizontal=True, key="sc_ct")
+        sc_ct  = st.radio("Chart", ["Line", "Candlestick", "Area"], horizontal=True, key="sc_ct")
     sc_sym = next(s["symbol"] for s in NIFTY50 if s["name"] == sc_name)
     with st.spinner("Fetching " + sc_name + "..."):
         sc_h = fetch_ticker(sc_sym, sc_per)
     if sc_h.empty or "Close" not in sc_h.columns:
-        st.error("No data found for this stock.")
+        st.warning("No data found for this stock. Please try again later.")
     else:
         c  = safe_float(sc_h["Close"].iloc[-1])
         p  = safe_float(sc_h["Close"].iloc[-2]) if len(sc_h) > 1 else c
@@ -732,6 +717,7 @@ with tabs[5]:
         style_fig(fig)
         st.plotly_chart(fig, use_container_width=True)
 
+
 # -- 6: Time Machine ------------------------------------------
 with tabs[6]:
     hero("[TM]", "Time Machine",
@@ -747,11 +733,11 @@ with tabs[6]:
         tm_date = FAMOUS_DATES[preset]
         st.info("Loaded: " + preset + " - " + str(tm_date))
     if st.button("Travel to this date", key="tm_go"):
-        with st.spinner("Loading historical data (this may take 20-30s first time)..."):
+        with st.spinner("Loading historical data (may take 30-60s first time)..."):
             all_hist = fetch_all_history()
         snap = tm_get_snapshot(all_hist, tm_date)
         if snap.empty:
-            st.error("No data for this date. Try a nearby date.")
+            st.error("No data for this date. Try a nearby trading day.")
         else:
             st.success("Snapshot for " + str(tm_date))
             st.dataframe(snap, use_container_width=True)
