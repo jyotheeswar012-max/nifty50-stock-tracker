@@ -47,4 +47,4 @@ streamlit run app.py
 
 ---
 
-> ⚠️ Educational use only. Not investment advice.
+> ⚠️ Educational use only. Not investment advice
