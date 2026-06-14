@@ -1073,9 +1073,19 @@ elif page == "🤖 ML Predictions":
         st.warning("⚠️ Not enough data. Try a longer period.")
     else:
         try:
-            close = ml_hist["Close"].dropna().values
-            X     = np.arange(len(close)).reshape(-1, 1)
-            y     = close
+            # ── Safely extract Close as a flat 1-D numpy array ──────────
+            _close_col = ml_hist["Close"]
+            # yfinance may return a DataFrame with ticker as column level
+            if isinstance(_close_col, pd.DataFrame):
+                _close_col = _close_col.iloc[:, 0]
+            close = _close_col.dropna().astype(float).values.flatten()
+
+            if len(close) < 30:
+                st.warning("⚠️ Not enough clean price data. Try a longer period.")
+                st.stop()
+
+            X  = np.arange(len(close)).reshape(-1, 1)
+            y  = close
 
             lr   = LinearRegression().fit(X, y)
             poly = PolynomialFeatures(degree=2)
@@ -1087,11 +1097,17 @@ elif page == "🤖 ML Predictions":
             future_Xp = poly.transform(future_X)
 
             lr_pred   = lr.predict(future_X)
-            poly_pred = np.clip(plr.predict(future_Xp), close[-1]*0.5, close[-1]*1.5)
+            poly_pred = np.clip(plr.predict(future_Xp), close[-1] * 0.5, close[-1] * 1.5)
             rf_pred   = rf.predict(future_X)
 
-            last_date = ml_hist.index[-1]
-            fut_dates = [last_date + timedelta(days=i+1) for i in range(ml_horizon)]
+            # ── Generate weekday-only forecast dates ────────────────────
+            last_date = pd.Timestamp(ml_hist.index[-1])
+            fut_dates = []
+            _d = last_date
+            while len(fut_dates) < ml_horizon:
+                _d += pd.Timedelta(days=1)
+                if _d.weekday() < 5:   # Mon–Fri only
+                    fut_dates.append(_d)
 
             lr_mae = mean_absolute_error(y, lr.predict(X))
             rf_mae = mean_absolute_error(y, rf.predict(X))
@@ -1107,23 +1123,40 @@ elif page == "🤖 ML Predictions":
 
             divider()
             fig_ml = go.Figure()
-            fig_ml.add_trace(go.Scatter(x=ml_hist.index, y=close, mode="lines",
+            fig_ml.add_trace(go.Scatter(
+                x=ml_hist.index, y=close, mode="lines",
                 name="Actual", line=dict(color="#1a1a2e", width=2)))
-            fig_ml.add_trace(go.Scatter(x=fut_dates, y=lr_pred, mode="lines+markers",
+            fig_ml.add_trace(go.Scatter(
+                x=fut_dates, y=lr_pred, mode="lines+markers",
                 name="Linear", line=dict(color="#6366f1", width=2, dash="dot"),
                 marker=dict(size=5)))
-            fig_ml.add_trace(go.Scatter(x=fut_dates, y=poly_pred, mode="lines+markers",
+            fig_ml.add_trace(go.Scatter(
+                x=fut_dates, y=poly_pred, mode="lines+markers",
                 name="Polynomial", line=dict(color="#f59e0b", width=2, dash="dash"),
                 marker=dict(size=5)))
-            fig_ml.add_trace(go.Scatter(x=fut_dates, y=rf_pred, mode="lines+markers",
+            fig_ml.add_trace(go.Scatter(
+                x=fut_dates, y=rf_pred, mode="lines+markers",
                 name="Random Forest", line=dict(color="#10b981", width=2),
                 marker=dict(size=5)))
-            fig_ml.add_vrect(x0=fut_dates[0], x1=fut_dates[-1],
-                fillcolor="rgba(99,102,241,0.06)", line_width=0,
-                annotation_text="Forecast Zone", annotation_position="top left")
-            fig_ml.update_layout(**PLT_LAYOUT,
-                title=f"{ml_stock} — {ml_horizon}-Day Forecast", height=460,
-                xaxis_title="Date", yaxis_title="Price (₹)",
+
+            # ── Safe vrect: only add if we have at least 2 forecast dates ──
+            if len(fut_dates) >= 2:
+                try:
+                    fig_ml.add_vrect(
+                        x0=str(fut_dates[0].date()),
+                        x1=str(fut_dates[-1].date()),
+                        fillcolor="rgba(99,102,241,0.06)", line_width=0,
+                        annotation_text="Forecast Zone",
+                        annotation_position="top left")
+                except Exception:
+                    pass
+
+            fig_ml.update_layout(
+                **PLT_LAYOUT,
+                title=f"{ml_stock} — {ml_horizon}-Day Forecast",
+                height=460,
+                xaxis_title="Date",
+                yaxis_title="Price (₹)",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02))
             style_fig(fig_ml)
             st.plotly_chart(fig_ml, use_container_width=True)
