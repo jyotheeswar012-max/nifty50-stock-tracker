@@ -14,10 +14,21 @@ html, body { background: #f0f2f6 !important; }
   font-family: 'Inter','Segoe UI',system-ui,sans-serif !important;
 }
 [data-testid="stHeader"] { display: none !important; }
-[data-testid="stAppViewContainer"] > section:first-child,
-[data-testid="stMain"] { padding-top: 56px !important; }
+
+/* ── HIDE ENTIRE LEFT SIDEBAR ── */
+[data-testid="stSidebar"],
+[data-testid="stSidebarNav"],
+[data-testid="stSidebarFooter"],
+[data-testid="collapsedControl"],
+section[data-testid="stSidebar"],
+div[data-testid="stSidebarCollapsedControl"] { display: none !important; width: 0 !important; }
+
+/* Make main content fill full width since sidebar is gone */
+[data-testid="stAppViewContainer"] > section:first-child { display: none !important; }
+[data-testid="stMain"] { padding-top: 56px !important; margin-left: 0 !important; }
 .block-container {
-  padding-top: 0.8rem !important; padding-bottom: 3rem !important; max-width: 1280px !important;
+  padding-top: 0.8rem !important; padding-bottom: 3rem !important;
+  max-width: 1280px !important; margin-left: auto !important; margin-right: auto !important;
 }
 .element-container { margin-bottom: 0.45rem !important; }
 .block-container p, .block-container li, .block-container td,
@@ -39,33 +50,6 @@ html, body { background: #f0f2f6 !important; }
   margin: 0 0 0.3rem 0 !important; line-height: 1.65 !important;
 }
 [data-testid="stMarkdownContainer"] span { color: inherit; }
-[data-testid="stSidebar"] {
-  background: linear-gradient(180deg,#1e1b4b 0%,#312e81 45%,#1e1b4b 100%) !important;
-  border-right: none !important; margin-top: 56px !important;
-}
-[data-testid="stSidebar"] p, [data-testid="stSidebar"] span,
-[data-testid="stSidebar"] div, [data-testid="stSidebar"] label,
-[data-testid="stSidebar"] li, [data-testid="stSidebar"] small { color: #c7d2fe !important; }
-[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3, [data-testid="stSidebar"] strong,
-[data-testid="stSidebar"] b { color: #ffffff !important; }
-[data-testid="stSidebar"] [data-testid="stCaption"] p,
-[data-testid="stSidebar"] [data-testid="stCaption"] span { color: #a5b4fc !important; font-size: 0.76rem !important; }
-[data-testid="stSidebar"] hr { border: none !important; border-top: 1px solid rgba(255,255,255,.18) !important; margin: .5rem 0 !important; }
-[data-testid="stSidebar"] .stButton > button {
-  background: rgba(255,255,255,.12) !important; color: #e0e7ff !important;
-  border: 1px solid rgba(255,255,255,.2) !important; border-radius: 8px !important;
-  font-weight: 600 !important; font-size: 0.85rem !important; width: 100% !important;
-}
-[data-testid="stSidebar"] .stButton > button:hover { background: rgba(255,255,255,.22) !important; color: #ffffff !important; }
-
-/* Hide Streamlit default sidebar bottom footer (app name + broken icon + user/guest button) */
-[data-testid="stSidebarFooter"],
-[data-testid="stSidebarUserContent"] ~ div,
-.st-emotion-cache-1cypcdb,
-.st-emotion-cache-h5rgaw,
-[data-testid="stSidebar"] > div > div > div:last-child > div:last-child,
-[data-testid="stSidebarNav"] ~ div { display: none !important; }
 
 /* TOP NAVBAR */
 .nse-topbar {
