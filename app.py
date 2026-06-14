@@ -45,12 +45,13 @@ except Exception:
 st.sidebar.markdown("<h3 style='color:#fff;margin:0 0 .4rem 0;font-size:1rem;'>NSE + Time Machine</h3>",
                     unsafe_allow_html=True)
 
+# ── Account section ──────────────────────────────────────────
 if user:
     st.sidebar.markdown(
         f"<span class='ui-badge badge-live'>👤 {name}</span>",
         unsafe_allow_html=True,
     )
-    if st.sidebar.button("🚧 Sign Out", key="sidebar_logout"):
+    if st.sidebar.button("🚪 Sign Out", key="sidebar_logout"):
         logout()
         st.rerun()
 else:
@@ -58,12 +59,49 @@ else:
         "<span class='ui-badge badge-hist' style='background:rgba(255,255,255,.15);color:#e0e7ff!important;border-color:rgba(255,255,255,.25);'>👤 Guest</span>",
         unsafe_allow_html=True,
     )
+
+st.sidebar.markdown("---")
+
+# ── Account & Utility links ──────────────────────────────────
+st.sidebar.markdown("<p style='color:#94a3b8;font-size:.72rem;letter-spacing:.06em;margin:0 0 .3rem 0;'>ACCOUNT</p>", unsafe_allow_html=True)
+try:
+    st.sidebar.page_link("pages/00_👤_Profile_&_Notifications.py", label="👤 Profile & Notifications")
+except Exception:
+    pass
+try:
+    st.sidebar.page_link("pages/01_🔔_Alerts.py", label="🔔 Alerts")
+except Exception:
+    pass
+try:
+    st.sidebar.page_link("pages/05_⭐_Watchlist.py", label="⭐ Watchlist")
+except Exception:
+    pass
+
+st.sidebar.markdown("---")
+
+# ── Tools & Extras links ──────────────────────────────────────
+st.sidebar.markdown("<p style='color:#94a3b8;font-size:.72rem;letter-spacing:.06em;margin:0 0 .3rem 0;'>TOOLS</p>", unsafe_allow_html=True)
+try:
+    st.sidebar.page_link("pages/06_📝_Paper_Trading.py", label="🎮 Paper Trading")
+except Exception:
+    pass
+try:
+    st.sidebar.page_link("pages/04_🤖_ML_Predictions.py", label="🤖 ML Predictions")
+except Exception:
+    pass
+
+st.sidebar.markdown("---")
+
+# ── Auth link ────────────────────────────────────────────────
+if not user:
     try:
         st.sidebar.page_link("pages/00_🔐_Login.py", label="🔐 Sign In / Register")
     except Exception:
         pass
+    st.sidebar.markdown("---")
 
-st.sidebar.markdown("---")
+# ── Main navigation ───────────────────────────────────────────
+st.sidebar.markdown("<p style='color:#94a3b8;font-size:.72rem;letter-spacing:.06em;margin:0 0 .3rem 0;'>MARKET</p>", unsafe_allow_html=True)
 
 page = st.sidebar.radio("", [
     "🏦 Market Overview",
@@ -1151,7 +1189,6 @@ elif page == "🤖 ML Predictions":
                 except Exception:
                     pass
 
-            # No legend= here — it's already defined in PLT_LAYOUT
             fig_ml.update_layout(
                 **PLT_LAYOUT,
                 title=f"{ml_stock} — {ml_horizon}-Day Forecast",
