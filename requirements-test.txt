@@ -1,9 +1,4 @@
+# ── Test & lint dependencies (not needed at runtime) ─────────────
 pytest>=8.0
-pytest-timeout>=2.3
-pytest-mock>=3.14
-pandas>=2.0
-numpy>=1.26
-plotly>=5.20
-streamlit>=1.31
-yfinance>=0.2.40
-pytz
+pytest-cov>=4.0
+ruff>=0.4

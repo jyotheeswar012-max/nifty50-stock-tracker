@@ -26,22 +26,33 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
+      # Install runtime deps + test/lint deps separately
+      # requirements-test.txt contains pytest, pytest-cov, ruff
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest ruff
+          pip install -r requirements-test.txt
 
       # ── Linting ──────────────────────────────────────────────────────────
       - name: Lint with ruff
         run: |
-          # Fail on errors (E) and warnings (W); ignore line-length (E501)
+          # E/W/F rules; ignore line-length (E501); --exit-zero = lint failures
+          # don't block the build (reported as warnings only)
           ruff check utils/ tests/ --select E,W,F --ignore E501 --exit-zero
 
       # ── Unit tests ───────────────────────────────────────────────────────
       - name: Run pytest
         env:
-          # Prevent Streamlit from trying to open a browser during tests
+          # Prevent Streamlit from attempting to open a browser during tests
           STREAMLIT_SERVER_HEADLESS: "true"
+          # Tell optional-dependency guards not to raise ImportError in tests
+          NSE_TRACKER_TEST: "true"
         run: |
-          pytest tests/ -v --tb=short
+          pytest tests/ -v --tb=short -m "not network"
+
+      # ── Coverage report (informational only) ─────────────────────────────
+      - name: Coverage report
+        run: |
+          pytest tests/ --cov=utils --cov-report=term-missing -m "not network" -q
+        continue-on-error: true
