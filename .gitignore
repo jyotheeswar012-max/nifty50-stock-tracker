@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Logs — keep the directory, ignore the rolling files
+logs/*.log
+logs/*.log.*
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs
+.vscode/
+.idea/
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
