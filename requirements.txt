@@ -6,3 +6,4 @@ plotly>=5.20
 pytz
 supabase
 pytest>=8.0
+streamlit-autorefresh>=1.0.1

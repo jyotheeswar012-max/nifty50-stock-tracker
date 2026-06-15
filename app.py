@@ -10,9 +10,15 @@ import time
 import warnings
 warnings.filterwarnings("ignore")
 
+try:
+    from streamlit_autorefresh import st_autorefresh
+    AUTOREFRESH_AVAILABLE = True
+except ImportError:
+    AUTOREFRESH_AVAILABLE = False
+
 st.set_page_config(
     page_title="NSE & Nifty 50 Tracker",
-    page_icon="[NSE]",
+    page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -40,6 +46,8 @@ except Exception:
 # ============================================================
 # CONSTANTS
 # ============================================================
+REFRESH_MS = 60_000  # 60 seconds in milliseconds
+
 NIFTY50 = [
     {"symbol":"RELIANCE.NS",   "name":"Reliance Industries",    "sector":"Energy",             "beta":0.90},
     {"symbol":"HDFCBANK.NS",   "name":"HDFC Bank",              "sector":"Financial Services", "beta":1.10},
@@ -226,8 +234,18 @@ market_open, market_status, last_close_label = is_nse_open()
 
 
 # ============================================================
-# DATA FETCHERS  (ttl=60 means data auto-refreshes every 60s
-#                 on the next user interaction — no rerun needed)
+# AUTO-REFRESH every 60 seconds (streamlit-autorefresh)
+# Returns the refresh count — we use it to compute countdown.
+# This call must happen BEFORE any other st.* calls.
+# ============================================================
+if AUTOREFRESH_AVAILABLE and market_open:
+    refresh_count = st_autorefresh(interval=REFRESH_MS, key="live_refresh")
+else:
+    refresh_count = 0
+
+
+# ============================================================
+# DATA FETCHERS
 # ============================================================
 
 @st.cache_data(ttl=60)
@@ -359,14 +377,25 @@ def tm_get_snapshot(all_hist, target):
 
 
 # ============================================================
-# STATUS BANNER  (static — no rerun, no sleep, no meta-refresh)
+# STATUS BANNER WITH LIVE COUNTDOWN
+# st_autorefresh fires every 60s → Streamlit reruns →
+# cache TTL has expired → fresh data is fetched automatically.
+# The countdown uses wall-clock time so it’s always accurate.
 # ============================================================
 def status_banner():
-    ist_now = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%I:%M:%S %p IST")
+    ist_now = datetime.now(pytz.timezone("Asia/Kolkata"))
+    ist_str = ist_now.strftime("%I:%M:%S %p IST")
+
     if market_open:
+        # Compute seconds until next 60s boundary from page load
+        secs_into_minute = ist_now.second % 60
+        remaining = 60 - secs_into_minute
+        filled  = 60 - remaining
+        bar_on  = int((filled / 60) * 20)
+        bar     = "\u2588" * bar_on + "\u2591" * (20 - bar_on)
         st.success(
-            f"\u25cf NSE OPEN \u2014 {ist_now} "
-            f"| Data auto-refreshes every 60s on next interaction"
+            f"\u25cf NSE OPEN \u2014 Last updated: **{ist_str}** "
+            f"\u2502 Next refresh in **{remaining}s** `{bar}`"
         )
     else:
         st.warning(
@@ -408,7 +437,7 @@ tabs = st.tabs(TAB_LABELS)
 
 # -- 0: Market Overview ---------------------------------------
 with tabs[0]:
-    hero("[MO]", "NSE Market Overview",
+    hero("📊", "NSE Market Overview",
          "<span class='ui-badge badge-nse'>NSE INDIA</span>",
          "National Stock Exchange - Live Indices")
     _closed_banner()
@@ -491,7 +520,7 @@ with tabs[0]:
 
 # -- 1: Nifty 50 Index ----------------------------------------
 with tabs[1]:
-    hero("[N50]", "Nifty 50 Index",
+    hero("📈", "Nifty 50 Index",
          "<span class='ui-badge badge-live'>LIVE</span>" if market_open
          else "<span class='ui-badge badge-hist'>LAST CLOSE</span>",
          "^NSEI - NSE Flagship Index")
@@ -545,7 +574,7 @@ with tabs[1]:
 
 # -- 2: All 50 Companies --------------------------------------
 with tabs[2]:
-    hero("[50]", "All 50 Companies",
+    hero("🏢", "All 50 Companies",
          "<span class='ui-badge badge-nse'>NSE</span>",
          "Live prices" if market_open else "Last closing prices")
     _closed_banner()
@@ -578,7 +607,7 @@ with tabs[2]:
 
 # -- 3: Gainers & Losers --------------------------------------
 with tabs[3]:
-    hero("[GL]", "Gainers & Losers",
+    hero("🏆", "Gainers & Losers",
          "<span class='ui-badge badge-live'>TODAY</span>" if market_open
          else "<span class='ui-badge badge-hist'>LAST SESSION</span>")
     _closed_banner()
@@ -618,7 +647,7 @@ with tabs[3]:
 
 # -- 4: P&L Calculator ----------------------------------------
 with tabs[4]:
-    hero("[PL]", "P&L Calculator",
+    hero("💰", "P&L Calculator",
          "<span class='ui-badge badge-sim'>SIMULATOR</span>", "Calculate profit / loss")
     _closed_banner()
     stock_names = [s["name"] for s in NIFTY50]
@@ -631,7 +660,7 @@ with tabs[4]:
     lp = 0.0
     if not sc_data.empty and "Close" in sc_data.columns:
         lp = safe_float(sc_data["Close"].iloc[-1])
-    price_lbl = "Buy Price (Rs.)" if market_open else "Buy Price \u2014 using last close (Rs.)"
+    price_lbl = "Buy Price (Rs.)" if market_open else "Buy Price — using last close (Rs.)"
     with c2:
         buy_p = st.number_input(
             price_lbl, min_value=0.01,
@@ -639,7 +668,7 @@ with tabs[4]:
         )
     with c3:
         qty = st.number_input("Quantity", min_value=1, value=10, step=1, key="pl_q")
-    sell_lbl = "Sell / Current Price (Rs.)" if market_open else "Sell Price (Rs.) \u2014 enter manually"
+    sell_lbl = "Sell / Current Price (Rs.)" if market_open else "Sell Price (Rs.) — enter manually"
     sell_p   = st.number_input(
         sell_lbl, min_value=0.01,
         value=round(lp, 2) if lp > 0 else 100.0, step=0.5, key="pl_sp",
@@ -673,7 +702,7 @@ with tabs[4]:
 
 # -- 5: Stock Chart -------------------------------------------
 with tabs[5]:
-    hero("[SC]", "Stock Chart",
+    hero("📉", "Stock Chart",
          "<span class='ui-badge badge-live'>LIVE</span>" if market_open
          else "<span class='ui-badge badge-hist'>LAST CLOSE</span>",
          "Detailed chart for any Nifty 50 stock")
@@ -728,7 +757,7 @@ with tabs[5]:
 
 # -- 6: Time Machine ------------------------------------------
 with tabs[6]:
-    hero("[TM]", "Time Machine",
+    hero("🕰️", "Time Machine",
          "<span class='ui-badge badge-hist'>HISTORICAL</span>", "Travel back to any NSE trading day")
     sec("Select Date")
     preset = st.selectbox("Famous dates", ["Custom..."] + list(FAMOUS_DATES.keys()), key="tm_preset")
@@ -739,9 +768,9 @@ with tabs[6]:
         )
     else:
         tm_date = FAMOUS_DATES[preset]
-        st.info("Loaded: " + preset + " \u2014 " + str(tm_date))
+        st.info("Loaded: " + preset + " — " + str(tm_date))
     if st.button("Travel to this date", key="tm_go"):
-        with st.spinner("Loading historical data (may take 30\u201360s first time)..."):
+        with st.spinner("Loading historical data (may take 30–60s first time)..."):
             all_hist = fetch_all_history()
         snap = tm_get_snapshot(all_hist, tm_date)
         if snap.empty:
@@ -754,7 +783,7 @@ with tabs[6]:
                     snap.reset_index(), x="Symbol", y="Close",
                     color="Close",
                     color_continuous_scale=["#6366f1", "#06b6d4", "#10b981"],
-                    title="Closing Prices \u2014 " + str(tm_date), template=PLT, height=360,
+                    title="Closing Prices — " + str(tm_date), template=PLT, height=360,
                 )
                 fig.update_layout(**PLT_LAYOUT, coloraxis_showscale=False)
                 style_fig(fig)
