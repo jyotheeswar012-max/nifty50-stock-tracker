@@ -1,41 +1,89 @@
+---
+title: Configuration
+---
+
 # Configuration
+
+The app is designed to work out-of-the-box with zero configuration. All optional knobs are listed here.
+
+---
 
 ## Environment Variables
 
-Create a `.env` file in the project root (never commit it):
+| Variable | Default | Description |
+|---|---|---|
+| `LOG_LEVEL` | `INFO` | Logging verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
+
+Set in your shell:
 
 ```bash
-# .env
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
+export LOG_LEVEL=DEBUG
+streamlit run app.py
 ```
 
-## Streamlit Secrets
-
-For Streamlit Cloud deployment, add secrets via the dashboard or `.streamlit/secrets.toml`:
+Or in `.streamlit/secrets.toml` (never commit this file):
 
 ```toml
-# .streamlit/secrets.toml  (gitignored)
-SUPABASE_URL = "https://your-project.supabase.co"
-SUPABASE_ANON_KEY = "your-anon-key"
+[general]
+LOG_LEVEL = "DEBUG"
 ```
 
-## Key Constants (`utils/constants.py`)
+---
 
-| Constant | Default | Description |
-|---|---|---|
-| `REFRESH_MS` | `5000` | Auto-refresh interval in milliseconds when market is live |
-| `CACHE_TTL` | `60` | Streamlit cache TTL in seconds for price data |
-| `NIFTY50` | list | All 50 constituent stocks with symbol, sector, beta |
-| `NSE_INDICES` | list | Tracked NSE indices with display name and color |
-| `FAMOUS_DATES` | dict | Preset historical dates for the Time Machine tab |
+## Streamlit Configuration
 
-To add a new stock or change the refresh rate, edit `utils/constants.py` directly.
+The `.streamlit/config.toml` file controls Streamlit UI behaviour:
 
-## Deployment on Streamlit Cloud
+```toml
+[theme]
+base = "dark"
+primaryColor = "#009688"
+backgroundColor = "#0e1117"
+secondaryBackgroundColor = "#1e2530"
+textColor = "#fafafa"
 
-1. Push your code to GitHub
-2. Go to [share.streamlit.io](https://share.streamlit.io)
-3. Connect your repo and set `app.py` as the entry point
-4. Add any secrets under **Settings → Secrets**
-5. Click **Deploy**
+[server]
+headless = true
+port = 8501
+```
+
+---
+
+## Cache TTL
+
+Cache time-to-live is set in `utils/constants.py`:
+
+```python
+CACHE_TTL = 30      # seconds — live price cache during market hours
+```
+
+The Time Machine history fetch has a separate TTL of 3600 seconds (1 hour) since historical data never changes.
+
+---
+
+## Data Source Priority
+
+The fallback order is hard-coded in `utils/data.py` and cannot be changed via config:
+
+```
+1. Yahoo Finance (yfinance)   — always attempted first
+2. NSE India (nselib)         — attempted if yfinance returns empty
+3. Stale in-memory cache      — served with a visible warning if both live sources fail
+```
+
+To disable the nselib fallback entirely, simply do not install the `nselib` package.
+
+---
+
+## Google Analytics
+
+The `mkdocs.yml` includes a placeholder for Google Analytics:
+
+```yaml
+extra:
+  analytics:
+    provider: google
+    property: G-XXXXXXXXXX
+```
+
+Replace `G-XXXXXXXXXX` with your actual Measurement ID to enable analytics on the docs site.

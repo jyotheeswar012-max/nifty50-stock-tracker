@@ -1,6 +1,12 @@
+---
+title: Testing
+---
+
 # Testing
 
-The project uses **pytest** with three test layers: unit, integration, and Streamlit smoke tests.
+The test suite uses `pytest` and targets `utils/calculations.py` and `utils/charts.py` — the two modules with zero I/O dependencies.
+
+---
 
 ## Running Tests
 
@@ -12,53 +18,87 @@ pip install -r requirements-test.txt
 pytest
 
 # Run with coverage report
-pytest --cov=utils --cov-report=html
-open htmlcov/index.html
+pytest --cov=utils --cov-report=term-missing
 
-# Run a specific layer
-pytest tests/test_utils.py -v       # unit tests
-pytest tests/test_pnl.py -v         # P&L tests
-pytest tests/test_api.py -v         # integration (mocked API)
-pytest tests/test_streamlit_app.py  # Streamlit smoke tests
+# Run a specific test file
+pytest tests/test_calculations.py -v
 ```
 
-## Test Suite Structure
+---
 
-| File | Type | Tests | What it covers |
-|---|---|---|---|
-| `tests/conftest.py` | Fixtures | — | Shared OHLCV data, holdings, mock yfinance ticker |
-| `tests/test_utils.py` | Unit | 20 | `clean_ohlcv`, returns, Sharpe ratio, max drawdown, MAs |
-| `tests/test_pnl.py` | Unit | 10 | `calc_pl`, portfolio summary, edge cases (zero shares) |
-| `tests/test_api.py` | Integration | 13 | Mocked yfinance: return types, column names, period passthrough |
-| `tests/test_streamlit_app.py` | Smoke | 10 | AppTest: no exceptions, charts, KPIs, sidebar, error-free load |
+## Test Structure
 
-## Key Fixtures (`conftest.py`)
+```
+tests/
+├── __init__.py
+├── test_calculations.py   ← P&L, beta, price helpers, stock rows
+├── test_charts.py         ← Chart builders return valid Figure objects
+└── conftest.py            ← Shared fixtures (sample DataFrames)
+```
+
+---
+
+## What Is Tested
+
+### `test_calculations.py`
+
+| Test | What it verifies |
+|---|---|
+| `test_safe_float_nan` | Returns default on NaN |
+| `test_safe_float_inf` | Returns default on Infinity |
+| `test_calc_pl_gain` | Positive P&L calculated correctly |
+| `test_calc_pl_loss` | Negative P&L (loss) calculated correctly |
+| `test_calc_pl_breakeven` | Zero P&L when buy == sell |
+| `test_calc_beta_impact` | Stock move = nifty_pct × beta |
+| `test_build_stock_rows_structure` | Returns DataFrame with required columns |
+| `test_build_stock_rows_na_on_missing` | Missing symbols get "N/A" not exceptions |
+
+### `test_charts.py`
+
+| Test | What it verifies |
+|---|---|
+| `test_build_price_chart_line` | Returns `go.Figure` for Line type |
+| `test_build_price_chart_candle` | Returns `go.Figure` for Candlestick type |
+| `test_build_price_chart_empty_df` | Returns empty `go.Figure` on empty input |
+| `test_build_pct_bar` | Returns `go.Figure` |
+| `test_build_trend_chart_normalised` | First value of each series normalises to 100 |
+
+---
+
+## Mocking Network Calls
+
+Since `calculations.py` accepts `fetch_intraday_fn` as a parameter, network calls are trivially mockable:
 
 ```python
-@pytest.fixture
-def raw_price_data():
-    """30-day synthetic OHLCV DataFrame."""
+def fake_intraday(symbol):
+    """Returns a synthetic 1-minute bar DataFrame."""
+    return pd.DataFrame(
+        {"Open": [100.0], "High": [105.0], "Low": [99.0], "Close": [103.5], "Volume": [5000]},
+        index=pd.to_datetime(["2026-06-15 09:15:00"])
+    )
 
-@pytest.fixture
-def cleaned_price_data(raw_price_data):
-    """Same data with DatetimeIndex applied."""
-
-@pytest.fixture
-def holdings_data():
-    """4-stock portfolio: RELIANCE, HDFCBANK, INFY, TCS."""
-
-@pytest.fixture
-def mock_yfinance_ticker(cleaned_price_data):
-    """Mocked yfinance.Ticker — no real API calls."""
+def test_get_last_price_market_open(sample_5d_data):
+    curr, prev = get_last_price("RELIANCE.NS", sample_5d_data, True, fake_intraday)
+    assert curr == 103.5
+    assert prev is not None
 ```
 
-## CI with GitHub Actions
+---
 
-Tests run automatically on every push and pull request via `.github/workflows/` (see the repository). To trigger manually:
+## CI — GitHub Actions
 
-```bash
-gh workflow run tests.yml
+Tests run automatically on every push and pull request via `.github/workflows/tests.yml`:
+
+```yaml
+name: Tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install -r requirements.txt -r requirements-test.txt
+      - run: pytest --tb=short
 ```
-
-!!! tip "AppTest Requirement"
-    The Streamlit smoke tests require `streamlit >= 1.31`. They are automatically skipped (`pytest.importorskip`) on older versions.

@@ -1,5 +1,5 @@
 site_name: Nifty 50 Tracker
-site_description: Real-time NSE & Nifty 50 market tracker built with Streamlit and Python
+site_description: Real-time NSE & Nifty 50 market tracker — live prices, P&L calculator, Time Machine, and structured logging
 site_author: Jyotheeswar Reddy
 site_url: https://jyotheeswar012-max.github.io/nifty50-stock-tracker/
 
@@ -9,6 +9,8 @@ edit_uri: edit/main/docs/
 
 theme:
   name: material
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
   palette:
     - scheme: default
       primary: teal
@@ -29,29 +31,48 @@ theme:
     - navigation.tabs
     - navigation.tabs.sticky
     - navigation.sections
+    - navigation.expand
     - navigation.top
+    - navigation.footer
     - search.highlight
     - search.suggest
+    - search.share
     - content.code.copy
     - content.code.annotate
+    - content.tooltips
+    - toc.follow
 
 plugins:
-  - search
+  - search:
+      lang: en
 
 markdown_extensions:
   - admonition
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.highlight:
       anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
   - pymdownx.inlinehilite
+  - pymdownx.snippets
   - pymdownx.tabbed:
       alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - attr_list
   - md_in_html
   - tables
+  - footnotes
+  - def_list
   - toc:
       permalink: true
+      title: On this page
 
 nav:
   - Home: index.md
@@ -60,9 +81,11 @@ nav:
     - Configuration: getting-started/configuration.md
   - Methodology: methodology.md
   - API Reference:
+    - Overview: api/index.md
     - Data Functions: api/data.md
     - Calculation Functions: api/calculations.md
     - Chart Functions: api/charts.md
+    - Logger: api/logger.md
   - Testing: testing.md
   - Contributing: contributing.md
   - Changelog: changelog.md
@@ -70,7 +93,10 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/jyotheeswar012-max
-  analytics:
-    provider: google
-    property: G-XXXXXXXXXX
+      link: https://github.com/jyotheeswar012-max/nifty50-stock-tracker
+      name: GitHub Repository
+  version:
+    provider: mike
+
+extra_css:
+  - assets/extra.css

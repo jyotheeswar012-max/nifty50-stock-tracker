@@ -1,0 +1,15 @@
+/* Custom styles for NSE Tracker docs */
+
+.md-typeset .admonition.tip > .admonition-title,
+.md-typeset details.tip > summary {
+  background-color: rgba(0, 150, 136, 0.1);
+}
+
+/* Wider content area for API tables */
+.md-content__inner { max-width: 900px; }
+
+/* Parameter tables */
+.md-typeset table:not([class]) th { background-color: var(--md-primary-fg-color--light); color: white; }
+
+/* Function signature blocks */
+.md-typeset code.language-python { font-size: 0.85em; }

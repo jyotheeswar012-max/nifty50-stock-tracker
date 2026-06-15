@@ -1,158 +1,150 @@
+---
+title: Contributing
+---
+
 # Contributing Guide
 
-Thank you for considering a contribution! This guide explains how to set up a development environment, run tests, and submit a pull request.
+Thank you for considering a contribution to the Nifty 50 Tracker. This guide covers everything from setting up your dev environment to getting your pull request merged.
 
 ---
 
 ## Code of Conduct
 
-Be respectful, constructive, and inclusive. Disagreements about code are fine; personal attacks are not.
+Be respectful. Constructive criticism only. All contributors are expected to follow the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
 
 ---
 
 ## Development Setup
 
-### 1. Fork and Clone
+### 1. Fork & Clone
 
 ```bash
-# Fork via GitHub UI, then:
-git clone https://github.com/YOUR-USERNAME/nifty50-stock-tracker.git
+# Fork on GitHub first, then:
+git clone https://github.com/YOUR_USERNAME/nifty50-stock-tracker.git
 cd nifty50-stock-tracker
+
+# Add upstream remote
+git remote add upstream https://github.com/jyotheeswar012-max/nifty50-stock-tracker.git
 ```
 
 ### 2. Create a Virtual Environment
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-```
-
-### 3. Install All Dependencies
-
-```bash
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 pip install -r requirements-test.txt
-pip install mkdocs-material  # only needed if editing docs
 ```
 
-### 4. Verify Setup
+### 3. Verify Setup
 
 ```bash
-pytest          # all tests should pass
-streamlit run app.py  # app should open at localhost:8501
+streamlit run app.py               # app should open at localhost:8501
+pytest                             # all tests should pass
 ```
 
 ---
 
 ## Branching Strategy
 
-```
-main          ← stable, always deployable
-  └── feature/your-feature-name   ← your work
-  └── fix/bug-description
-  └── docs/what-you-documented
-```
-
-Create your branch from `main`:
+| Branch | Purpose |
+|---|---|
+| `main` | Production — always deployable |
+| `feature/<name>` | New features (e.g. `feature/portfolio-tracker`) |
+| `fix/<name>` | Bug fixes (e.g. `fix/intraday-price-precision`) |
+| `docs/<name>` | Documentation only (e.g. `docs/api-reference`) |
+| `chore/<name>` | Refactoring, dependency updates, CI changes |
 
 ```bash
-git checkout -b feature/add-nse-holiday-calendar
+# Always branch from an up-to-date main
+git fetch upstream
+git checkout -b feature/my-feature upstream/main
 ```
 
 ---
 
 ## Making Changes
 
-### Adding a New Feature
+### Adding a New Data Source
 
-1. Write your code in the relevant `utils/` module
-2. Add or update docstrings
-3. Write tests in `tests/` (unit + integration as appropriate)
-4. Run `pytest` and ensure all tests pass
-5. Run `streamlit run app.py` and verify the UI manually
+1. Add the fetch logic in `utils/data.py` as a private function `_newsource_history(symbol, period) -> pd.DataFrame`
+2. Insert it into `_fetch_with_fallback()` after the existing sources
+3. Update `get_source_status()` to probe the new source
+4. Add a `log.info("New source used: ...")` call
+5. Document it in `docs/methodology.md` under **Data Sourcing**
 
-### Changing a Data Function
+### Adding a New Tab
 
-All data logic lives in `utils/data.py`. The function must:
+1. Add the tab label to the `st.tabs([...])` call in `app.py`
+2. Write the tab body inside a `with tabs[N]:` block, wrapped in `try/except` with `log.error`
+3. Keep all calculations in `utils/calculations.py`, all charts in `utils/charts.py`
+4. Add the new functions to the API docs in `docs/api/`
 
-- Accept primitive types (no Streamlit state inside)
-- Return a clean `pd.DataFrame` or primitive
-- Handle failures gracefully (return empty DataFrame, not raise)
-- Be compatible with `@st.cache_data`
+### Updating Beta Values
 
-### Updating Documentation
+Beta values live in `utils/constants.py` alongside each stock's metadata. Update the `"beta"` field for the relevant symbol and add a note in `docs/changelog.md`.
 
-Docs live in `docs/`. To preview:
+---
 
-```bash
-mkdocs serve
-```
+## Code Style
 
-Edit Markdown files under `docs/`, then preview at `localhost:8000`.
+- **Python 3.10+** — use `match/case`, `X | Y` type unions, `from __future__ import annotations`
+- **Type hints** on all public function signatures
+- **Docstrings** for every public function (one-line summary + Args/Returns if non-obvious)
+- **No bare `except:`** — always catch specific exceptions or at minimum `Exception as exc` and log it
+- **No `print()`** — use `log = get_logger(__name__)` and `log.info/warning/error()`
+- Line length: 100 characters
 
 ---
 
 ## Running Tests
 
 ```bash
-pytest                      # full suite
-pytest tests/test_utils.py  # one file
-pytest -k "TestCalcPnL"     # one class
-pytest --cov=utils --cov-report=term-missing  # with coverage
+pytest                              # run all tests
+pytest -v                           # verbose output
+pytest --cov=utils --cov-report=html  # coverage report in htmlcov/
+pytest -k "test_calc"               # run only tests matching pattern
 ```
 
-**All tests must pass before opening a PR.**
+All tests must pass before opening a pull request. New features require new tests.
 
 ---
 
-## Submitting a Pull Request
+## Opening a Pull Request
 
-1. Commit your changes with a clear message:
+1. **Commit messages** follow [Conventional Commits](https://www.conventionalcommits.org/):
+   ```
+   feat: add portfolio tracker tab
+   fix: intraday price discrepancy on market close
+   docs: add API reference for fetch_ticker
+   chore: bump yfinance to 0.2.54
+   ```
 
-    ```bash
-    git add .
-    git commit -m "feat: add NSE holiday calendar to market state detection"
-    ```
+2. **Push your branch** and open a PR against `main`
 
-2. Push to your fork:
+3. **PR description** must include:
+   - What the change does
+   - How to test it
+   - Screenshots if UI changes are involved
 
-    ```bash
-    git push origin feature/add-nse-holiday-calendar
-    ```
+4. **CI must be green** — tests and linting run automatically
 
-3. Open a PR on GitHub against the `main` branch.
-
-4. Fill in the PR template:
-   - **What** does this change?
-   - **Why** is it needed?
-   - **How** was it tested?
-
-5. A maintainer will review within a few days.
+5. A maintainer will review within a few days. Please respond to review comments promptly.
 
 ---
 
-## Commit Message Format
+## What We're Looking For
 
-We use [Conventional Commits](https://www.conventionalcommits.org/):
+!!! success "Good contributions"
+    - Bug fixes with a failing test that now passes
+    - New NSE index symbols added to `constants.py`
+    - Performance improvements to the data pipeline
+    - Documentation improvements
+    - Additional test coverage
 
-```
-feat: add RSI indicator to stock chart
-fix: handle empty DataFrame in fetch_intraday
-docs: clarify beta formula in methodology
-test: add edge case for zero-share portfolio
-refactor: simplify build_stock_rows loop
-```
+!!! warning "Discuss before building"
+    - ML price prediction features (see [Methodology — What This App Deliberately Does Not Do](methodology.md#what-this-app-deliberately-does-not-do))
+    - New heavy dependencies (plotly, pandas alternatives)
+    - Major UI restructuring
 
----
-
-## What to Contribute
-
-Here are some areas where contributions are especially welcome:
-
-- [ ] NSE holiday calendar for accurate market-state detection
-- [ ] Export portfolio P&L to CSV/Excel
-- [ ] Dark mode toggle in the Streamlit app
-- [ ] Additional NSE indices (Nifty Midcap 100, Nifty FMCG, etc.)
-- [ ] LSTM price prediction feature (see [Methodology](methodology.md))
-- [ ] Improve Time Machine performance with async fetching
-- [ ] Add more edge-case tests for `build_stock_rows`
+    Open an issue first to discuss these — they require maintainer sign-off before work begins.

@@ -1,16 +1,85 @@
-# Calculation Functions — `utils/calculations.py`
+---
+title: Calculation Functions
+---
 
-All business logic — P&L math, stock row building, beta impact — lives here, independent of the UI.
+# `utils.calculations` — Pure Calculations
+
+All functions here are **pure** — no network calls, no Streamlit imports, no side effects. Given the same inputs, they always return the same outputs. This makes the entire module testable with `pytest` without mocking.
 
 ---
 
-## `safe_float(value, default)`
+## `safe_float(val, default=0.0)`
 
 ```python
-def safe_float(value, default: float = 0.0) -> float:
+def safe_float(val, default=0.0) -> float
 ```
 
-Safely coerces any value to `float`, returning `default` on failure. Prevents crashes when Yahoo Finance returns `NaN` or `None`.
+Safely converts any value to `float`, returning `default` for `NaN`, `Inf`, or unconvertible values.
+
+```python
+safe_float("1234.56")   # 1234.56
+safe_float(float("nan")) # 0.0
+safe_float(None, -1.0)   # -1.0
+```
+
+---
+
+## `get_last_price(symbol, stock_data_5d, market_open, fetch_intraday_fn)`
+
+```python
+def get_last_price(
+    symbol: str,
+    stock_data_5d: dict[str, pd.DataFrame],
+    market_open: bool,
+    fetch_intraday_fn: Callable,
+) -> tuple[float | None, float | None]
+```
+
+Returns `(current_price, previous_close)` at the highest available precision.
+
+**Parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `symbol` | `str` | Yahoo Finance ticker (e.g. `"HDFC.NS"`) |
+| `stock_data_5d` | `dict` | Output of `fetch_all_stocks_5d()` |
+| `market_open` | `bool` | Pass the result of `is_nse_open()[0]` |
+| `fetch_intraday_fn` | `Callable` | Pass `fetch_intraday` — injected for testability |
+
+**Returns** `(current_price, previous_close)`. Either value is `None` if data is unavailable.
+
+**Behaviour**
+
+- When `market_open=True`: calls `fetch_intraday_fn(symbol)` and returns the last 1-minute close as `current_price`, with the last daily bar close as `previous_close`
+- When `market_open=False`: returns the last two daily closes as `(current, previous)`
+
+---
+
+## `build_stock_rows(stock_data_5d, market_open, fetch_intraday_fn)`
+
+```python
+def build_stock_rows(
+    stock_data_5d: dict[str, pd.DataFrame],
+    market_open: bool,
+    fetch_intraday_fn: Callable,
+) -> pd.DataFrame
+```
+
+Builds the master stock table used by the All Companies, Gainers, and Losers tabs.
+
+**Returns** `pd.DataFrame` with columns:
+
+| Column | Description |
+|---|---|
+| `Symbol` | Ticker without `.NS` suffix |
+| `Company` | Full company name |
+| `Sector` | NSE sector classification |
+| `Beta` | 1-year trailing beta (static) |
+| `Price (Rs.)` / `Last Close (Rs.)` | Current price (header changes with market state) |
+| `Change (Rs.)` | Absolute price change vs. previous close |
+| `Change (%)` | Percentage change |
+| `_curr` | Raw float current price (for sorting; dropped before display) |
+| `_pct` | Raw float % change (for chart colouring; dropped before display) |
 
 ---
 
@@ -20,88 +89,66 @@ Safely coerces any value to `float`, returning `default` on failure. Prevents cr
 def calc_pl(
     buy_price: float,
     sell_price: float,
-    qty: int
-) -> tuple[float, float, float]:
+    qty: int,
+) -> tuple[float, float, float]
 ```
 
-Calculates P&L for a trade.
+Calculates P&L for a stock position.
 
-**Parameters:**
+**Returns** `(pl, investment, return_pct)` where:
+- `pl` = `(sell_price - buy_price) × qty`
+- `investment` = `buy_price × qty`
+- `return_pct` = `pl / investment × 100`
 
-| Parameter | Type | Description |
-|---|---|---|
-| `buy_price` | `float` | Price at which shares were bought (Rs.) |
-| `sell_price` | `float` | Price at which shares were sold / current market price (Rs.) |
-| `qty` | `int` | Number of shares |
-
-**Returns:** `(pnl, investment, return_pct)`
-
-| Return | Formula |
-|---|---|
-| `pnl` | `(sell_price − buy_price) × qty` |
-| `investment` | `buy_price × qty` |
-| `return_pct` | `(pnl / investment) × 100` |
-
-**Example:**
 ```python
-from utils.calculations import calc_pl
-
-pnl, invested, ret = calc_pl(buy_price=2500, sell_price=2800, qty=10)
-print(f"P&L: ₹{pnl:,.2f} | Return: {ret:.2f}%")
-# P&L: ₹3,000.00 | Return: 12.00%
+pl, inv, ret = calc_pl(1250.0, 1307.50, 100)
+# pl=5750.0, inv=125000.0, ret=4.6
 ```
 
 ---
 
-## `calc_beta_impact(nifty_move_pct, buy_price, qty, beta)`
+## `calc_beta_impact(nifty_pct, stock_price, qty, beta)`
 
 ```python
 def calc_beta_impact(
-    nifty_move_pct: float,
-    buy_price: float,
+    nifty_pct: float,
+    stock_price: float,
     qty: int,
-    beta: float
-) -> tuple[float, float, float, float, float, float]:
+    beta: float,
+) -> tuple[float, float, float, float, float, float]
 ```
 
-Simulates a stock's price change given a Nifty index move and a beta coefficient.
+Calculates the estimated impact of a Nifty move on a stock position.
 
-**Formula:**
-```
-stock_move_pct  = nifty_move_pct × beta
-price_change    = buy_price × (stock_move_pct / 100)
-new_price       = buy_price + price_change
-pnl_impact      = price_change × qty
-```
+**Returns** `(stock_move_pct, price_change, new_price, old_value, new_value, pl)`
 
-**Returns:** `(stock_move_pct, price_change, new_price, old_value, new_value, pnl_impact)`
+| Return Value | Formula |
+|---|---|
+| `stock_move_pct` | `nifty_pct × beta` |
+| `price_change` | `stock_price × stock_move_pct / 100` |
+| `new_price` | `stock_price + price_change` |
+| `old_value` | `stock_price × qty` |
+| `new_value` | `new_price × qty` |
+| `pl` | `price_change × qty` |
 
 ---
 
-## `build_stock_rows(data_5d, market_open, fetch_intraday_fn)`
-
-```python
-def build_stock_rows(
-    data_5d: dict,
-    market_open: bool,
-    fetch_intraday_fn: Callable
-) -> pd.DataFrame:
-```
-
-Builds the master table of all 50 Nifty stocks with current price, 1-day change, and sector. When the market is open, calls `fetch_intraday_fn` to get a live price; when closed, uses the last available closing price.
-
-**Returns:** `pd.DataFrame` with columns:
-`Symbol, Company, Sector, Price / Last Close, Change (pts), Change (%), _curr, _pct`
-
----
-
-## `build_time_machine_snapshot(all_history, target_date)`
+## `build_time_machine_snapshot(all_hist, target)`
 
 ```python
 def build_time_machine_snapshot(
-    all_history: dict,
-    target_date: date
-) -> pd.DataFrame:
+    all_hist: dict[str, pd.DataFrame],
+    target: date | str,
+) -> pd.DataFrame
 ```
 
-Filters the pre-fetched 5-year history to return a snapshot of all 50 stocks as close as possible to `target_date`. If the exact date has no trading data (e.g. a weekend), it falls back to the nearest previous trading day.
+Builds a cross-sectional snapshot of all 50 Nifty stocks on a specific historical date.
+
+**Parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `all_hist` | `dict` | Output of `fetch_all_history()` |
+| `target` | `date` or `str` | Target date — resolved to nearest trading day ±4 calendar days |
+
+**Returns** `pd.DataFrame` indexed by `Symbol` with columns `Name`, `Sector`, `Open`, `High`, `Low`, `Close`, `Volume`. Returns empty DataFrame if no data found.

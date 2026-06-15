@@ -1,99 +1,148 @@
+---
+title: Methodology
+description: How the Nifty 50 Tracker fetches, validates, and presents market data — without ML black boxes
+---
+
 # Methodology
 
-This page explains how the tracker fetches data, calculates metrics, and how the optional ML prediction pipeline is designed. Transparency here builds trust with users and contributors.
+This page explains *how* the tracker works under the hood — data sourcing, price precision, fallback logic, and what the app deliberately does not do.
 
 ---
 
-## Data Source
+## Design Philosophy
 
-All market data is sourced from **Yahoo Finance** via the [`yfinance`](https://github.com/ranaroussi/yfinance) Python library, which wraps Yahoo's unofficial API.
+!!! quote "Transparency over prediction"
+    This app is a **transparency tool**, not a trading signal generator. Every number shown on screen is sourced directly from exchange data with no transformation that could obscure its meaning. No ML models. No "predicted" prices. No buy/sell signals.
 
-```
-User request
-    └── Streamlit UI
-            └── utils/data.py  ──── yfinance.Ticker.history(period, interval)
-                                         └── Yahoo Finance API
-```
-
-!!! info "Market Data Disclaimer"
-    Yahoo Finance data may be delayed by up to 15 minutes. This app is for educational and informational purposes only — not financial advice.
+The Nifty 50 Tracker exists to answer one question clearly: *What is the NSE doing right now, and how does it compare to the past?*
 
 ---
 
-## Market State Detection
+## Data Sourcing
 
-The `is_nse_open()` function in `utils/data.py` determines whether the NSE is currently live:
+### Primary Source — Yahoo Finance (`yfinance`)
 
-1. Converts current time to **IST (Asia/Kolkata)**
-2. Checks if today is a **weekday** (Monday–Friday)
-3. Checks if current time is between **09:15 AM – 03:30 PM IST**
-4. Returns a tuple: `(is_open: bool, status_message: str, last_close_label: str)`
+All price data starts with Yahoo Finance via the `yfinance` Python library. It provides:
 
-!!! note "NSE Holidays"
-    NSE market holidays are not currently hardcoded. The market-state check uses weekdays + trading hours only. Contributions to add a holiday calendar are welcome — see [Contributing](contributing.md).
+- **Daily OHLCV bars** — Open, High, Low, Close, Volume for any historical period
+- **1-minute intraday bars** — used during market hours for tick-precise current prices
+- **Automatic split/dividend adjustment** — `auto_adjust=True` ensures all historical prices are comparable
+
+NSE symbols use the `.NS` suffix (e.g., `RELIANCE.NS`). Index symbols use the `^` prefix (e.g., `^NSEI` for Nifty 50).
+
+### Fallback Source — NSE India (`nselib`)
+
+If yfinance returns empty data — due to API rate limits, network issues, or Yahoo Finance downtime — the app automatically retries via `nselib`, which hits the official NSE India REST API directly.
+
+nselib data requires normalisation before use:
+- Comma-stripped numeric columns (`"1,234.56"` → `1234.56`)
+- `DD-MM-YYYY` date strings parsed with `dayfirst=True`
+- Column names mapped from NSE's verbose labels to standard `Open/High/Low/Close/Volume`
+
+### Stale Cache Guard
+
+If both live sources fail, the last successful result for that symbol/period is served from an in-memory dictionary (`_STALE_STORE`). A visible `⚠️` warning is surfaced in the UI via `st.session_state["data_warnings"]`. The app never silently serves stale data.
+
+```
+Fetch Request
+     │
+     ▼
+┌─────────────────┐    empty    ┌─────────────────┐    empty    ┌──────────────┐
+│  Yahoo Finance  │ ──────────► │    nselib API   │ ──────────► │ Stale Cache  │
+│   (yfinance)    │             │   (nselib)      │             │ + ⚠️ warning │
+└─────────────────┘             └─────────────────┘             └──────────────┘
+        │                               │                               │
+        └───────────────────────────────┴───────────────────────────────┘
+                                        │
+                              pandas DataFrame returned
+```
 
 ---
 
-## Price Change Calculation
+## Price Precision — Live vs. Closed
 
-For all stocks and indices, the **1-day percentage change** is calculated as:
+This is the most nuanced part of the data pipeline. Yahoo Finance's **daily bar** uses the official NSE adjusted close, which can differ by ₹0.50–₹1.50 from the exact last-traded tick.
 
-```
-% Change = ((Current Close - Previous Close) / Previous Close) × 100
-```
+To eliminate this discrepancy, the app uses a **two-mode price strategy**:
 
-This is implemented in `utils/calculations.py` → `build_stock_rows()`.
+| Market State | Price Source | Precision |
+|---|---|---|
+| **Open** (9:15 AM–3:30 PM IST) | `yfinance` 1-minute bar → last tick | Matches NSE live feed |
+| **Closed / Weekend** | `yfinance` 5-day daily bar → official close | Exact NSE official closing price |
 
----
-
-## P&L Calculator
-
-The `calc_pl()` function computes three values given buy price, sell price, and quantity:
-
-```
-Investment  = buy_price × quantity
-P&L         = (sell_price − buy_price) × quantity
-Return (%)  = (P&L / Investment) × 100
-```
-
-### Beta-Adjusted Impact
-
-The beta-adjusted simulation (`calc_beta_impact()`) estimates how a given Nifty move affects a stock:
-
-```
-Stock Move (%) = Nifty Move (%) × Beta
-New Price      = Buy Price × (1 + Stock Move / 100)
-P&L Impact     = (New Price − Buy Price) × Quantity
-```
-
-**Beta** measures a stock's sensitivity to Nifty movements. A beta of 1.5 means the stock is expected to move 1.5× the index.
+The market state is determined by `is_nse_open()` in `utils/data.py`, which checks:
+1. Day of week (Saturday/Sunday → closed)
+2. Current IST time vs. 09:15–15:30 window
 
 ---
 
-## Caching Strategy
+## Beta-Adjusted Impact Model
 
-To avoid hitting Yahoo Finance on every Streamlit re-render, `@st.cache_data(ttl=CACHE_TTL)` is applied to all data-fetching functions. The default TTL is **60 seconds** when the market is open, keeping data reasonably fresh without excessive API calls.
+The P&L Calculator includes a **beta impact scenario** that answers: *"If Nifty moves X%, what happens to my stock position?"*
+
+### How Beta Works
+
+Beta (β) measures a stock's sensitivity to Nifty 50 movements:
+
+- β = 1.0 → stock moves in line with Nifty
+- β = 1.5 → stock moves 1.5× Nifty
+- β = 0.6 → stock moves 0.6× Nifty (defensive)
+
+### Calculation
+
+Given a user-selected Nifty move percentage *n* and stock beta *β*:
+
+```
+stock_move_pct  = n × β
+price_change    = current_price × (stock_move_pct / 100)
+new_price       = current_price + price_change
+p&l_impact      = price_change × quantity
+```
+
+This is a **linear approximation** valid for small moves (< ±10%). For larger moves, beta itself changes non-linearly — a known limitation acknowledged in the UI.
+
+### Beta Values
+
+Beta values are **static constants** stored in `utils/constants.py` alongside each stock's metadata. They were sourced from NSE's published data and reflect 1-year trailing beta. They are not recalculated at runtime.
+
+!!! warning "Static beta limitation"
+    Beta changes over time. The values in `constants.py` reflect a point-in-time estimate. For a live trading application, beta should be recalculated from rolling 252-day returns. This is a planned enhancement — see [Changelog](changelog.md).
 
 ---
 
-## Time Machine
+## Time Machine — Historical Snapshots
 
-The **Time Machine** tab pre-fetches the full 5-year history for all 50 stocks in a single cached call (`fetch_all_history()`). It then filters to the closest available trading day to the user-selected date using `build_time_machine_snapshot()`. The first load may take 30–60 seconds; subsequent loads within the same session are instant.
+The Time Machine tab lets users travel to any NSE trading day since 2010.
+
+### Data Loading
+
+`fetch_all_history()` fetches 5-year daily OHLCV for all 50 stocks + macro symbols (`USDINR=X`, `CL=F` crude oil, `GC=F` gold, `^NSEI`). This is a heavy fetch — ~50 API calls — so it is cached with a 1-hour TTL.
+
+### Date Resolution
+
+NSE does not trade every calendar day (weekends, holidays). The `nearest_row()` function searches ±4 calendar days around the requested date to find the nearest actual trading day:
+
+```python
+def nearest_row(df, target, window=4):
+    for delta in range(window + 1):
+        for sign in ([0] if delta == 0 else [1, -1]):
+            candidate = target + pd.Timedelta(days=delta * sign)
+            mask = df.index.normalize() == candidate.normalize()
+            if mask.any():
+                return df[mask].iloc[0]
+    return None
+```
+
+If no trading day is found within ±4 days, the user sees an error message advising them to try a nearby date.
 
 ---
 
-## Future: ML Price Prediction (Roadmap)
+## What This App Deliberately Does Not Do
 
-A planned extension is an LSTM-based 5-day price forecast per stock. The intended architecture:
-
-| Component | Detail |
+| Feature | Why It's Excluded |
 |---|---|
-| **Model** | LSTM (Long Short-Term Memory) via TensorFlow/Keras |
-| **Features** | Close price, MA20, MA50, RSI, MACD, Volume |
-| **Window** | 60-day lookback to predict next 5 closing prices |
-| **Training data** | 5 years of daily OHLCV per Nifty 50 stock |
-| **Evaluation** | RMSE, MAE on hold-out 20% test split |
-| **Uncertainty** | Monte Carlo Dropout for prediction intervals |
-
-!!! warning
-    ML price predictions are illustrative models, not investment advice. Past patterns do not guarantee future returns.
+| ML price prediction | Would create false confidence. Markets are not reliably predictable by simple models. |
+| Buy / Sell signals | Regulatory and ethical risk. Not a licensed investment advisory service. |
+| Real-time WebSocket feed | `yfinance` polls HTTP; a WebSocket feed would require an NSE-licensed broker API. |
+| Portfolio tracking | Out of scope for v1; planned for v2 with optional Supabase backend. |
+| Options / derivatives | NSE F&O data requires separate licensing. |

@@ -1,50 +1,84 @@
+---
+title: Changelog
+---
+
 # Changelog
 
-All notable changes to this project are documented here.
-Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow [Semantic Versioning](https://semver.org/).
+All notable changes to the Nifty 50 Tracker are documented here.
+This project follows [Semantic Versioning](https://semver.org/) and [Conventional Commits](https://www.conventionalcommits.org/).
 
 ---
 
 ## [Unreleased]
 
 ### Planned
-- NSE holiday calendar integration
-- LSTM price prediction tab
-- Portfolio export (CSV/Excel)
+- Live beta recalculation from 252-day rolling returns
+- Portfolio tracker with optional Supabase backend
+- NSE F&O (options/futures) data support
+- Alert system — email/SMS when price crosses a threshold
 
 ---
 
-## [1.2.0] — 2026-06-15
+## [1.4.0] — 2026-06-15
 
 ### Added
-- Comprehensive pytest test suite: unit, integration, and Streamlit AppTest smoke tests (`tests/`)
-- Full MkDocs documentation site with GitHub Pages deployment
-- `CONTRIBUTING.md` with development setup, branching strategy, and PR guide
-- `pytest.ini` with strict markers and short tracebacks
-- `requirements-test.txt` for isolated test dependency management
+- **Structured logging** (`utils/logger.py`) — rotating file handler (5 MB × 3 backups), console handler, ISO-8601 timestamps, module name + line number in every record
+- `read_recent_logs(n)` and `log_file_path()` exported from `utils/logger.py` for the sidebar Live Logs widget
+- Sidebar **Live Logs expander** in `app.py` — real-time tail of `logs/app.log` with level filter and line count slider
+- Sidebar **Data Source Status badge** — green/yellow/red health indicator for each source
+- `LOG_LEVEL` environment variable + Streamlit secrets support for runtime verbosity control
+
+### Changed
+- All `print()` statements replaced with `log.info/warning/error()`
+- All `except Exception: pass` blocks replaced with `log.error(..., exc_info=True)`
+- `logs/*.log` added to `.gitignore`; `logs/.gitkeep` tracks the folder
 
 ---
 
-## [1.1.0] — 2026-06-12
-
-### Added
-- **Time Machine** tab: travel to any historical NSE trading date
-- Famous dates preset (COVID crash, Budget 2024, etc.)
-- Beta-adjusted P&L impact simulation in the P&L Calculator
-- Sector filter on All 50 Companies tab
-- Auto-refresh every 5 seconds when market is live
+## [1.3.0] — 2026-06-15
 
 ### Fixed
-- `safe_float()` now handles `pd.NA` and `None` gracefully
-- Removed duplicate API calls in Gainers & Losers tab
+- **Price precision bug** — intraday price now uses 1-minute bars during market hours instead of daily close, eliminating the ₹0.50–₹1.50 discrepancy seen with Yahoo Finance's adjusted close
+
+### Added
+- Two-mode price strategy: `get_last_price()` with `fetch_intraday_fn` injection for testability
+- `_ticker_intraday()` and `fetch_intraday()` helpers in `utils/data.py`
 
 ---
 
-## [1.0.0] — 2026-06-12
+## [1.2.0] — 2026-06-14
+
+### Added
+- `utils/data.py` with multi-source fallback: yfinance → nselib → stale cache
+- `get_source_status()` health probe
+- Stale cache guard with visible `⚠️` warning in UI via `st.session_state["data_warnings"]`
+- nselib column normalisation (comma-stripped numerics, `DD-MM-YYYY` date parsing)
+
+### Changed
+- All fetch logic moved out of `app.py` into `utils/data.py`
+
+---
+
+## [1.1.0] — 2026-06-13
+
+### Added
+- `utils/calculations.py` — pure calculation helpers extracted from `app.py`
+- `utils/charts.py` — Plotly chart builders as pure functions
+- `utils/constants.py` — centralised symbols, colours, cache TTL
+- `tests/` directory with initial pytest suite
+- `pytest.ini` configuration
+
+### Changed
+- `app.py` reduced to UI orchestration only — no calculations or chart logic
+
+---
+
+## [1.0.0] — 2026-06-13
 
 ### Added
 - Initial release
-- Market Overview, Nifty 50 Index, All 50 Companies, Gainers & Losers, P&L Calculator, Stock Chart tabs
-- yfinance data pipeline with `@st.cache_data` caching
-- Plotly charts: line, candlestick, area, percentage bar, trend comparison
-- Streamlit Cloud deployment
+- 7-tab Streamlit dashboard: Market Overview, Nifty 50 Index, All 50 Companies, Gainers & Losers, P&L Calculator, Stock Chart, Time Machine
+- Live prices via `yfinance` during market hours
+- Beta-adjusted P&L impact calculator
+- Time Machine — historical snapshots back to 2010
+- MkDocs Material documentation scaffold
