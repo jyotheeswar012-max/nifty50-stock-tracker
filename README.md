@@ -1,5 +1,6 @@
 # 📈 NSE & Nifty 50 — Ultimate Tracker + Time Machine
 
+[![CI](https://github.com/jyotheeswar012-max/nifty50-stock-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/jyotheeswar012-max/nifty50-stock-tracker/actions/workflows/ci.yml)
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://nifty50-stock-tracker.streamlit.app)
 
 > **Live App → [https://nifty50-stock-tracker.streamlit.app](https://nifty50-stock-tracker.streamlit.app)**
@@ -164,6 +165,21 @@ git clone https://github.com/jyotheeswar012-max/nifty50-stock-tracker
 cd nifty50-stock-tracker
 pip install -r requirements.txt
 streamlit run app.py
+```
+
+---
+
+## 🧪 Running Tests Locally
+
+```bash
+pip install pytest ruff
+pytest tests/ -v
+```
+
+To run the linter:
+
+```bash
+ruff check utils/ tests/ --select E,W,F --ignore E501
 ```
 
 ---
