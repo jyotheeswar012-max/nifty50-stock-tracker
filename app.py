@@ -172,11 +172,36 @@ def _clean_df(df):
     except Exception:
         return pd.DataFrame()
 
+def _clean_intraday_df(df):
+    """Clean intraday (minute-level) dataframe — keep timezone-aware index as-is."""
+    try:
+        if df is None or df.empty:
+            return pd.DataFrame()
+        if isinstance(df.columns, pd.MultiIndex):
+            lvl0 = list(df.columns.get_level_values(0))
+            if {"Open", "High", "Low", "Close", "Volume"}.intersection(set(lvl0)):
+                df.columns = lvl0
+            else:
+                df.columns = list(df.columns.get_level_values(1))
+        return df
+    except Exception:
+        return pd.DataFrame()
+
 def _ticker_history(symbol, period):
     try:
         df = yf.Ticker(symbol).history(period=period, auto_adjust=True)
         if df is not None and not df.empty:
             return _clean_df(df)
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+def _ticker_intraday(symbol, period="1d", interval="1m"):
+    """Fetch intraday OHLCV data at minute resolution."""
+    try:
+        df = yf.Ticker(symbol).history(period=period, interval=interval, auto_adjust=True)
+        if df is not None and not df.empty:
+            return _clean_intraday_df(df)
     except Exception:
         pass
     return pd.DataFrame()
@@ -234,6 +259,11 @@ def fetch_ticker(symbol, period="3mo"):
     return _ticker_history(symbol, period)
 
 @st.cache_data(ttl=CACHE_TTL)
+def fetch_intraday(symbol):
+    """Fetch today's 1-minute bars. Returns empty DataFrame on weekends/post-close."""
+    return _ticker_intraday(symbol, period="1d", interval="1m")
+
+@st.cache_data(ttl=CACHE_TTL)
 def fetch_indices():
     result = {}
     for idx in NSE_INDICES:
@@ -269,17 +299,45 @@ def fetch_all_history():
             pass
     return result
 
-def get_curr_prev(sym, stock_data):
+def get_last_price(symbol, stock_data_5d):
+    """
+    Return (current_price, previous_close) with the highest available precision.
+
+    Strategy:
+      1. During market hours  → use the last 1-min intraday bar's Close for current price,
+                                and the daily 5d bar's second-to-last Close as previous close.
+      2. After close/weekend  → use daily 5d bars for both (last close vs. prior close).
+         The daily bar is the official NSE closing price and matches Google Finance exactly
+         once the post-session adjustment is finalised (~15 min after 3:30 PM IST).
+    """
     try:
-        df = stock_data.get(sym)
-        if df is None or df.empty or "Close" not in df.columns:
+        daily = stock_data_5d.get(symbol)
+        if daily is None or daily.empty or "Close" not in daily.columns:
             return None, None
-        s = df["Close"].dropna()
-        if len(s) >= 2: return safe_float(s.iloc[-1]), safe_float(s.iloc[-2])
-        if len(s) == 1: return safe_float(s.iloc[0]), None
+
+        daily_close = daily["Close"].dropna()
+        if len(daily_close) == 0:
+            return None, None
+
+        prev = safe_float(daily_close.iloc[-2]) if len(daily_close) >= 2 else None
+
+        if market_open:
+            # Try to get a precise intraday last price
+            intra = fetch_intraday(symbol)
+            if not intra.empty and "Close" in intra.columns:
+                intra_close = intra["Close"].dropna()
+                if len(intra_close) > 0:
+                    curr = safe_float(intra_close.iloc[-1])
+                    # prev close = yesterday's daily bar
+                    prev_daily = safe_float(daily_close.iloc[-1]) if len(daily_close) >= 1 else prev
+                    return curr, prev_daily
+
+        # Fallback: daily bars
+        curr = safe_float(daily_close.iloc[-1])
+        return curr, prev
+
     except Exception:
-        pass
-    return None, None
+        return None, None
 
 @st.cache_data(ttl=CACHE_TTL)
 def build_stock_rows_cached():
@@ -288,7 +346,7 @@ def build_stock_rows_cached():
     rows = []
     for s in NIFTY50:
         try:
-            curr, prev = get_curr_prev(s["symbol"], stock_data)
+            curr, prev = get_last_price(s["symbol"], stock_data)
             chg = (curr - prev) if (curr is not None and prev is not None) else None
             pct = (chg / prev * 100) if (chg is not None and prev and prev != 0) else None
             rows.append({
@@ -307,6 +365,9 @@ def build_stock_rows_cached():
                          "Change (Rs.)": "N/A", "Change (%)": "N/A",
                          "_curr": None, "_pct": None})
     return pd.DataFrame(rows)
+
+def get_curr_prev(sym, stock_data):
+    return get_last_price(sym, stock_data)
 
 def safe_sort(df, col, ascending=True):
     try:
