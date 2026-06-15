@@ -18,7 +18,7 @@ except ImportError:
 
 st.set_page_config(
     page_title="NSE & Nifty 50 Tracker",
-    page_icon="📈",
+    page_icon="chart_with_upwards_trend",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -40,7 +40,7 @@ try:
 except Exception:
     pass
 
-# ── Constants ────────────────────────────────────────────────
+# -- Constants --
 REFRESH_MS = 5_000
 CACHE_TTL  = 15
 
@@ -113,12 +113,12 @@ NSE_INDICES = [
 ]
 
 FAMOUS_DATES = {
-    "COVID Crash Mar 23 2020":    date(2020,3,23),
-    "COVID Recovery Apr 7 2020":  date(2020,4,7),
-    "Russia-Ukraine Feb 24 2022": date(2022,2,24),
-    "RBI Rate Hike May 4 2022":   date(2022,5,4),
-    "Union Budget Feb 1 2023":    date(2023,2,1),
-    "All-time High Sep 27 2024":  date(2024,9,27),
+    "COVID Crash Mar 23 2020":    date(2020, 3, 23),
+    "COVID Recovery Apr 7 2020":  date(2020, 4, 7),
+    "Russia-Ukraine Feb 24 2022": date(2022, 2, 24),
+    "RBI Rate Hike May 4 2022":   date(2022, 5, 4),
+    "Union Budget Feb 1 2023":    date(2023, 2, 1),
+    "All-time High Sep 27 2024":  date(2024, 9, 27),
 }
 
 PLT = "plotly_white"
@@ -147,7 +147,7 @@ def style_fig(fig):
         pass
     return fig
 
-# ── Helpers ──────────────────────────────────────────────────
+# -- Helpers --
 def safe_float(val, default=0.0):
     try:
         f = float(val)
@@ -161,7 +161,7 @@ def _clean_df(df):
             return pd.DataFrame()
         if isinstance(df.columns, pd.MultiIndex):
             lvl0 = list(df.columns.get_level_values(0))
-            if {"Open","High","Low","Close","Volume"}.intersection(set(lvl0)):
+            if {"Open", "High", "Low", "Close", "Volume"}.intersection(set(lvl0)):
                 df.columns = lvl0
             else:
                 df.columns = list(df.columns.get_level_values(1))
@@ -186,7 +186,7 @@ def is_nse_open():
         ist = pytz.timezone("Asia/Kolkata")
         now = datetime.now(ist)
         if now.weekday() >= 5:
-            lbl = "Last Close: Fri " + (now - timedelta(days=now.weekday()-4)).strftime("%d %b %Y, 3:30 PM")
+            lbl = "Last Close: Fri " + (now - timedelta(days=now.weekday() - 4)).strftime("%d %b %Y, 3:30 PM")
             return False, "Weekend", lbl
         mo = now.replace(hour=9,  minute=15, second=0, microsecond=0)
         mc = now.replace(hour=15, minute=30, second=0, microsecond=0)
@@ -200,33 +200,27 @@ def is_nse_open():
     except Exception:
         return False, "Unknown", ""
 
-def hero(icon, title, badge_html, sub=""):
+def hero(title, sub=""):
     try:
-        sub_html = (
-            "<div class='hero-sub'>" + badge_html + ("&nbsp;&nbsp;"+sub if sub else "") + "</div>"
-            if (badge_html or sub) else ""
-        )
-        st.markdown(
-            "<div class='hero-banner'><div class='hero-icon'>" + icon + "</div><div>"
-            "<div class='hero-title'>" + title + "</div>" + sub_html + "</div></div>",
-            unsafe_allow_html=True,
-        )
+        st.subheader(title)
+        if sub:
+            st.caption(sub)
     except Exception:
-        st.subheader(icon + " " + title)
+        pass
 
 def sec(label):
     try:
-        st.markdown("<p class='sec-label'>" + label + "</p>", unsafe_allow_html=True)
+        st.markdown("**" + label + "**")
     except Exception:
         st.caption(label)
 
 def divider():
     st.markdown("---")
 
-# ── Market state ─────────────────────────────────────────────
+# -- Market state --
 market_open, market_status, last_close_label = is_nse_open()
 
-# ── Auto-refresh (5s, market hours only) ─────────────────────
+# -- Auto-refresh every 5s during market hours --
 refresh_count = 0
 if AUTOREFRESH_AVAILABLE and market_open:
     try:
@@ -234,7 +228,7 @@ if AUTOREFRESH_AVAILABLE and market_open:
     except Exception:
         pass
 
-# ── Data fetchers ─────────────────────────────────────────────
+# -- Data fetchers --
 @st.cache_data(ttl=CACHE_TTL)
 def fetch_ticker(symbol, period="3mo"):
     return _ticker_history(symbol, period)
@@ -298,19 +292,20 @@ def build_stock_rows_cached():
             chg = (curr - prev) if (curr is not None and prev is not None) else None
             pct = (chg / prev * 100) if (chg is not None and prev and prev != 0) else None
             rows.append({
-                "Symbol":       s["symbol"].replace(".NS",""),
+                "Symbol":       s["symbol"].replace(".NS", ""),
                 "Company":      s["name"],
                 "Sector":       s["sector"],
                 "Beta":         s["beta"],
-                p_lbl:          round(curr,2) if curr is not None else "N/A",
-                "Change (Rs.)": round(chg,2)  if chg  is not None else "N/A",
-                "Change (%)":   round(pct,2)  if pct  is not None else "N/A",
+                p_lbl:          round(curr, 2) if curr is not None else "N/A",
+                "Change (Rs.)": round(chg,  2) if chg  is not None else "N/A",
+                "Change (%)":   round(pct,  2) if pct  is not None else "N/A",
                 "_curr": curr, "_pct": pct,
             })
         except Exception:
-            rows.append({"Symbol":s["symbol"].replace(".NS",""),"Company":s["name"],
-                         "Sector":s["sector"],"Beta":s["beta"],p_lbl:"N/A",
-                         "Change (Rs.)":"N/A","Change (%)":"N/A","_curr":None,"_pct":None})
+            rows.append({"Symbol": s["symbol"].replace(".NS", ""), "Company": s["name"],
+                         "Sector": s["sector"], "Beta": s["beta"], p_lbl: "N/A",
+                         "Change (Rs.)": "N/A", "Change (%)": "N/A",
+                         "_curr": None, "_pct": None})
     return pd.DataFrame(rows)
 
 def safe_sort(df, col, ascending=True):
@@ -330,18 +325,18 @@ def calc_impact(nifty_pct, sp, qty, b):
     spct = nifty_pct * b
     pchg = sp * (spct / 100)
     nsp  = sp + pchg
-    return spct, pchg, nsp, sp*qty, nsp*qty, pchg*qty
+    return spct, pchg, nsp, sp * qty, nsp * qty, pchg * qty
 
 def show_pl(pl):
     pl = safe_float(pl)
-    if   pl > 0: st.success("GAIN  Rs." + format(pl,      ",.2f"))
+    if   pl > 0: st.success("GAIN  Rs." + format(pl, ",.2f"))
     elif pl < 0: st.error(  "LOSS  Rs." + format(abs(pl), ",.2f"))
     else:        st.info("No Change")
 
 def _nearest_row(df, target, window=4):
-    for delta in range(window+1):
-        for sign in ([0] if delta==0 else [1,-1]):
-            cand = target + pd.Timedelta(days=delta*sign)
+    for delta in range(window + 1):
+        for sign in ([0] if delta == 0 else [1, -1]):
+            cand = target + pd.Timedelta(days=delta * sign)
             mask = df.index.normalize() == cand.normalize()
             if mask.any():
                 return df[mask].iloc[0]
@@ -358,43 +353,34 @@ def tm_get_snapshot(all_hist, target):
             if row is None: continue
             meta = meta_map.get(sym, {})
             rows.append({
-                "Symbol": sym.replace(".NS",""), "Name": meta.get("name",sym),
-                "Sector": meta.get("sector","?"),
-                "Open":   safe_float(row.get("Open",  np.nan)),
-                "High":   safe_float(row.get("High",  np.nan)),
-                "Low":    safe_float(row.get("Low",   np.nan)),
-                "Close":  safe_float(row.get("Close", np.nan)),
-                "Volume": int(safe_float(row.get("Volume",0))),
+                "Symbol": sym.replace(".NS", ""), "Name": meta.get("name", sym),
+                "Sector": meta.get("sector", "?"),
+                "Open":   safe_float(row.get("Open",   np.nan)),
+                "High":   safe_float(row.get("High",   np.nan)),
+                "Low":    safe_float(row.get("Low",    np.nan)),
+                "Close":  safe_float(row.get("Close",  np.nan)),
+                "Volume": int(safe_float(row.get("Volume", 0))),
             })
         except Exception:
             pass
     if not rows: return pd.DataFrame()
     return pd.DataFrame(rows).set_index("Symbol")
 
-# ── Status banner ─────────────────────────────────────────────
+# -- Status banner (ASCII only) --
 def status_banner():
     try:
         ist_now = datetime.now(pytz.timezone("Asia/Kolkata"))
         ist_str = ist_now.strftime("%I:%M:%S %p IST")
         if market_open:
-            pulse = ["\u25cf","\u25cb"][refresh_count % 2]
+            pulse = ["[LIVE]", "[ -- ]"][refresh_count % 2]
             next_data_in = CACHE_TTL - (int(time.time()) % CACHE_TTL)
-            st.markdown(
-                f'<div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;'
-                f'padding:10px 18px;display:flex;align-items:center;gap:14px;">'
-                f'<span style="font-size:20px;color:#16a34a;">{pulse}</span>'
-                f'<span style="font-size:15px;font-weight:700;color:#15803d;">NSE LIVE</span>'
-                f'<span style="color:#166534;font-size:13px;">&#x2502; {ist_str}</span>'
-                f'<span style="color:#166534;font-size:13px;">&#x2502; Refreshing every <b>5s</b></span>'
-                f'<span style="color:#166534;font-size:13px;">&#x2502; New data in <b>{next_data_in}s</b></span>'
-                f'<span style="margin-left:auto;background:#16a34a;color:white;'
-                f'padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600;">MARKET OPEN</span>'
-                f'</div>',
-                unsafe_allow_html=True,
+            st.success(
+                pulse + "  NSE LIVE  |  " + ist_str +
+                "  |  Refreshing every 5s  |  New data in " + str(next_data_in) + "s  |  MARKET OPEN"
             )
         else:
             st.warning(
-                "\u26a0\ufe0f NSE CLOSED \u2014 " + market_status +
+                "NSE CLOSED -- " + market_status +
                 (" | " + last_close_label if last_close_label else "") +
                 " | Showing last closing prices"
             )
@@ -405,7 +391,7 @@ def _closed_banner():
     if not market_open:
         try:
             st.warning(
-                "\u26a0\ufe0f NSE CLOSED \u2014 " + market_status +
+                "NSE CLOSED -- " + market_status +
                 (" | " + last_close_label if last_close_label else "") +
                 " | Showing last closing prices"
             )
@@ -413,23 +399,22 @@ def _closed_banner():
             pass
 
 status_banner()
-st.markdown("<div style='margin-bottom:8px'></div>", unsafe_allow_html=True)
 
-# ── Tabs ──────────────────────────────────────────────────────
+# -- Tabs (NO emoji - plain ASCII labels for Python 3.14 compatibility) --
 tabs = st.tabs([
-    "\ud83d\udcca Market Overview",
-    "\ud83d\udcc8 Nifty 50 Index",
-    "\ud83c\udfe2 All 50 Companies",
-    "\ud83c\udfc6 Gainers & Losers",
-    "\ud83d\udcb0 P&L Calculator",
-    "\ud83d\udcc9 Stock Chart",
-    "\ud83d\udd70\ufe0f Time Machine",
+    "Market Overview",
+    "Nifty 50 Index",
+    "All 50 Companies",
+    "Gainers & Losers",
+    "P&L Calculator",
+    "Stock Chart",
+    "Time Machine",
 ])
 
-# ── Tab 0: Market Overview ───────────────────────────────────
+# -- Tab 0: Market Overview --
 with tabs[0]:
     try:
-        hero("📊", "NSE Market Overview", "<span class='ui-badge badge-nse'>NSE INDIA</span>", "National Stock Exchange")
+        hero("NSE Market Overview", "National Stock Exchange")
         _closed_banner()
         sec("NSE Indices Snapshot")
         idx_data = fetch_indices()
@@ -442,27 +427,27 @@ with tabs[0]:
                     c  = safe_float(h["Close"].iloc[-1])
                     p  = safe_float(h["Close"].iloc[-2], c)
                     ch = c - p
-                    pt = round(ch/p*100, 2) if p != 0 else 0.0
-                    idx_rows.append({"Index":idx["name"], val_lbl:"Rs."+format(c,",.2f"),
-                        "Change (pts)":format(ch,"+.2f"), "Change (%)":format(pt,"+.2f")+"%",
-                        "High":"Rs."+format(safe_float(h["High"].max()),",.2f"),
-                        "Low":"Rs."+format(safe_float(h["Low"].min()),",.2f"), "_pct":pt})
+                    pt = round(ch / p * 100, 2) if p != 0 else 0.0
+                    idx_rows.append({"Index": idx["name"], val_lbl: "Rs." + format(c, ",.2f"),
+                        "Change (pts)": format(ch, "+.2f"), "Change (%)": format(pt, "+.2f") + "%",
+                        "High": "Rs." + format(safe_float(h["High"].max()), ",.2f"),
+                        "Low":  "Rs." + format(safe_float(h["Low"].min()),  ",.2f"), "_pct": pt})
                 else:
-                    idx_rows.append({"Index":idx["name"],val_lbl:"N/A","Change (pts)":"N/A",
-                        "Change (%)":"N/A","High":"N/A","Low":"N/A","_pct":None})
+                    idx_rows.append({"Index": idx["name"], val_lbl: "N/A",
+                        "Change (pts)": "N/A", "Change (%)": "N/A", "High": "N/A", "Low": "N/A", "_pct": None})
             except Exception:
-                idx_rows.append({"Index":idx["name"],val_lbl:"N/A","Change (pts)":"N/A",
-                    "Change (%)":"N/A","High":"N/A","Low":"N/A","_pct":None})
+                idx_rows.append({"Index": idx["name"], val_lbl: "N/A",
+                    "Change (pts)": "N/A", "Change (%)": "N/A", "High": "N/A", "Low": "N/A", "_pct": None})
         idx_df = pd.DataFrame(idx_rows)
         st.dataframe(idx_df.drop(columns=["_pct"]), use_container_width=True, hide_index=True)
         valid_idx = idx_df[idx_df["_pct"].notna()].copy()
         if not valid_idx.empty:
             try:
                 fig_b = px.bar(valid_idx, x="Index", y="_pct",
-                    color="_pct", color_continuous_scale=["#ef4444","#f59e0b","#10b981"],
+                    color="_pct", color_continuous_scale=["#ef4444", "#f59e0b", "#10b981"],
                     color_continuous_midpoint=0, text="Change (%)",
                     title="Today's % Change by Index" if market_open else "Last Session % Change by Index",
-                    template=PLT, height=300, labels={"_pct":"% Change","Index":"Index"})
+                    template=PLT, height=300, labels={"_pct": "% Change", "Index": "Index"})
                 fig_b.update_traces(textposition="outside", marker_line_width=0)
                 fig_b.update_layout(**PLT_LAYOUT, coloraxis_showscale=False)
                 style_fig(fig_b)
@@ -471,13 +456,13 @@ with tabs[0]:
                 pass
         divider()
         sec("Trend Comparison")
-        c_per, c_idx = st.columns([1,3])
+        c_per, c_idx = st.columns([1, 3])
         with c_per:
-            p_sel = st.selectbox("Period", ["1mo","3mo","6mo","1y"], index=1, key="idx_p")
+            p_sel = st.selectbox("Period", ["1mo", "3mo", "6mo", "1y"], index=1, key="idx_p")
         with c_idx:
             sel_idx = st.multiselect("Indices", [i["name"] for i in NSE_INDICES],
-                default=["Nifty 50","Nifty Bank","Nifty IT"])
-        sym_map = {i["name"]:i for i in NSE_INDICES}
+                default=["Nifty 50", "Nifty Bank", "Nifty IT"])
+        sym_map = {i["name"]: i for i in NSE_INDICES}
         if sel_idx:
             try:
                 fig_m = go.Figure()
@@ -499,31 +484,30 @@ with tabs[0]:
     except Exception as e:
         st.error("Market Overview error: " + str(e))
 
-# ── Tab 1: Nifty 50 ──────────────────────────────────────────
+# -- Tab 1: Nifty 50 --
 with tabs[1]:
     try:
-        hero("📈", "Nifty 50 Index",
-            "<span class='ui-badge badge-live'>LIVE</span>" if market_open else "<span class='ui-badge badge-hist'>LAST CLOSE</span>",
-            "^NSEI - NSE Flagship Index")
+        hero("Nifty 50 Index", "^NSEI - NSE Flagship Index")
         _closed_banner()
-        c1, c2 = st.columns([1,3])
+        c1, c2 = st.columns([1, 3])
         with c1:
-            n_period = st.selectbox("Period", ["1mo","3mo","6mo","1y","2y","5y"], index=2, key="nf_p")
+            n_period = st.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=2, key="nf_p")
         with c2:
-            chart_type = st.radio("Chart", ["Line","Candlestick","Area"], horizontal=True, key="nf_ct")
+            chart_type = st.radio("Chart", ["Line", "Candlestick", "Area"], horizontal=True, key="nf_ct")
         nifty = fetch_ticker("^NSEI", n_period)
         if nifty.empty or "Close" not in nifty.columns:
             st.warning("Could not fetch Nifty 50 data.")
         else:
             c  = safe_float(nifty["Close"].iloc[-1])
             p  = safe_float(nifty["Close"].iloc[-2]) if len(nifty) > 1 else c
-            ch = c - p; pt = ch/p*100 if p else 0
-            m1,m2,m3,m4,m5 = st.columns(5)
-            m1.metric("Price" if market_open else "Last Close", "Rs."+format(c,",.2f"))
-            m2.metric("Change", format(ch,"+.2f"), delta=format(pt,"+.2f")+"%")
-            m3.metric("Period High", "Rs."+format(safe_float(nifty["High"].max()),",.2f"))
-            m4.metric("Period Low",  "Rs."+format(safe_float(nifty["Low"].min()), ",.2f"))
-            m5.metric("Avg Volume",  format(int(safe_float(nifty["Volume"].mean())),","))
+            ch = c - p
+            pt = ch / p * 100 if p else 0
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("Price" if market_open else "Last Close", "Rs." + format(c, ",.2f"))
+            m2.metric("Change", format(ch, "+.2f"), delta=format(pt, "+.2f") + "%")
+            m3.metric("Period High", "Rs." + format(safe_float(nifty["High"].max()), ",.2f"))
+            m4.metric("Period Low",  "Rs." + format(safe_float(nifty["Low"].min()),  ",.2f"))
+            m5.metric("Avg Volume",  format(int(safe_float(nifty["Volume"].mean())), ","))
             divider()
             try:
                 fig = go.Figure()
@@ -533,12 +517,13 @@ with tabs[1]:
                         name="Nifty 50", increasing_line_color="#10b981", decreasing_line_color="#ef4444"))
                 elif chart_type == "Area":
                     fig.add_trace(go.Scatter(x=nifty.index, y=nifty["Close"], fill="tozeroy",
-                        name="Nifty 50", line=dict(color="#6366f1",width=2), fillcolor="rgba(99,102,241,0.12)"))
+                        name="Nifty 50", line=dict(color="#6366f1", width=2),
+                        fillcolor="rgba(99,102,241,0.12)"))
                 else:
                     fig.add_trace(go.Scatter(x=nifty.index, y=nifty["Close"],
-                        name="Nifty 50", line=dict(color="#6366f1",width=2.5)))
-                fig.update_layout(**PLT_LAYOUT, title="Nifty 50 - "+n_period, height=440,
-                    xaxis_title="Date", yaxis_title="Index Value")
+                        name="Nifty 50", line=dict(color="#6366f1", width=2.5)))
+                fig.update_layout(**PLT_LAYOUT, title="Nifty 50 - " + n_period,
+                    height=440, xaxis_title="Date", yaxis_title="Index Value")
                 style_fig(fig)
                 st.plotly_chart(fig, use_container_width=True)
             except Exception:
@@ -546,23 +531,22 @@ with tabs[1]:
     except Exception as e:
         st.error("Nifty 50 error: " + str(e))
 
-# ── Tab 2: All 50 Companies ───────────────────────────────────
+# -- Tab 2: All 50 Companies --
 with tabs[2]:
     try:
-        hero("🏢", "All 50 Companies", "<span class='ui-badge badge-nse'>NSE</span>",
-            "Live prices" if market_open else "Last closing prices")
+        hero("All 50 Companies", "Live prices" if market_open else "Last closing prices")
         _closed_banner()
         sel_sec = st.selectbox("Sector", sectors, key="all_sec")
         df_rows = build_stock_rows_cached()
         if sel_sec != "All":
             df_rows = df_rows[df_rows["Sector"] == sel_sec]
-        disp = df_rows.drop(columns=["_curr","_pct"], errors="ignore")
+        disp = df_rows.drop(columns=["_curr", "_pct"], errors="ignore")
         st.dataframe(disp, use_container_width=True, hide_index=True)
         valid = df_rows[df_rows["_pct"].notna()].copy()
         if not valid.empty:
             try:
                 fig = px.bar(valid, x="Symbol", y="_pct",
-                    color="_pct", color_continuous_scale=["#ef4444","#f59e0b","#10b981"],
+                    color="_pct", color_continuous_scale=["#ef4444", "#f59e0b", "#10b981"],
                     color_continuous_midpoint=0, text="Change (%)",
                     title="1-Day % Change" if market_open else "1-Day % Change (last session)",
                     template=PLT, height=360)
@@ -575,11 +559,10 @@ with tabs[2]:
     except Exception as e:
         st.error("Companies error: " + str(e))
 
-# ── Tab 3: Gainers & Losers ───────────────────────────────────
+# -- Tab 3: Gainers & Losers --
 with tabs[3]:
     try:
-        hero("🏆", "Gainers & Losers",
-            "<span class='ui-badge badge-live'>TODAY</span>" if market_open else "<span class='ui-badge badge-hist'>LAST SESSION</span>")
+        hero("Gainers & Losers", "Today" if market_open else "Last Session")
         _closed_banner()
         df_rows = build_stock_rows_cached()
         valid   = df_rows[df_rows["_pct"].notna()].copy()
@@ -593,15 +576,15 @@ with tabs[3]:
             cg, cl = st.columns(2)
             with cg:
                 sec("Top Gainers")
-                st.dataframe(gainers[["Symbol","Company",price_col,"Change (%)"]], use_container_width=True, hide_index=True)
+                st.dataframe(gainers[["Symbol", "Company", price_col, "Change (%)"]], use_container_width=True, hide_index=True)
             with cl:
                 sec("Top Losers")
-                st.dataframe(losers[["Symbol","Company",price_col,"Change (%)"]], use_container_width=True, hide_index=True)
+                st.dataframe(losers[["Symbol", "Company", price_col, "Change (%)"]], use_container_width=True, hide_index=True)
             try:
-                combined = pd.concat([gainers,losers]).drop_duplicates(subset="Symbol")
+                combined = pd.concat([gainers, losers]).drop_duplicates(subset="Symbol")
                 combined = combined[combined["_pct"].notna()]
                 fig = px.bar(combined, x="Symbol", y="_pct",
-                    color="_pct", color_continuous_scale=["#ef4444","#f59e0b","#10b981"],
+                    color="_pct", color_continuous_scale=["#ef4444", "#f59e0b", "#10b981"],
                     color_continuous_midpoint=0, text="Change (%)",
                     title="Gainers vs Losers", template=PLT, height=360)
                 fig.update_traces(textposition="outside", marker_line_width=0)
@@ -613,10 +596,10 @@ with tabs[3]:
     except Exception as e:
         st.error("Gainers/Losers error: " + str(e))
 
-# ── Tab 4: P&L Calculator ─────────────────────────────────────
+# -- Tab 4: P&L Calculator --
 with tabs[4]:
     try:
-        hero("💰", "P&L Calculator", "<span class='ui-badge badge-sim'>SIMULATOR</span>", "Calculate profit / loss")
+        hero("P&L Calculator", "Calculate profit / loss")
         _closed_banner()
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -626,20 +609,20 @@ with tabs[4]:
         lp = safe_float(sc_data["Close"].iloc[-1]) if not sc_data.empty and "Close" in sc_data.columns else 0.0
         with c2:
             buy_p = st.number_input("Buy Price (Rs.)", min_value=0.01,
-                value=round(lp,2) if lp > 0 else 100.0, step=0.5, key="pl_bp")
+                value=round(lp, 2) if lp > 0 else 100.0, step=0.5, key="pl_bp")
         with c3:
             qty = st.number_input("Quantity", min_value=1, value=10, step=1, key="pl_q")
         sell_p = st.number_input(
             "Sell / Current Price (Rs.)" if market_open else "Sell Price (Rs.)",
-            min_value=0.01, value=round(lp,2) if lp > 0 else 100.0, step=0.5, key="pl_sp")
-        pl = (sell_p - buy_p) * qty
+            min_value=0.01, value=round(lp, 2) if lp > 0 else 100.0, step=0.5, key="pl_sp")
+        pl  = (sell_p - buy_p) * qty
         inv = buy_p * qty
-        ret = (pl/inv*100) if inv > 0 else 0
+        ret = (pl / inv * 100) if inv > 0 else 0
         divider()
         mc1, mc2, mc3 = st.columns(3)
-        mc1.metric("Investment", "Rs."+format(inv,",.2f"))
-        mc2.metric("P&L",        "Rs."+format(pl, "+,.2f"))
-        mc3.metric("Return",     format(ret,"+.2f")+"%")
+        mc1.metric("Investment", "Rs." + format(inv, ",.2f"))
+        mc2.metric("P&L",        "Rs." + format(pl,  "+,.2f"))
+        mc3.metric("Return",     format(ret, "+.2f") + "%")
         show_pl(pl)
         divider()
         sec("Beta-Adjusted Impact")
@@ -648,31 +631,29 @@ with tabs[4]:
             nifty_move = st.slider("Nifty Move (%)", -20.0, 20.0, 0.0, 0.5, key="pl_nm")
         with bv_col:
             beta_val = st.number_input("Beta", 0.1, 3.0,
-                value=float(sel_s.get("beta",1.0)), step=0.05, key="pl_bv")
+                value=float(sel_s.get("beta", 1.0)), step=0.05, key="pl_bv")
         if nifty_move != 0:
             spct, pchg, nsp, _ov, _nv, pl_beta = calc_impact(nifty_move, buy_p, qty, beta_val)
-            b1,b2,b3,b4 = st.columns(4)
-            b1.metric("Stock Move",   format(spct,"+.2f")+"%")
-            b2.metric("Price Change", "Rs."+format(pchg,"+.2f"))
-            b3.metric("New Price",    "Rs."+format(nsp,".2f"))
-            b4.metric("P&L Impact",   "Rs."+format(pl_beta,"+,.2f"))
+            b1, b2, b3, b4 = st.columns(4)
+            b1.metric("Stock Move",   format(spct,    "+.2f") + "%")
+            b2.metric("Price Change", "Rs." + format(pchg,    "+.2f"))
+            b3.metric("New Price",    "Rs." + format(nsp,     ".2f"))
+            b4.metric("P&L Impact",   "Rs." + format(pl_beta, "+,.2f"))
     except Exception as e:
         st.error("P&L error: " + str(e))
 
-# ── Tab 5: Stock Chart ────────────────────────────────────────
+# -- Tab 5: Stock Chart --
 with tabs[5]:
     try:
-        hero("📉", "Stock Chart",
-            "<span class='ui-badge badge-live'>LIVE</span>" if market_open else "<span class='ui-badge badge-hist'>LAST CLOSE</span>",
-            "Detailed chart for any Nifty 50 stock")
+        hero("Stock Chart", "Detailed chart for any Nifty 50 stock")
         _closed_banner()
-        c1, c2, c3 = st.columns([2,1,1])
+        c1, c2, c3 = st.columns([2, 1, 1])
         with c1:
             sc_name = st.selectbox("Stock", [s["name"] for s in NIFTY50], key="sc_s")
         with c2:
-            sc_per = st.selectbox("Period", ["1mo","3mo","6mo","1y","2y","5y"], index=2, key="sc_p")
+            sc_per = st.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=2, key="sc_p")
         with c3:
-            sc_ct = st.radio("Chart", ["Line","Candlestick","Area"], horizontal=True, key="sc_ct")
+            sc_ct = st.radio("Chart", ["Line", "Candlestick", "Area"], horizontal=True, key="sc_ct")
         sc_sym = next(s["symbol"] for s in NIFTY50 if s["name"] == sc_name)
         sc_h   = fetch_ticker(sc_sym, sc_per)
         if sc_h.empty or "Close" not in sc_h.columns:
@@ -680,12 +661,13 @@ with tabs[5]:
         else:
             c  = safe_float(sc_h["Close"].iloc[-1])
             p  = safe_float(sc_h["Close"].iloc[-2]) if len(sc_h) > 1 else c
-            ch = c - p; pt = ch/p*100 if p else 0
-            m1,m2,m3,m4 = st.columns(4)
-            m1.metric("Price" if market_open else "Last Close", "Rs."+format(c,",.2f"))
-            m2.metric("Change", format(ch,"+.2f"), delta=format(pt,"+.2f")+"%")
-            m3.metric("High", "Rs."+format(safe_float(sc_h["High"].max()),",.2f"))
-            m4.metric("Low",  "Rs."+format(safe_float(sc_h["Low"].min()), ",.2f"))
+            ch = c - p
+            pt = ch / p * 100 if p else 0
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Price" if market_open else "Last Close", "Rs." + format(c,  ",.2f"))
+            m2.metric("Change", format(ch, "+.2f"), delta=format(pt, "+.2f") + "%")
+            m3.metric("High",   "Rs." + format(safe_float(sc_h["High"].max()), ",.2f"))
+            m4.metric("Low",    "Rs." + format(safe_float(sc_h["Low"].min()),  ",.2f"))
             try:
                 fig = go.Figure()
                 if sc_ct == "Candlestick":
@@ -694,12 +676,13 @@ with tabs[5]:
                         increasing_line_color="#10b981", decreasing_line_color="#ef4444"))
                 elif sc_ct == "Area":
                     fig.add_trace(go.Scatter(x=sc_h.index, y=sc_h["Close"], fill="tozeroy",
-                        name=sc_name, line=dict(color="#6366f1",width=2), fillcolor="rgba(99,102,241,0.12)"))
+                        name=sc_name, line=dict(color="#6366f1", width=2),
+                        fillcolor="rgba(99,102,241,0.12)"))
                 else:
                     fig.add_trace(go.Scatter(x=sc_h.index, y=sc_h["Close"],
-                        name=sc_name, line=dict(color="#6366f1",width=2.5)))
-                fig.update_layout(**PLT_LAYOUT, title=sc_name+" - "+sc_per, height=440,
-                    xaxis_title="Date", yaxis_title="Price (Rs.)")
+                        name=sc_name, line=dict(color="#6366f1", width=2.5)))
+                fig.update_layout(**PLT_LAYOUT, title=sc_name + " - " + sc_per,
+                    height=440, xaxis_title="Date", yaxis_title="Price (Rs.)")
                 style_fig(fig)
                 st.plotly_chart(fig, use_container_width=True)
             except Exception:
@@ -707,19 +690,19 @@ with tabs[5]:
     except Exception as e:
         st.error("Stock Chart error: " + str(e))
 
-# ── Tab 6: Time Machine ───────────────────────────────────────
+# -- Tab 6: Time Machine --
 with tabs[6]:
     try:
-        hero("🕰️", "Time Machine", "<span class='ui-badge badge-hist'>HISTORICAL</span>", "Travel back to any NSE trading day")
-        preset = st.selectbox("Famous dates", ["Custom..."]+list(FAMOUS_DATES.keys()), key="tm_preset")
+        hero("Time Machine", "Travel back to any NSE trading day")
+        preset = st.selectbox("Famous dates", ["Custom..."] + list(FAMOUS_DATES.keys()), key="tm_preset")
         if preset == "Custom...":
-            tm_date = st.date_input("Date", value=date(2020,3,23),
-                min_value=date(2010,1,1), max_value=date.today(), key="tm_date")
+            tm_date = st.date_input("Date", value=date(2020, 3, 23),
+                min_value=date(2010, 1, 1), max_value=date.today(), key="tm_date")
         else:
             tm_date = FAMOUS_DATES[preset]
-            st.info("Loaded: " + preset + " \u2014 " + str(tm_date))
+            st.info("Loaded: " + preset + " - " + str(tm_date))
         if st.button("Travel to this date", key="tm_go"):
-            with st.spinner("Loading historical data (may take 30\u201360s first time)..."):
+            with st.spinner("Loading historical data (may take 30-60s first time)..."):
                 all_hist = fetch_all_history()
             snap = tm_get_snapshot(all_hist, tm_date)
             if snap.empty:
@@ -729,8 +712,8 @@ with tabs[6]:
                 st.dataframe(snap, use_container_width=True)
                 try:
                     fig = px.bar(snap.reset_index(), x="Symbol", y="Close", color="Close",
-                        color_continuous_scale=["#6366f1","#06b6d4","#10b981"],
-                        title="Closing Prices \u2014 "+str(tm_date), template=PLT, height=360)
+                        color_continuous_scale=["#6366f1", "#06b6d4", "#10b981"],
+                        title="Closing Prices - " + str(tm_date), template=PLT, height=360)
                     fig.update_layout(**PLT_LAYOUT, coloraxis_showscale=False)
                     style_fig(fig)
                     st.plotly_chart(fig, use_container_width=True)
