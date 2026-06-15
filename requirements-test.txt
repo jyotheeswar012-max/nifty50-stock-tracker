@@ -1,0 +1,6 @@
+pytest>=7.4
+pytest-cov>=4.1
+streamlit>=1.31
+yfinance>=0.2.36
+pandas>=2.0
+numpy>=1.26
