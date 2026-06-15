@@ -372,11 +372,11 @@ def tm_get_snapshot(all_hist, target):
 # ============================================================
 # LIVE COUNTDOWN BANNER
 #
-# Uses st.empty() to update the banner in-place every second.
-# No st.fragment or scope="fragment" needed — fully compatible
-# with all Streamlit versions on Community Cloud.
-# When the 60s countdown hits 0, caches are cleared and a
-# full st.rerun() fetches fresh prices.
+# Renders once per page load with the current remaining time.
+# Uses st_autorefresh (1-second interval) when market is open
+# so the countdown ticks without blocking tab rendering.
+# When the 60s window expires, caches are cleared and the
+# session refresh timer is reset so fresh data is fetched.
 # ============================================================
 
 def live_countdown_banner():
@@ -388,31 +388,31 @@ def live_countdown_banner():
         )
         return
 
+    # Inject 1-second auto-refresh via HTML meta tag (no extra package needed)
+    st.markdown(
+        '<meta http-equiv="refresh" content="1">',
+        unsafe_allow_html=True,
+    )
+
     elapsed   = time.time() - st.session_state["_last_refresh"]
     remaining = max(0, int(REFRESH_INTERVAL - elapsed))
 
     if remaining == 0:
         _clear_live_caches()
         st.session_state["_last_refresh"] = time.time()
-        st.rerun()
-        return
+        elapsed   = 0
+        remaining = REFRESH_INTERVAL
 
     ist_now  = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%I:%M:%S %p IST")
     filled   = REFRESH_INTERVAL - remaining
     bar_on   = int((filled / REFRESH_INTERVAL) * 20)
     prog_bar = "\u2588" * bar_on + "\u2591" * (20 - bar_on)
 
-    banner_slot = st.empty()
-    banner_slot.success(
+    st.success(
         f"\u25cf NSE OPEN \u2014 Last updated: **{ist_now}** "
         f"\u2502 Next refresh in **{remaining}s** "
         f"`{prog_bar}`"
     )
-
-    # Tick once in the background then trigger a full rerun.
-    # This avoids any fragment API — safe on all Streamlit versions.
-    time.sleep(1)
-    st.rerun()
 
 
 # ============================================================
@@ -428,13 +428,13 @@ def _closed_banner():
 
 
 # ============================================================
-# RENDER COUNTDOWN ABOVE TABS
+# RENDER COUNTDOWN ABOVE TABS  (no blocking, no rerun here)
 # ============================================================
 live_countdown_banner()
 
 
 # ============================================================
-# MAIN TABS
+# MAIN TABS  — rendered on EVERY page load
 # ============================================================
 TAB_LABELS = [
     "Market Overview",
