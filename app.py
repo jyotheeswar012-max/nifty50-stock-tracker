@@ -372,16 +372,13 @@ def tm_get_snapshot(all_hist, target):
 # ============================================================
 # LIVE COUNTDOWN BANNER
 #
-# KEY DESIGN: no sleep loop. The fragment renders the banner
-# once per call. If market is open it sleeps exactly 1 second
-# then calls st.rerun(scope="fragment") — re-executing ONLY
-# this fragment, decrementing the counter by 1 each time.
-# The rest of the page (tabs, charts) is NEVER blocked.
-# When the counter hits 0, live caches are cleared and a full
-# page rerun fetches fresh prices.
+# Uses st.empty() to update the banner in-place every second.
+# No st.fragment or scope="fragment" needed — fully compatible
+# with all Streamlit versions on Community Cloud.
+# When the 60s countdown hits 0, caches are cleared and a
+# full st.rerun() fetches fresh prices.
 # ============================================================
 
-@st.fragment
 def live_countdown_banner():
     if not market_open:
         st.warning(
@@ -393,27 +390,29 @@ def live_countdown_banner():
 
     elapsed   = time.time() - st.session_state["_last_refresh"]
     remaining = max(0, int(REFRESH_INTERVAL - elapsed))
-    ist_now   = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%I:%M:%S %p IST")
 
+    if remaining == 0:
+        _clear_live_caches()
+        st.session_state["_last_refresh"] = time.time()
+        st.rerun()
+        return
+
+    ist_now  = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%I:%M:%S %p IST")
     filled   = REFRESH_INTERVAL - remaining
     bar_on   = int((filled / REFRESH_INTERVAL) * 20)
     prog_bar = "\u2588" * bar_on + "\u2591" * (20 - bar_on)
 
-    st.success(
+    banner_slot = st.empty()
+    banner_slot.success(
         f"\u25cf NSE OPEN \u2014 Last updated: **{ist_now}** "
         f"\u2502 Next refresh in **{remaining}s** "
         f"`{prog_bar}`"
     )
 
-    if remaining == 0:
-        # Time to reload data
-        _clear_live_caches()
-        st.session_state["_last_refresh"] = time.time()
-        st.rerun()           # full page rerun to fetch fresh prices
-    else:
-        # Sleep 1 second, then re-render only this fragment
-        time.sleep(1)
-        st.rerun(scope="fragment")
+    # Tick once in the background then trigger a full rerun.
+    # This avoids any fragment API — safe on all Streamlit versions.
+    time.sleep(1)
+    st.rerun()
 
 
 # ============================================================
