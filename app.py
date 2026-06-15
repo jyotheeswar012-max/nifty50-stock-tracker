@@ -157,7 +157,6 @@ def safe_float(val, default=0.0):
 
 
 def _clean_df(df):
-    """Flatten MultiIndex columns and strip timezone from index."""
     if df is None or df.empty:
         return pd.DataFrame()
     if isinstance(df.columns, pd.MultiIndex):
@@ -174,7 +173,6 @@ def _clean_df(df):
 
 
 def _ticker_history(symbol, period):
-    """Use yf.Ticker.history() — always returns a clean flat DataFrame."""
     try:
         t = yf.Ticker(symbol)
         df = t.history(period=period, auto_adjust=True)
@@ -227,28 +225,17 @@ def divider():
 
 
 # ============================================================
-# AUTO-REFRESH LOGIC
+# MARKET STATE & SESSION INIT
 # ============================================================
 market_open, market_status, last_close_label = is_nse_open()
-_TTL = 60 if market_open else 1800   # cache TTL = 60s live, 30 min closed
+_TTL = 60 if market_open else 1800
 
-# Initialise last-refresh timestamp in session state
 if "_last_refresh" not in st.session_state:
     st.session_state["_last_refresh"] = time.time()
 
-# Auto-rerun only during market hours
-if market_open:
-    elapsed = time.time() - st.session_state["_last_refresh"]
-    remaining = max(0, REFRESH_INTERVAL - elapsed)
-    if elapsed >= REFRESH_INTERVAL:
-        # Clear price caches so new data is fetched on rerun
-        st.cache_data.clear()
-        st.session_state["_last_refresh"] = time.time()
-        st.rerun()
-
 
 # ============================================================
-# DATA FETCHERS  (all use Ticker.history for reliability)
+# DATA FETCHERS
 # ============================================================
 
 @st.cache_data(ttl=_TTL)
@@ -258,7 +245,6 @@ def fetch_ticker(symbol, period="3mo"):
 
 @st.cache_data(ttl=_TTL)
 def fetch_indices():
-    """Fetch all 8 NSE indices individually."""
     result = {}
     for idx in NSE_INDICES:
         df = _ticker_history(idx["symbol"], "5d")
@@ -269,7 +255,6 @@ def fetch_indices():
 
 @st.cache_data(ttl=_TTL)
 def fetch_all_stocks_5d():
-    """Fetch all 50 Nifty stocks for the snapshot table."""
     result = {}
     for s in NIFTY50:
         df = _ticker_history(s["symbol"], "5d")
@@ -280,7 +265,6 @@ def fetch_all_stocks_5d():
 
 @st.cache_data(ttl=3600)
 def fetch_all_history():
-    """5Y history for all stocks + macro proxies (Time Machine)."""
     result = {}
     all_syms = SYMBOLS + ["USDINR=X", "CL=F", "GC=F", "^NSEI"]
     for sym in all_syms:
@@ -383,24 +367,46 @@ def tm_get_snapshot(all_hist, target):
 
 
 # ============================================================
-# REFRESH COUNTDOWN BANNER  (shown at top of every tab)
+# LIVE COUNTDOWN BANNER
+# Using st.empty() + a 1-second tick loop so the counter
+# visibly decrements 60 → 59 → 58 … without a full page rerun.
+# When it hits 0, caches are cleared and st.rerun() fires.
 # ============================================================
 def _market_banner():
-    if market_open:
-        elapsed  = time.time() - st.session_state["_last_refresh"]
-        secs_left = max(0, int(REFRESH_INTERVAL - elapsed))
-        ist_now   = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%I:%M:%S %p IST")
-        st.success(
-            f"\u25cf NSE OPEN \u2014 Auto-refreshing every {REFRESH_INTERVAL}s "
-            f"\u2502 Next refresh in **{secs_left}s** "
-            f"\u2502 Last updated: {ist_now}"
-        )
-    else:
+    if not market_open:
         st.warning(
             "NSE CLOSED \u2014 " + market_status +
             (" | " + last_close_label if last_close_label else "") +
             " | Showing last closing prices"
         )
+        return
+
+    ist_now   = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%I:%M:%S %p IST")
+    elapsed   = time.time() - st.session_state["_last_refresh"]
+    secs_left = max(0, int(REFRESH_INTERVAL - elapsed))
+
+    banner = st.empty()   # single placeholder — reused each tick
+
+    for remaining in range(secs_left, -1, -1):
+        bar_filled  = REFRESH_INTERVAL - remaining
+        bar_pct     = int((bar_filled / REFRESH_INTERVAL) * 20)   # 20-char bar
+        bar_empty   = 20 - bar_pct
+        progress_bar = "\u2588" * bar_pct + "\u2591" * bar_empty
+
+        banner.success(
+            f"\u25cf NSE OPEN \u2014 Last updated: {ist_now} \u2502 "
+            f"Next refresh in **{remaining}s** "
+            f"`{progress_bar}`"
+        )
+
+        if remaining == 0:
+            break
+        time.sleep(1)
+
+    # Countdown finished — bust caches and reload data
+    st.cache_data.clear()
+    st.session_state["_last_refresh"] = time.time()
+    st.rerun()
 
 
 # ============================================================
@@ -775,15 +781,3 @@ with tabs[6]:
                 st.plotly_chart(fig, use_container_width=True)
             except Exception:
                 pass
-
-
-# ============================================================
-# SCHEDULE NEXT RERUN (non-blocking, only during market hours)
-# ============================================================
-if market_open:
-    elapsed   = time.time() - st.session_state["_last_refresh"]
-    wait_secs = max(1, REFRESH_INTERVAL - elapsed)
-    time.sleep(wait_secs)
-    st.cache_data.clear()
-    st.session_state["_last_refresh"] = time.time()
-    st.rerun()
