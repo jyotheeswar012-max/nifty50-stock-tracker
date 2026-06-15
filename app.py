@@ -45,8 +45,12 @@ except Exception:
 
 # ============================================================
 # CONSTANTS
+# yfinance free API updates roughly every 15s during market
+# hours. We poll every 5s so we catch updates as fast as
+# possible within that constraint.
 # ============================================================
-REFRESH_MS = 60_000  # 60 seconds in milliseconds
+REFRESH_MS  = 5_000   # UI rerun every 5 seconds
+CACHE_TTL   = 15      # data cache: 15s (matches yfinance update cadence)
 
 NIFTY50 = [
     {"symbol":"RELIANCE.NS",   "name":"Reliance Industries",    "sector":"Energy",             "beta":0.90},
@@ -186,6 +190,18 @@ def _ticker_history(symbol, period):
     return pd.DataFrame()
 
 
+def _ticker_fast(symbol):
+    """Fetch only the latest price using 1d/1m interval for speed."""
+    try:
+        t  = yf.Ticker(symbol)
+        df = t.history(period="1d", interval="1m", auto_adjust=True)
+        if df is not None and not df.empty:
+            return _clean_df(df)
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
 def is_nse_open():
     try:
         ist = pytz.timezone("Asia/Kolkata")
@@ -234,9 +250,10 @@ market_open, market_status, last_close_label = is_nse_open()
 
 
 # ============================================================
-# AUTO-REFRESH every 60 seconds (streamlit-autorefresh)
-# Returns the refresh count — we use it to compute countdown.
-# This call must happen BEFORE any other st.* calls.
+# AUTO-REFRESH
+# Every 5s during market hours → UI reruns → cache (ttl=15s)
+# expires every 3rd rerun → fresh yfinance data fetched.
+# yfinance free tier updates ~every 15s in market hours.
 # ============================================================
 if AUTOREFRESH_AVAILABLE and market_open:
     refresh_count = st_autorefresh(interval=REFRESH_MS, key="live_refresh")
@@ -246,14 +263,16 @@ else:
 
 # ============================================================
 # DATA FETCHERS
+# ttl=15 — matches yfinance update cadence (~15s during market)
+# ttl=3600 — for heavy historical data (Time Machine)
 # ============================================================
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=CACHE_TTL)
 def fetch_ticker(symbol, period="3mo"):
     return _ticker_history(symbol, period)
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=CACHE_TTL)
 def fetch_indices():
     result = {}
     for idx in NSE_INDICES:
@@ -263,7 +282,7 @@ def fetch_indices():
     return result
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=CACHE_TTL)
 def fetch_all_stocks_5d():
     result = {}
     for s in NIFTY50:
@@ -294,7 +313,7 @@ def get_curr_prev(sym, stock_data):
     return None, None
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=CACHE_TTL)
 def build_stock_rows_cached():
     stock_data = fetch_all_stocks_5d()
     p_lbl = "Price (Rs.)" if market_open else "Last Close (Rs.)"
@@ -377,25 +396,32 @@ def tm_get_snapshot(all_hist, target):
 
 
 # ============================================================
-# STATUS BANNER WITH LIVE COUNTDOWN
-# st_autorefresh fires every 60s → Streamlit reruns →
-# cache TTL has expired → fresh data is fetched automatically.
-# The countdown uses wall-clock time so it’s always accurate.
+# LIVE STATUS BANNER
+# Shows a pulsing live indicator + timestamp updated every 5s
 # ============================================================
 def status_banner():
     ist_now = datetime.now(pytz.timezone("Asia/Kolkata"))
     ist_str = ist_now.strftime("%I:%M:%S %p IST")
 
     if market_open:
-        # Compute seconds until next 60s boundary from page load
-        secs_into_minute = ist_now.second % 60
-        remaining = 60 - secs_into_minute
-        filled  = 60 - remaining
-        bar_on  = int((filled / 60) * 20)
-        bar     = "\u2588" * bar_on + "\u2591" * (20 - bar_on)
-        st.success(
-            f"\u25cf NSE OPEN \u2014 Last updated: **{ist_str}** "
-            f"\u2502 Next refresh in **{remaining}s** `{bar}`"
+        # Pulse indicator cycles through dots to show activity
+        pulse = ["\u25cf", "\u25cb"][refresh_count % 2]
+        next_data_in = CACHE_TTL - (int(time.time()) % CACHE_TTL)
+        st.markdown(
+            f"""
+            <div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;
+                        padding:10px 18px;display:flex;align-items:center;gap:14px;">
+                <span style="font-size:20px;color:#16a34a;">{pulse}</span>
+                <span style="font-size:15px;font-weight:700;color:#15803d;">NSE LIVE</span>
+                <span style="color:#166534;font-size:13px;">&#x2502; {ist_str}</span>
+                <span style="color:#166534;font-size:13px;">&#x2502; Refreshing every <b>5s</b></span>
+                <span style="color:#166534;font-size:13px;">&#x2502; New data in <b>{next_data_in}s</b></span>
+                <span style="margin-left:auto;background:#16a34a;color:white;
+                             padding:2px 10px;border-radius:20px;font-size:12px;
+                             font-weight:600;">MARKET OPEN</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
     else:
         st.warning(
@@ -418,19 +444,20 @@ def _closed_banner():
 # RENDER BANNER
 # ============================================================
 status_banner()
+st.markdown("<div style='margin-bottom:8px'></div>", unsafe_allow_html=True)
 
 
 # ============================================================
 # MAIN TABS
 # ============================================================
 TAB_LABELS = [
-    "Market Overview",
-    "Nifty 50 Index",
-    "All 50 Companies",
-    "Gainers & Losers",
-    "P&L Calculator",
-    "Stock Chart",
-    "Time Machine",
+    "\ud83d\udcca Market Overview",
+    "\ud83d\udcc8 Nifty 50 Index",
+    "\ud83c\udfe2 All 50 Companies",
+    "\ud83c\udfc6 Gainers & Losers",
+    "\ud83d\udcb0 P&L Calculator",
+    "\ud83d\udcc9 Stock Chart",
+    "\ud83d\udd70\ufe0f Time Machine",
 ]
 tabs = st.tabs(TAB_LABELS)
 
@@ -439,7 +466,7 @@ tabs = st.tabs(TAB_LABELS)
 with tabs[0]:
     hero("📊", "NSE Market Overview",
          "<span class='ui-badge badge-nse'>NSE INDIA</span>",
-         "National Stock Exchange - Live Indices")
+         "National Stock Exchange")
     _closed_banner()
     sec("NSE Indices Snapshot")
     with st.spinner("Fetching indices..."):
@@ -594,7 +621,7 @@ with tabs[2]:
                     valid, x="Symbol", y="_pct",
                     color="_pct", color_continuous_scale=["#ef4444", "#f59e0b", "#10b981"],
                     color_continuous_midpoint=0, text="Change (%)",
-                    title="1-Day % Change (last session)" if not market_open else "1-Day % Change",
+                    title="1-Day % Change" if market_open else "1-Day % Change (last session)",
                     template=PLT, height=360,
                 )
                 fig.update_traces(textposition="outside", marker_line_width=0)
