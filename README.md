@@ -30,6 +30,127 @@ The **only free Nifty 50 dashboard** combining real-time NSE data with historica
 
 ---
 
+## 📡 Data API Documentation
+
+This app uses the **[yfinance](https://github.com/ranaroussi/yfinance)** library as its data source. All market data is fetched via `yf.Ticker.history()` — no API key required.
+
+### Core Fetch Functions
+
+#### `fetch_ticker(symbol, period)`
+Fetches OHLCV history for a single symbol.
+
+| Parameter | Type | Example | Description |
+|-----------|------|---------|-------------|
+| `symbol` | `str` | `"^NSEI"`, `"RELIANCE.NS"` | Yahoo Finance ticker symbol |
+| `period` | `str` | `"1mo"`, `"3mo"`, `"6mo"`, `"1y"`, `"2y"`, `"5y"` | Lookback window |
+
+**Returns:** `pd.DataFrame` with columns `Open, High, Low, Close, Volume` and a `DatetimeIndex`.
+
+```python
+df = fetch_ticker("^NSEI", "3mo")
+print(df.tail())  # Last 5 rows of Nifty 50
+```
+
+---
+
+#### `fetch_indices()`
+Fetches the last 5 trading days for all 8 NSE sector indices.
+
+**Symbols covered:**
+
+| Symbol | Index |
+|--------|-------|
+| `^NSEI` | Nifty 50 |
+| `^NSEBANK` | Nifty Bank |
+| `^CNXIT` | Nifty IT |
+| `^CNXAUTO` | Nifty Auto |
+| `^CNXPHARMA` | Nifty Pharma |
+| `^CNXFMCG` | Nifty FMCG |
+| `^CNXMETAL` | Nifty Metal |
+| `^CNXREALTY` | Nifty Realty |
+
+**Returns:** `dict[symbol → pd.DataFrame]`
+
+---
+
+#### `fetch_all_stocks_5d()`
+Fetches the last 5 days of OHLCV data for all 50 Nifty stocks.
+
+**Returns:** `dict[symbol → pd.DataFrame]`
+
+---
+
+#### `fetch_all_history()`
+Fetches 5-year OHLCV history for all 50 Nifty stocks + macro proxies.
+
+**Extra symbols:** `USDINR=X` (USD/INR), `CL=F` (Crude Oil), `GC=F` (Gold), `^NSEI`
+
+**Returns:** `dict[symbol → pd.DataFrame]`  
+**Cache TTL:** 1 hour (heavy call — used only in Time Machine tab)
+
+---
+
+### Caching Strategy
+
+| Function | TTL (Market Open) | TTL (Market Closed) |
+|----------|-------------------|---------------------|
+| `fetch_ticker` | 5 min | 30 min |
+| `fetch_indices` | 5 min | 30 min |
+| `fetch_all_stocks_5d` | 5 min | 30 min |
+| `fetch_all_history` | 1 hour | 1 hour |
+
+All caching is handled by `@st.cache_data`. To force a refresh, press **`C`** in the Streamlit app or reboot the server.
+
+---
+
+### NSE Market Hours Detection
+
+```python
+is_open, status, label = is_nse_open()
+# is_open → bool
+# status  → "Open" | "Closed" | "Pre-Market" | "Weekend"
+# label   → human-readable last-close string
+```
+
+Timezone: **Asia/Kolkata (IST)**  
+Trading hours: **09:15 – 15:30 IST, Mon–Fri**
+
+---
+
+## 🤖 ML Prediction Methodology
+
+> ⚠️ Predictions are **statistical estimates**, not financial advice.
+
+The **Scenario Engine** tab uses a **beta-weighted linear impact model** to estimate how macro shocks affect individual stocks.
+
+### How It Works
+
+1. **Beta coefficient** — Each of the 50 stocks has a pre-defined `beta` value (market sensitivity vs Nifty 50).
+2. **Scenario shock** — User selects a macro event (e.g. *Rupee drops 5%*, *Oil spikes +20%*). Each event maps to an estimated Nifty % move.
+3. **Stock impact formula:**
+
+```
+Stock % Change ≈ Nifty % Change × Beta
+New Price       = Current Price × (1 + Stock % Change / 100)
+P&L Impact      = (New Price − Current Price) × Quantity
+```
+
+4. **Assumptions:**
+   - Linear relationship between market and stock returns (CAPM-style)
+   - Beta values are static (sourced from historical estimates, not live)
+   - No non-linear effects, earnings surprises, or liquidity adjustments
+
+### Beta Reference (sample)
+
+| Stock | Beta | Interpretation |
+|-------|------|----------------|
+| Bajaj Finance | 1.40 | Moves ~1.4× Nifty |
+| Nestle India | 0.55 | Defensive, low volatility |
+| Tata Motors | 1.45 | High cyclical sensitivity |
+| HDFC Bank | 1.10 | Slightly above market |
+
+---
+
 ## ⚡ Deploy on Streamlit Cloud
 
 1. Go to [share.streamlit.io](https://share.streamlit.io)
@@ -47,4 +168,4 @@ streamlit run app.py
 
 ---
 
-> ⚠️ Educational use only. Not investment advice
+> ⚠️ Educational use only. Not investment advice.
