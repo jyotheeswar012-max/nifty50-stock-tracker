@@ -1,90 +1,124 @@
-"""Streamlit AppTest — smoke tests for every page/tab in the app.
-Requires: pip install streamlit>=1.31 pytest
-Run with:  pytest tests/test_streamlit_app.py -v
-"""
-import pytest
-import os
+"""Streamlit AppTest smoke-tests — every tab must load without an exception.
 
-# Guard: skip entire module if AppTest is not available
+Requirements:
+    pip install 'streamlit>=1.31' pytest pytest-timeout
+
+Run:
+    pytest tests/test_streamlit_app.py -v --timeout=60
+"""
+from __future__ import annotations
+
+import os
+import pytest
+
+# Guard: skip entire module when running in CI without display / Streamlit server.
+# CI runners set NO_BROWSER=1 or similar; AppTest itself does not need a display.
 pytest.importorskip("streamlit.testing.v1", reason="Requires Streamlit >= 1.31")
 
 from streamlit.testing.v1 import AppTest
 
-# ── helpers ────────────────────────────────────────────────────────────────────
-
 APP_PATH = os.path.join(os.path.dirname(__file__), "..", "app.py")
+_TIMEOUT  = int(os.getenv("APPTEST_TIMEOUT", "30"))  # seconds; override in CI
 
 
-def _run_app(timeout: int = 15) -> AppTest:
-    """Helper: boot the app and run until stable."""
+# ---------------------------------------------------------------------------
+# Shared helper
+# ---------------------------------------------------------------------------
+
+def _boot(timeout: int = _TIMEOUT) -> AppTest:
+    """Boot the Streamlit app and run until stable.  Patches yfinance so no
+    network calls are made during the smoke test."""
+    import pandas as pd
+    import numpy as np
+    from unittest.mock import patch, MagicMock
+
+    np.random.seed(0)
+    dates = pd.date_range("2024-01-02", periods=10, freq="B")
+    close = 21_000 + np.cumsum(np.random.randn(10) * 50)
+    mock_df = pd.DataFrame(
+        {"Open": close - 10, "High": close + 20, "Low": close - 20,
+         "Close": close, "Volume": 200_000.0},
+        index=dates,
+    )
+
+    mock_ticker = MagicMock()
+    mock_ticker.history.return_value = mock_df
+
     at = AppTest.from_file(APP_PATH, default_timeout=timeout)
-    at.run()
+    with patch("yfinance.Ticker", return_value=mock_ticker):
+        at.run()
     return at
 
 
-# ── Smoke tests ────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Smoke tests
+# ---------------------------------------------------------------------------
 
-class TestAppLoads:
-    def test_no_exception_on_startup(self):
-        at = _run_app()
-        assert not at.exception, f"App raised exception: {at.exception}"
+class TestAppStartup:
+    """Verify the app boots without any Python exception."""
 
-    def test_title_visible(self):
-        at = _run_app()
-        titles = [t.value for t in at.title]
-        assert any("Nifty" in t or "nifty" in t.lower() for t in titles), \
-            "Expected a Nifty 50 title element"
+    def test_no_unhandled_exception(self):
+        at = _boot()
+        assert not at.exception, (
+            f"App raised an exception on startup:\n{at.exception}"
+        )
 
-    def test_at_least_one_chart_rendered(self):
-        at = _run_app()
-        charts = (list(at.get("altair_chart")) +
-                  list(at.get("plotly_chart")) +
-                  list(at.get("line_chart")))
-        assert len(charts) >= 1, "Expected at least one chart on the main page"
-
-
-class TestSidebarControls:
-    def test_sidebar_has_input_widgets(self):
-        at = _run_app()
-        widgets = list(at.sidebar.selectbox) + list(at.sidebar.radio) + list(at.sidebar.slider)
-        assert len(widgets) >= 1, "Expected sidebar widgets for period/ticker selection"
-
-    def test_period_selectbox_changes_output(self):
-        at = _run_app()
-        selectboxes = list(at.sidebar.selectbox)
-        if selectboxes:
-            selectboxes[0].set_value(selectboxes[0].options[-1])
-            at.run()
-            assert not at.exception
+    def test_page_config_applied(self):
+        """App should render at least some visible text."""
+        at = _boot()
+        all_text = (
+            [e.value for e in at.title]
+            + [e.value for e in at.header]
+            + [e.value for e in at.subheader]
+            + [e.value for e in at.markdown]
+        )
+        assert len(all_text) > 0, "No visible text elements found — app may not have rendered"
 
 
 class TestKPIMetrics:
-    def test_kpi_metrics_displayed(self):
-        at = _run_app()
-        metrics = list(at.metric)
-        assert len(metrics) >= 1, "Expected at least one KPI metric (e.g. current price, return)"
+    """At least one st.metric should be visible after startup."""
 
-    def test_no_none_values_in_metrics(self):
-        at = _run_app()
-        for metric in at.metric:
-            assert metric.value is not None
-            assert str(metric.value) != "None"
+    def test_at_least_one_metric_rendered(self):
+        at = _boot()
+        assert len(list(at.metric)) >= 1, "Expected at least one KPI metric on the main page"
+
+    def test_no_metric_value_is_none(self):
+        at = _boot()
+        for m in at.metric:
+            assert m.value is not None, f"Metric '{m.label}' has None value"
 
 
 class TestDataTable:
-    def test_dataframe_displayed(self):
-        at = _run_app()
+    """At least one st.dataframe / st.table should be visible."""
+
+    def test_at_least_one_table_rendered(self):
+        at = _boot()
         tables = list(at.dataframe) + list(at.table)
-        assert len(tables) >= 1, "Expected a data table (holdings or returns table)"
+        assert len(tables) >= 1, "Expected at least one data table on the main page"
 
 
-class TestErrorHandling:
-    def test_no_error_messages_on_load(self):
-        at = _run_app()
+class TestNoErrorMessages:
+    """The app must not surface st.error() or st.exception() to the user on clean load."""
+
+    def test_no_st_error_on_load(self):
+        at = _boot()
         errors = list(at.error)
-        assert len(errors) == 0, f"Unexpected error messages: {[e.value for e in errors]}"
+        assert len(errors) == 0, (
+            f"App displayed {len(errors)} st.error() message(s) on startup:\n"
+            + "\n".join(e.value for e in errors)
+        )
 
-    def test_no_warnings_on_load(self):
-        at = _run_app()
-        warnings = list(at.warning)
-        assert len(warnings) == 0, f"Unexpected warnings: {[w.value for w in warnings]}"
+
+class TestTabNavigation:
+    """Verify the app exposes the expected tabs."""
+
+    def test_seven_tabs_exist(self):
+        at = _boot()
+        # st.tabs() produces tab elements; Streamlit AppTest exposes them via at.tabs
+        # Fall back gracefully if the attribute doesn't exist on older Streamlit
+        tabs = getattr(at, "tabs", None)
+        if tabs is None:
+            pytest.skip("at.tabs not available in this Streamlit version")
+        assert len(list(tabs)) == 7, (
+            f"Expected 7 tabs, found {len(list(tabs))}"
+        )

@@ -1,84 +1,88 @@
-"""Unit tests for P&L calculation functions."""
+"""Focused P&L and beta-impact edge-case tests."""
+from __future__ import annotations
+
 import pytest
-import pandas as pd
+from utils.calculations import calc_pl, calc_beta_impact
 
 
-# ── inline helpers ─────────────────────────────────────────────────────────────
+class TestPLEdgeCases:
+    """Edge-cases and boundary conditions for calc_pl."""
 
-def calc_pnl(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df["invested"]   = df["shares"] * df["avg_buy_price"]
-    df["market_val"] = df["shares"] * df["current_price"]
-    df["pnl"]        = df["market_val"] - df["invested"]
-    df["pnl_pct"]    = (df["pnl"] / df["invested"]) * 100
-    return df
+    def test_buy_equals_sell_zero_pl(self):
+        pl, _, _ = calc_pl(100.0, 100.0, 50)
+        assert pl == pytest.approx(0.0)
 
+    def test_single_share_profit(self):
+        pl, inv, ret = calc_pl(1000.0, 1100.0, 1)
+        assert pl  == pytest.approx(100.0)
+        assert inv == pytest.approx(1000.0)
+        assert ret == pytest.approx(10.0)
 
-def calc_portfolio_summary(df: pd.DataFrame) -> dict:
-    pnl_df = calc_pnl(df)
-    return {
-        "total_invested":   pnl_df["invested"].sum(),
-        "total_market_val": pnl_df["market_val"].sum(),
-        "total_pnl":        pnl_df["pnl"].sum(),
-        "total_pnl_pct":    (pnl_df["pnl"].sum() / pnl_df["invested"].sum()) * 100,
-    }
+    def test_very_small_prices(self):
+        pl, inv, ret = calc_pl(0.01, 0.02, 1000)
+        assert pl  == pytest.approx(10.0)
+        assert ret == pytest.approx(100.0)
 
+    def test_very_large_prices(self):
+        pl, inv, ret = calc_pl(100_000.0, 110_000.0, 100)
+        assert pl  == pytest.approx(1_000_000.0)
+        assert ret == pytest.approx(10.0)
 
-# ── Tests ──────────────────────────────────────────────────────────────────────
+    def test_negative_effective_return_is_negative(self):
+        _, _, ret = calc_pl(500.0, 400.0, 10)
+        assert ret < 0
 
-class TestCalcPnL:
-    def test_pnl_columns_exist(self, holdings_data):
-        result = calc_pnl(holdings_data)
-        for col in ["invested", "market_val", "pnl", "pnl_pct"]:
-            assert col in result.columns
+    def test_investment_always_positive_for_positive_buy(self):
+        _, inv, _ = calc_pl(250.0, 300.0, 5)
+        assert inv > 0
 
-    def test_positive_pnl_when_price_rose(self, holdings_data):
-        result = calc_pnl(holdings_data)
-        rose = result[result["current_price"] > result["avg_buy_price"]]
-        assert (rose["pnl"] > 0).all()
+    def test_return_calculation_precision(self):
+        pl, inv, ret = calc_pl(333.33, 400.0, 3)
+        expected_ret = (400.0 - 333.33) / 333.33 * 100
+        assert ret == pytest.approx(expected_ret, rel=1e-4)
 
-    def test_negative_pnl_when_price_fell(self, holdings_data):
-        result = calc_pnl(holdings_data)
-        fell = result[result["current_price"] < result["avg_buy_price"]]
-        assert (fell["pnl"] < 0).all()
-
-    def test_invested_equals_shares_times_avg_price(self, holdings_data):
-        result = calc_pnl(holdings_data)
-        expected = holdings_data["shares"] * holdings_data["avg_buy_price"]
-        pd.testing.assert_series_equal(result["invested"].reset_index(drop=True),
-                                       expected.reset_index(drop=True),
-                                       check_names=False)
-
-    def test_pnl_pct_within_reasonable_bounds(self, holdings_data):
-        result = calc_pnl(holdings_data)
-        assert (result["pnl_pct"].abs() < 200).all()
-
-    def test_does_not_mutate_input(self, holdings_data):
-        original = holdings_data.copy()
-        calc_pnl(holdings_data)
-        pd.testing.assert_frame_equal(holdings_data, original)
+    @pytest.mark.parametrize("buy, sell, qty", [
+        (100.0, 150.0, 10),
+        (500.0, 600.0,  1),
+        (200.0, 250.0, 25),
+        (1000.0, 900.0, 5),
+    ])
+    def test_parametrized_pl_sign(self, buy, sell, qty):
+        pl, _, _ = calc_pl(buy, sell, qty)
+        if sell > buy:
+            assert pl > 0
+        elif sell < buy:
+            assert pl < 0
+        else:
+            assert pl == pytest.approx(0.0)
 
 
-class TestPortfolioSummary:
-    def test_summary_keys_present(self, holdings_data):
-        summary = calc_portfolio_summary(holdings_data)
-        for key in ["total_invested", "total_market_val", "total_pnl", "total_pnl_pct"]:
-            assert key in summary
+class TestBetaImpactEdgeCases:
+    """Edge-cases and boundary conditions for calc_beta_impact."""
 
-    def test_total_pnl_equals_market_minus_invested(self, holdings_data):
-        s = calc_portfolio_summary(holdings_data)
-        assert abs(s["total_pnl"] - (s["total_market_val"] - s["total_invested"])) < 0.01
+    def test_symmetry_positive_negative_nifty(self):
+        """P&L from +5% and -5% Nifty move should cancel out."""
+        _, _, _, _, _, pl_up   = calc_beta_impact( 5.0, 1000.0, 10, 1.0)
+        _, _, _, _, _, pl_down = calc_beta_impact(-5.0, 1000.0, 10, 1.0)
+        assert pl_up == pytest.approx(-pl_down)
 
-    def test_pnl_pct_sign_matches_pnl_sign(self, holdings_data):
-        s = calc_portfolio_summary(holdings_data)
-        assert (s["total_pnl"] >= 0) == (s["total_pnl_pct"] >= 0)
+    def test_high_beta_amplifies_more_than_low_beta(self):
+        _, _, _, _, _, pl_high = calc_beta_impact(10.0, 1000.0, 1, 2.0)
+        _, _, _, _, _, pl_low  = calc_beta_impact(10.0, 1000.0, 1, 0.5)
+        assert pl_high > pl_low
 
-    def test_zero_shares_gives_zero_invested(self):
-        zero_df = pd.DataFrame({
-            "symbol": ["TEST.NS"],
-            "shares": [0],
-            "avg_buy_price": [100.0],
-            "current_price": [110.0],
-        })
-        s = calc_portfolio_summary(zero_df)
-        assert s["total_invested"] == 0
+    def test_more_shares_amplify_pl_linearly(self):
+        _, _, _, _, _, pl1 = calc_beta_impact(5.0, 1000.0, 1,  1.0)
+        _, _, _, _, _, pl2 = calc_beta_impact(5.0, 1000.0, 10, 1.0)
+        assert pl2 == pytest.approx(pl1 * 10)
+
+    def test_old_value_equals_price_times_qty(self):
+        _, _, _, ov, _, _ = calc_beta_impact(5.0, 500.0, 20, 1.0)
+        assert ov == pytest.approx(500.0 * 20)
+
+    @pytest.mark.parametrize("nifty_pct,beta", [
+        (1.0, 1.0), (5.0, 1.5), (-3.0, 0.8), (0.0, 2.0), (10.0, 0.0),
+    ])
+    def test_parametrized_stock_pct_equals_nifty_times_beta(self, nifty_pct, beta):
+        spct, *_ = calc_beta_impact(nifty_pct, 1000.0, 1, beta)
+        assert spct == pytest.approx(nifty_pct * beta)

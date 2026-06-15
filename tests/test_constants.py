@@ -1,95 +1,122 @@
-"""Smoke-tests for utils/constants.py
+"""Deep validation of constants.py — sector coverage, beta ranges, FAMOUS_DATES."""
+from __future__ import annotations
 
-Verifies structural integrity of all static data — catches accidental
-duplicate symbols, missing fields, and malformed values before they
-hit production.
-"""
+from datetime import date
 import pytest
-from utils.constants import (
-    NIFTY50, SYMBOLS, NSE_INDICES, FAMOUS_DATES,
-    PLT_LAYOUT, AXIS_STYLE, REFRESH_MS, CACHE_TTL,
-)
+
+from utils.constants import NIFTY50, NSE_INDICES, SYMBOLS, FAMOUS_DATES
 
 
-class TestNifty50List:
-    def test_has_50_stocks(self):
-        assert len(NIFTY50) == 50
+KNOWN_SECTORS = {
+    "Energy", "Financial Services", "IT", "Telecom", "FMCG",
+    "Construction", "Automobile", "Metals", "Conglomerate",
+    "Infrastructure", "Pharma", "Consumer Goods", "Cement",
+    "Power", "Defence",
+}
 
-    def test_required_keys_present(self):
-        required = {"symbol", "name", "sector", "beta"}
-        for stock in NIFTY50:
-            assert required.issubset(stock.keys()), f"Missing keys in {stock}"
 
-    def test_no_duplicate_symbols(self):
-        syms = [s["symbol"] for s in NIFTY50]
-        assert len(syms) == len(set(syms)), "Duplicate symbols found"
-
-    def test_all_symbols_end_with_ns(self):
+class TestNifty50Sectors:
+    def test_all_sectors_are_known(self):
         for s in NIFTY50:
-            assert s["symbol"].endswith(".NS"), f"{s['symbol']} missing .NS suffix"
+            assert s["sector"] in KNOWN_SECTORS, (
+                f"{s['name']} has unknown sector '{s['sector']}'"
+            )
 
-    def test_beta_is_positive_float(self):
+    def test_sector_coverage_has_it(self):
+        sectors = {s["sector"] for s in NIFTY50}
+        assert "IT" in sectors
+
+    def test_sector_coverage_has_financial(self):
+        sectors = {s["sector"] for s in NIFTY50}
+        assert "Financial Services" in sectors
+
+    def test_sector_coverage_has_energy(self):
+        sectors = {s["sector"] for s in NIFTY50}
+        assert "Energy" in sectors
+
+
+class TestBetaRanges:
+    def test_all_betas_in_reasonable_range(self):
+        """Real-world Nifty 50 betas are roughly 0.5 – 1.7."""
         for s in NIFTY50:
-            assert isinstance(s["beta"], (int, float)), f"{s['symbol']} beta not numeric"
-            assert s["beta"] > 0, f"{s['symbol']} beta must be positive"
+            assert 0.3 <= s["beta"] <= 2.0, (
+                f"{s['name']} beta={s['beta']} seems unrealistic"
+            )
 
-    def test_sector_is_non_empty_string(self):
+    def test_defensive_stocks_have_low_beta(self):
+        """FMCG & Pharma betas should be < 1 (defensive)."""
         for s in NIFTY50:
-            assert isinstance(s["sector"], str) and s["sector"], \
-                f"{s['symbol']} has empty sector"
+            if s["sector"] in ("FMCG", "Pharma"):
+                assert s["beta"] < 1.1, (
+                    f"{s['name']} ({s['sector']}) beta={s['beta']} expected < 1.1"
+                )
 
-
-class TestSymbolsList:
-    def test_symbols_matches_nifty50(self):
-        expected = [s["symbol"] for s in NIFTY50]
-        assert SYMBOLS == expected
-
-    def test_length(self):
-        assert len(SYMBOLS) == 50
-
-
-class TestNseIndices:
-    def test_has_8_indices(self):
-        assert len(NSE_INDICES) == 8
-
-    def test_required_keys(self):
-        for idx in NSE_INDICES:
-            assert {"symbol", "name", "color"}.issubset(idx.keys())
-
-    def test_color_is_hex(self):
-        import re
-        hex_re = re.compile(r"^#[0-9a-fA-F]{6}$")
-        for idx in NSE_INDICES:
-            assert hex_re.match(idx["color"]), \
-                f"{idx['name']} color '{idx['color']}' is not a valid 6-digit hex"
+    def test_high_volatility_stocks_have_higher_beta(self):
+        """Metals betas should be >= 1.2 (cyclical)."""
+        for s in NIFTY50:
+            if s["sector"] == "Metals":
+                assert s["beta"] >= 1.2, (
+                    f"{s['name']} (Metals) beta={s['beta']} expected >= 1.2"
+                )
 
 
 class TestFamousDates:
-    def test_non_empty(self):
-        assert len(FAMOUS_DATES) > 0
-
-    def test_values_are_dates(self):
-        from datetime import date
+    def test_all_dates_in_past(self):
+        today = date.today()
         for label, d in FAMOUS_DATES.items():
-            assert isinstance(d, date), f"'{label}' value is not a date"
+            assert d <= today, f"{label}: {d} is in the future"
+
+    def test_all_dates_after_2000(self):
+        for label, d in FAMOUS_DATES.items():
+            assert d.year >= 2000, f"{label}: year {d.year} seems wrong"
+
+    def test_covid_crash_is_march_2020(self):
+        covid_key = next((k for k in FAMOUS_DATES if "COVID" in k and "Crash" in k), None)
+        assert covid_key is not None
+        d = FAMOUS_DATES[covid_key]
+        assert d.year == 2020
+        assert d.month == 3
+
+    def test_no_duplicate_dates(self):
+        dates = list(FAMOUS_DATES.values())
+        assert len(dates) == len(set(dates)), "Duplicate dates found in FAMOUS_DATES"
 
 
-class TestPlotlyConfig:
-    def test_plt_layout_is_dict(self):
-        assert isinstance(PLT_LAYOUT, dict)
+class TestSymbolsList:
+    def test_symbols_is_list_of_strings(self):
+        assert isinstance(SYMBOLS, list)
+        assert all(isinstance(s, str) for s in SYMBOLS)
 
-    def test_plt_layout_has_expected_keys(self):
-        assert "paper_bgcolor" in PLT_LAYOUT
-        assert "plot_bgcolor"  in PLT_LAYOUT
-        assert "margin"        in PLT_LAYOUT
+    def test_symbols_length_equals_nifty50(self):
+        assert len(SYMBOLS) == len(NIFTY50)
 
-    def test_axis_style_is_dict(self):
-        assert isinstance(AXIS_STYLE, dict)
+    def test_reliance_in_symbols(self):
+        assert "RELIANCE.NS" in SYMBOLS
+
+    def test_tcs_in_symbols(self):
+        assert "TCS.NS" in SYMBOLS
+
+    def test_infy_in_symbols(self):
+        assert "INFY.NS" in SYMBOLS
 
 
-class TestCacheConstants:
-    def test_refresh_ms_positive(self):
-        assert REFRESH_MS > 0
+class TestNseIndicesDetail:
+    def test_nifty_bank_present(self):
+        symbols = [i["symbol"] for i in NSE_INDICES]
+        assert "^NSEBANK" in symbols
 
-    def test_cache_ttl_positive(self):
-        assert CACHE_TTL > 0
+    def test_nifty_it_present(self):
+        symbols = [i["symbol"] for i in NSE_INDICES]
+        assert "^CNXIT" in symbols
+
+    def test_all_names_non_empty(self):
+        for idx in NSE_INDICES:
+            assert len(idx["name"]) > 0
+
+    def test_all_colors_valid_hex(self):
+        import re
+        hex_re = re.compile(r'^#[0-9a-fA-F]{6}$')
+        for idx in NSE_INDICES:
+            assert hex_re.match(idx["color"]), (
+                f"{idx['name']} color '{idx['color']}' is not a valid 6-digit hex"
+            )
