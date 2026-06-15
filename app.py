@@ -154,7 +154,6 @@ def safe_float(val, default=0.0):
 
 
 def _clean_df(df):
-    """Flatten MultiIndex columns and strip timezone from index."""
     if df is None or df.empty:
         return pd.DataFrame()
     if isinstance(df.columns, pd.MultiIndex):
@@ -171,7 +170,6 @@ def _clean_df(df):
 
 
 def _ticker_history(symbol, period):
-    """Fetch OHLCV via yf.Ticker.history(); always returns a clean flat DataFrame."""
     try:
         t  = yf.Ticker(symbol)
         df = t.history(period=period, auto_adjust=True)
@@ -224,20 +222,16 @@ def divider():
 
 
 # ============================================================
-# MARKET STATE  (computed once per script run)
+# MARKET STATE
 # ============================================================
 market_open, market_status, last_close_label = is_nse_open()
 
-# Session-state init
 if "_last_refresh" not in st.session_state:
     st.session_state["_last_refresh"] = time.time()
 
 
 # ============================================================
 # DATA FETCHERS
-# TTL is fixed at 60 s for live fetchers; cache is manually
-# busted via selective invalidation (not st.cache_data.clear()
-# which would also wipe the 1-hour Time Machine cache).
 # ============================================================
 
 @st.cache_data(ttl=60)
@@ -267,7 +261,6 @@ def fetch_all_stocks_5d():
 
 @st.cache_data(ttl=3600)
 def fetch_all_history():
-    """5-year history for all 50 stocks + macro proxies. Cached 1 hour."""
     result = {}
     all_syms = SYMBOLS + ["USDINR=X", "CL=F", "GC=F", "^NSEI"]
     for sym in all_syms:
@@ -278,7 +271,6 @@ def fetch_all_history():
 
 
 def _clear_live_caches():
-    """Bust only the 60-second live caches; preserve Time Machine's 1-hour cache."""
     fetch_ticker.clear()
     fetch_indices.clear()
     fetch_all_stocks_5d.clear()
@@ -378,67 +370,66 @@ def tm_get_snapshot(all_hist, target):
 
 
 # ============================================================
-# LIVE COUNTDOWN — rendered ABOVE the tabs via st.fragment
+# LIVE COUNTDOWN BANNER
 #
-# st.fragment() runs this function in its own mini-rerun loop
-# without re-executing the rest of the page (no tab flicker,
-# no blocking the Streamlit server thread for other users).
-# The loop ticks every 1 second inside the fragment only.
-# When countdown reaches 0 it clears live caches and calls
-# st.rerun() to reload price data across the whole page.
+# KEY DESIGN: no sleep loop. The fragment renders the banner
+# once per call. If market is open it sleeps exactly 1 second
+# then calls st.rerun(scope="fragment") — re-executing ONLY
+# this fragment, decrementing the counter by 1 each time.
+# The rest of the page (tabs, charts) is NEVER blocked.
+# When the counter hits 0, live caches are cleared and a full
+# page rerun fetches fresh prices.
 # ============================================================
 
 @st.fragment
 def live_countdown_banner():
     if not market_open:
         st.warning(
-            "NSE CLOSED — " + market_status +
+            "\u26a0\ufe0f NSE CLOSED \u2014 " + market_status +
             (" | " + last_close_label if last_close_label else "") +
             " | Showing last closing prices"
         )
         return
 
     elapsed   = time.time() - st.session_state["_last_refresh"]
-    secs_left = max(0, int(REFRESH_INTERVAL - elapsed))
+    remaining = max(0, int(REFRESH_INTERVAL - elapsed))
     ist_now   = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%I:%M:%S %p IST")
 
-    slot = st.empty()
+    filled   = REFRESH_INTERVAL - remaining
+    bar_on   = int((filled / REFRESH_INTERVAL) * 20)
+    prog_bar = "\u2588" * bar_on + "\u2591" * (20 - bar_on)
 
-    for remaining in range(secs_left, -1, -1):
-        filled   = REFRESH_INTERVAL - remaining
-        bar_on   = int((filled / REFRESH_INTERVAL) * 20)
-        bar_off  = 20 - bar_on
-        prog_bar = "\u2588" * bar_on + "\u2591" * bar_off
+    st.success(
+        f"\u25cf NSE OPEN \u2014 Last updated: **{ist_now}** "
+        f"\u2502 Next refresh in **{remaining}s** "
+        f"`{prog_bar}`"
+    )
 
-        slot.success(
-            f"\u25cf NSE OPEN \u2014 Last updated: **{ist_now}** "
-            f"\u2502 Next refresh in **{remaining}s** "
-            f"`{prog_bar}`"
-        )
-        if remaining == 0:
-            break
+    if remaining == 0:
+        # Time to reload data
+        _clear_live_caches()
+        st.session_state["_last_refresh"] = time.time()
+        st.rerun()           # full page rerun to fetch fresh prices
+    else:
+        # Sleep 1 second, then re-render only this fragment
         time.sleep(1)
-
-    # Countdown done — selectively clear live caches and reload
-    _clear_live_caches()
-    st.session_state["_last_refresh"] = time.time()
-    st.rerun()
+        st.rerun(scope="fragment")
 
 
 # ============================================================
-# CLOSED-MARKET STATIC BANNER (reused inside each tab)
+# STATIC CLOSED BANNER (used inside tabs)
 # ============================================================
 def _closed_banner():
     if not market_open:
         st.warning(
-            "NSE CLOSED — " + market_status +
+            "\u26a0\ufe0f NSE CLOSED \u2014 " + market_status +
             (" | " + last_close_label if last_close_label else "") +
             " | Showing last closing prices"
         )
 
 
 # ============================================================
-# RENDER COUNTDOWN ONCE — above all tabs
+# RENDER COUNTDOWN ABOVE TABS
 # ============================================================
 live_countdown_banner()
 
@@ -683,7 +674,7 @@ with tabs[4]:
     lp = 0.0
     if not sc_data.empty and "Close" in sc_data.columns:
         lp = safe_float(sc_data["Close"].iloc[-1])
-    price_lbl = "Buy Price (Rs.)" if market_open else "Buy Price — using last close (Rs.)"
+    price_lbl = "Buy Price (Rs.)" if market_open else "Buy Price \u2014 using last close (Rs.)"
     with c2:
         buy_p = st.number_input(
             price_lbl, min_value=0.01,
@@ -691,7 +682,7 @@ with tabs[4]:
         )
     with c3:
         qty = st.number_input("Quantity", min_value=1, value=10, step=1, key="pl_q")
-    sell_lbl = "Sell / Current Price (Rs.)" if market_open else "Sell Price (Rs.) — enter manually"
+    sell_lbl = "Sell / Current Price (Rs.)" if market_open else "Sell Price (Rs.) \u2014 enter manually"
     sell_p   = st.number_input(
         sell_lbl, min_value=0.01,
         value=round(lp, 2) if lp > 0 else 100.0, step=0.5, key="pl_sp",
@@ -791,9 +782,9 @@ with tabs[6]:
         )
     else:
         tm_date = FAMOUS_DATES[preset]
-        st.info("Loaded: " + preset + " — " + str(tm_date))
+        st.info("Loaded: " + preset + " \u2014 " + str(tm_date))
     if st.button("Travel to this date", key="tm_go"):
-        with st.spinner("Loading historical data (may take 30–60s first time)..."):
+        with st.spinner("Loading historical data (may take 30\u201360s first time)..."):
             all_hist = fetch_all_history()
         snap = tm_get_snapshot(all_hist, tm_date)
         if snap.empty:
@@ -806,7 +797,7 @@ with tabs[6]:
                     snap.reset_index(), x="Symbol", y="Close",
                     color="Close",
                     color_continuous_scale=["#6366f1", "#06b6d4", "#10b981"],
-                    title="Closing Prices — " + str(tm_date), template=PLT, height=360,
+                    title="Closing Prices \u2014 " + str(tm_date), template=PLT, height=360,
                 )
                 fig.update_layout(**PLT_LAYOUT, coloraxis_showscale=False)
                 style_fig(fig)
