@@ -1,9 +1,17 @@
 """Streamlit AppTest smoke-tests — every tab must load without an exception.
 
+These tests start the full Streamlit app via AppTest and require a live
+network connection (yfinance is mocked, but Streamlit itself boots fully).
+
+Marked as 'slow' so they are skipped in the default CI run:
+    pytest -m "not slow"       ← fast unit tests only (CI default)
+    pytest -m slow             ← run smoke tests locally
+    pytest                     ← run everything
+
 Requirements:
     pip install 'streamlit>=1.31' pytest pytest-timeout
 
-Run:
+Run locally:
     pytest tests/test_streamlit_app.py -v --timeout=60
 """
 from __future__ import annotations
@@ -12,13 +20,14 @@ import os
 import pytest
 
 # Guard: skip entire module when running in CI without display / Streamlit server.
-# CI runners set NO_BROWSER=1 or similar; AppTest itself does not need a display.
 pytest.importorskip("streamlit.testing.v1", reason="Requires Streamlit >= 1.31")
 
 from streamlit.testing.v1 import AppTest
 
 APP_PATH = os.path.join(os.path.dirname(__file__), "..", "app.py")
 _TIMEOUT  = int(os.getenv("APPTEST_TIMEOUT", "30"))  # seconds; override in CI
+
+pytestmark = pytest.mark.slow   # skip in CI unless -m slow is passed
 
 
 # ---------------------------------------------------------------------------
@@ -114,8 +123,6 @@ class TestTabNavigation:
 
     def test_seven_tabs_exist(self):
         at = _boot()
-        # st.tabs() produces tab elements; Streamlit AppTest exposes them via at.tabs
-        # Fall back gracefully if the attribute doesn't exist on older Streamlit
         tabs = getattr(at, "tabs", None)
         if tabs is None:
             pytest.skip("at.tabs not available in this Streamlit version")

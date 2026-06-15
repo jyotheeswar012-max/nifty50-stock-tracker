@@ -10,20 +10,69 @@ Fetch priority
 
 All @st.cache_data decorators live here so caching is co-located with
 the fetch logic.  app.py imports only the cached public functions.
+
+Importability note
+------------------
+When this module is imported outside a running Streamlit server (e.g. during
+pytest), `@st.cache_data` is replaced with a transparent no-op decorator so
+all public functions remain fully testable without a live Streamlit context.
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Callable
 
 import pandas as pd
 import pytz
-import streamlit as st
 import yfinance as yf
 
 from utils.constants import CACHE_TTL, NIFTY50, NSE_INDICES, SYMBOLS
 from utils.logger import get_logger
 
 log = get_logger(__name__)   # nse_tracker.utils.data
+
+# ---------------------------------------------------------------------------
+# Streamlit import guard
+# When running inside Streamlit (app.py), st.cache_data caches results.
+# When imported by pytest (no Streamlit context), cache_data is a no-op
+# passthrough so the module can be imported and tested without errors.
+# ---------------------------------------------------------------------------
+try:
+    import streamlit as st
+    # Probe whether the Streamlit runtime is actually active.
+    # Outside a running app, st.runtime.exists() returns False.
+    import streamlit.runtime
+    _STREAMLIT_RUNNING = streamlit.runtime.exists()
+except Exception:
+    _STREAMLIT_RUNNING = False
+
+if not _STREAMLIT_RUNNING:
+    # Minimal no-op stand-ins used during testing
+    class _FakeST:
+        @staticmethod
+        def cache_data(func=None, *, ttl=None, **_kwargs):
+            """Passthrough decorator — no caching, no Streamlit dependency."""
+            if func is not None:
+                return func
+            def decorator(f: Callable) -> Callable:
+                return f
+            return decorator
+
+        class session_state:
+            _store: dict = {}
+            @classmethod
+            def get(cls, key, default=None):
+                return cls._store.get(key, default)
+            def __class_getitem__(cls, key):
+                return cls._store.get(key)
+
+        @staticmethod
+        def _session_state_set(key, value):
+            _FakeST.session_state._store[key] = value
+
+    st = _FakeST()  # type: ignore[assignment]
+    # Patch session_state assignment used by _warn()
+    _orig_set = _FakeST._session_state_set
 
 # ---------------------------------------------------------------------------
 # nselib availability check (optional dependency)
@@ -223,9 +272,10 @@ _STALE_STORE: dict[str, pd.DataFrame] = {}
 def _warn(msg: str) -> None:
     """Queue a warning to be displayed by app.py via session_state."""
     try:
-        existing = st.session_state.get("data_warnings", [])
-        if msg not in existing:
-            st.session_state["data_warnings"] = existing + [msg]
+        if _STREAMLIT_RUNNING:
+            existing = st.session_state.get("data_warnings", [])
+            if msg not in existing:
+                st.session_state["data_warnings"] = existing + [msg]
     except Exception as exc:
         log.debug("_warn() could not write to session_state: %s", exc)
 
@@ -269,6 +319,7 @@ def _fetch_with_fallback(symbol: str, period: str) -> pd.DataFrame:
 
 # ---------------------------------------------------------------------------
 # Public cached fetch functions — import these in app.py
+# (cache_data is a no-op when not running inside Streamlit)
 # ---------------------------------------------------------------------------
 
 @st.cache_data(ttl=CACHE_TTL)
@@ -336,10 +387,6 @@ def fetch_all_history() -> dict[str, pd.DataFrame]:
     log.info("fetch_all_history: loaded %d/%d symbols", len(result), len(all_syms))
     return result
 
-
-# ---------------------------------------------------------------------------
-# Source health-check — used by app.py to show data source badge
-# ---------------------------------------------------------------------------
 
 @st.cache_data(ttl=60)
 def get_source_status() -> dict[str, str]:
