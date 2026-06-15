@@ -40,8 +40,6 @@ except Exception:
 # ============================================================
 # CONSTANTS
 # ============================================================
-REFRESH_INTERVAL = 60  # seconds
-
 NIFTY50 = [
     {"symbol":"RELIANCE.NS",   "name":"Reliance Industries",    "sector":"Energy",             "beta":0.90},
     {"symbol":"HDFCBANK.NS",   "name":"HDFC Bank",              "sector":"Financial Services", "beta":1.10},
@@ -226,12 +224,10 @@ def divider():
 # ============================================================
 market_open, market_status, last_close_label = is_nse_open()
 
-if "_last_refresh" not in st.session_state:
-    st.session_state["_last_refresh"] = time.time()
-
 
 # ============================================================
-# DATA FETCHERS
+# DATA FETCHERS  (ttl=60 means data auto-refreshes every 60s
+#                 on the next user interaction — no rerun needed)
 # ============================================================
 
 @st.cache_data(ttl=60)
@@ -268,13 +264,6 @@ def fetch_all_history():
         if not df.empty:
             result[sym] = df
     return result
-
-
-def _clear_live_caches():
-    fetch_ticker.clear()
-    fetch_indices.clear()
-    fetch_all_stocks_5d.clear()
-    build_stock_rows_cached.clear()
 
 
 def get_curr_prev(sym, stock_data):
@@ -370,54 +359,23 @@ def tm_get_snapshot(all_hist, target):
 
 
 # ============================================================
-# LIVE COUNTDOWN BANNER
-#
-# Renders once per page load with the current remaining time.
-# Uses st_autorefresh (1-second interval) when market is open
-# so the countdown ticks without blocking tab rendering.
-# When the 60s window expires, caches are cleared and the
-# session refresh timer is reset so fresh data is fetched.
+# STATUS BANNER  (static — no rerun, no sleep, no meta-refresh)
 # ============================================================
-
-def live_countdown_banner():
-    if not market_open:
+def status_banner():
+    ist_now = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%I:%M:%S %p IST")
+    if market_open:
+        st.success(
+            f"\u25cf NSE OPEN \u2014 {ist_now} "
+            f"| Data auto-refreshes every 60s on next interaction"
+        )
+    else:
         st.warning(
             "\u26a0\ufe0f NSE CLOSED \u2014 " + market_status +
             (" | " + last_close_label if last_close_label else "") +
             " | Showing last closing prices"
         )
-        return
-
-    # Inject 1-second auto-refresh via HTML meta tag (no extra package needed)
-    st.markdown(
-        '<meta http-equiv="refresh" content="1">',
-        unsafe_allow_html=True,
-    )
-
-    elapsed   = time.time() - st.session_state["_last_refresh"]
-    remaining = max(0, int(REFRESH_INTERVAL - elapsed))
-
-    if remaining == 0:
-        _clear_live_caches()
-        st.session_state["_last_refresh"] = time.time()
-        elapsed   = 0
-        remaining = REFRESH_INTERVAL
-
-    ist_now  = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%I:%M:%S %p IST")
-    filled   = REFRESH_INTERVAL - remaining
-    bar_on   = int((filled / REFRESH_INTERVAL) * 20)
-    prog_bar = "\u2588" * bar_on + "\u2591" * (20 - bar_on)
-
-    st.success(
-        f"\u25cf NSE OPEN \u2014 Last updated: **{ist_now}** "
-        f"\u2502 Next refresh in **{remaining}s** "
-        f"`{prog_bar}`"
-    )
 
 
-# ============================================================
-# STATIC CLOSED BANNER (used inside tabs)
-# ============================================================
 def _closed_banner():
     if not market_open:
         st.warning(
@@ -428,13 +386,13 @@ def _closed_banner():
 
 
 # ============================================================
-# RENDER COUNTDOWN ABOVE TABS  (no blocking, no rerun here)
+# RENDER BANNER
 # ============================================================
-live_countdown_banner()
+status_banner()
 
 
 # ============================================================
-# MAIN TABS  — rendered on EVERY page load
+# MAIN TABS
 # ============================================================
 TAB_LABELS = [
     "Market Overview",
