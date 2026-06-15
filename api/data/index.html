@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Real-time NSE & Nifty 50 market tracker built with Streamlit and Python">
+        <meta name="description" content="Real-time NSE & Nifty 50 market tracker — live prices, P&L calculator, Time Machine, and structured logging">
       
       
         <meta name="author" content="Jyotheeswar Reddy">
@@ -15,7 +15,7 @@
         <link rel="canonical" href="https://jyotheeswar012-max.github.io/nifty50-stock-tracker/api/data/">
       
       
-        <link rel="prev" href="../../methodology/">
+        <link rel="prev" href="../">
       
       
         <link rel="next" href="../calculations/">
@@ -24,7 +24,7 @@
         
       
       
-      <link rel="icon" href="../../assets/images/favicon.png">
+      <link rel="icon" href="../../assets/logo.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
@@ -55,19 +55,11 @@
       
     
     
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
     <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
-  
-
-
-  
-  
-
-<script id="__analytics">function __md_analytics(){function e(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],e("js",new Date),e("config","G-XXXXXXXXXX"),document.addEventListener("DOMContentLoaded",(function(){document.forms.search&&document.forms.search.query.addEventListener("blur",(function(){this.value&&e("event","search",{search_term:this.value})}));document$.subscribe((function(){var t=document.forms.feedback;if(void 0!==t)for(var a of t.querySelectorAll("[type=submit]"))a.addEventListener("click",(function(a){a.preventDefault();var n=document.location.pathname,d=this.getAttribute("data-md-value");e("event","feedback",{page:n,data:d}),t.firstElementChild.disabled=!0;var r=t.querySelector(".md-feedback__note [data-md-value='"+d+"']");r&&(r.hidden=!1)})),t.hidden=!1})),location$.subscribe((function(t){e("config","G-XXXXXXXXXX",{page_path:t.pathname})}))}));var t=document.createElement("script");t.async=!0,t.src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX",document.getElementById("__analytics").insertAdjacentElement("afterEnd",t)}</script>
-  
-    <script>"undefined"!=typeof __md_analytics&&__md_analytics()</script>
-  
 
     
     
@@ -90,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#data-functions-utilsdatapy" class="md-skip">
+        <a href="#utilsdata-data-fetching" class="md-skip">
           Skip to content
         </a>
       
@@ -98,6 +90,10 @@
     <div data-md-component="announce">
       
     </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
     
     
       
@@ -108,8 +104,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href="../.." title="Nifty 50 Tracker" class="md-header__button md-logo" aria-label="Nifty 50 Tracker" data-md-component="logo">
       
-  
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+  <img src="../../assets/logo.svg" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -182,6 +177,11 @@
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
       </label>
       <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
         
         <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
           
@@ -295,7 +295,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+        <a href="../" class="md-tabs__link">
           
   
   
@@ -394,8 +394,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href="../.." title="Nifty 50 Tracker" class="md-nav__button md-logo" aria-label="Nifty 50 Tracker" data-md-component="logo">
       
-  
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+  <img src="../../assets/logo.svg" alt="logo">
 
     </a>
     Nifty 50 Tracker
@@ -462,7 +461,9 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
         
           
           <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
@@ -645,6 +646,34 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -694,7 +723,9 @@
       
         
 
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
   
   
   
@@ -703,7 +734,7 @@
   
     <label class="md-nav__title" for="__toc">
       <span class="md-nav__icon md-icon"></span>
-      Table of contents
+      On this page
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
@@ -773,6 +804,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#get_source_status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_source_status()
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -825,6 +867,34 @@
     
   
     Chart Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../logger/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logger
   
 
     
@@ -939,7 +1009,9 @@
                   <div class="md-sidebar__inner">
                     
 
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
   
   
   
@@ -948,7 +1020,7 @@
   
     <label class="md-nav__title" for="__toc">
       <span class="md-nav__icon md-icon"></span>
-      Table of contents
+      On this page
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
@@ -1018,6 +1090,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#get_source_status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_source_status()
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1038,55 +1121,51 @@
   
 
 
-<h1 id="data-functions-utilsdatapy">Data Functions — <code>utils/data.py</code><a class="headerlink" href="#data-functions-utilsdatapy" title="Permanent link">&para;</a></h1>
-<p>All data-fetching logic is isolated in <code>utils/data.py</code>. Functions are designed to be pure (no Streamlit side-effects) so they can be tested and reused outside the UI.</p>
+<h1 id="utilsdata-data-fetching"><code>utils.data</code> — Data Fetching<a class="headerlink" href="#utilsdata-data-fetching" title="Permanent link">&para;</a></h1>
+<p>All network I/O lives here. Every public function is wrapped with <code>@st.cache_data</code> and implements the yfinance → nselib → stale-cache fallback chain.</p>
 <hr />
 <h2 id="is_nse_open"><code>is_nse_open()</code><a class="headerlink" href="#is_nse_open" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">is_nse_open</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
-</code></pre></div>
-<p>Determines whether the NSE market is currently trading.</p>
-<p><strong>Returns:</strong> <code>(is_open, status_message, last_close_label)</code></p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">is_nse_open</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span>
+</span></code></pre></div>
+<p>Determines the current NSE market state based on IST time.</p>
+<p><strong>Returns</strong></p>
 <table>
 <thead>
 <tr>
-<th>Return</th>
+<th>Position</th>
 <th>Type</th>
 <th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>is_open</code></td>
+<td><code>[0]</code></td>
 <td><code>bool</code></td>
-<td><code>True</code> if currently within NSE trading hours (Mon–Fri, 09:15–15:30 IST)</td>
+<td><code>True</code> if market is currently open (9:15 AM–3:30 PM IST, weekdays only)</td>
 </tr>
 <tr>
-<td><code>status_message</code></td>
+<td><code>[1]</code></td>
 <td><code>str</code></td>
-<td>Human-readable status, e.g. <code>"Market opens at 09:15 AM"</code></td>
+<td>Status label: <code>"Open"</code>, <code>"Closed"</code>, <code>"Pre-Market"</code>, or <code>"Weekend"</code></td>
 </tr>
 <tr>
-<td><code>last_close_label</code></td>
+<td><code>[2]</code></td>
 <td><code>str</code></td>
-<td>Label for the last session, e.g. <code>"Last close: Fri 13 Jun"</code></td>
+<td>Human-readable last-close label (empty string when market is open)</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Example:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">utils.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_nse_open</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">open_</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">label</span> <span class="o">=</span> <span class="n">is_nse_open</span><span class="p">()</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">if</span> <span class="n">open_</span><span class="p">:</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;NSE is live&quot;</span><span class="p">)</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;NSE closed — </span><span class="si">{</span><span class="n">status</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</code></pre></div></p>
+<p><strong>Example</strong></p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">open_</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">last_close</span> <span class="o">=</span> <span class="n">is_nse_open</span><span class="p">()</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># (False, &#39;Closed&#39;, &#39;Last Close: 15 Jun 2026, 3:30 PM IST&#39;)</span>
+</span></code></pre></div>
 <hr />
 <h2 id="fetch_tickersymbol-period"><code>fetch_ticker(symbol, period)</code><a class="headerlink" href="#fetch_tickersymbol-period" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">fetch_ticker</span><span class="p">(</span><span class="n">symbol</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">period</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;3mo&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
-</code></pre></div>
-<p>Fetches OHLCV history for a single ticker.</p>
-<p><strong>Parameters:</strong></p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nd">@st</span><span class="o">.</span><span class="n">cache_data</span><span class="p">(</span><span class="n">ttl</span><span class="o">=</span><span class="n">CACHE_TTL</span><span class="p">)</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">fetch_ticker</span><span class="p">(</span><span class="n">symbol</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">period</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;3mo&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+</span></code></pre></div>
+<p>Fetches daily OHLCV bars for a single symbol.</p>
+<p><strong>Parameters</strong></p>
 <table>
 <thead>
 <tr>
@@ -1101,55 +1180,87 @@
 <td><code>symbol</code></td>
 <td><code>str</code></td>
 <td>—</td>
-<td>Yahoo Finance ticker symbol, e.g. <code>"^NSEI"</code>, <code>"RELIANCE.NS"</code></td>
+<td>Yahoo Finance ticker (e.g. <code>"RELIANCE.NS"</code>, <code>"^NSEI"</code>)</td>
 </tr>
 <tr>
 <td><code>period</code></td>
 <td><code>str</code></td>
 <td><code>"3mo"</code></td>
-<td>yfinance period string: <code>1mo</code>, <code>3mo</code>, <code>6mo</code>, <code>1y</code>, <code>2y</code>, <code>5y</code></td>
+<td>Lookback period: <code>"1d"</code>, <code>"5d"</code>, <code>"1mo"</code>, <code>"3mo"</code>, <code>"6mo"</code>, <code>"1y"</code>, <code>"2y"</code>, <code>"5y"</code></td>
 </tr>
 </tbody>
 </table>
-<p><strong>Returns:</strong> <code>pd.DataFrame</code> with columns <code>Open, High, Low, Close, Volume</code> and a <code>DatetimeIndex</code>.</p>
-<p><strong>Example:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">utils.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_ticker</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">nifty</span> <span class="o">=</span> <span class="n">fetch_ticker</span><span class="p">(</span><span class="s2">&quot;^NSEI&quot;</span><span class="p">,</span> <span class="s2">&quot;1y&quot;</span><span class="p">)</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">nifty</span><span class="o">.</span><span class="n">tail</span><span class="p">())</span>
-</code></pre></div></p>
+<p><strong>Returns</strong> <code>pd.DataFrame</code> with columns <code>Open</code>, <code>High</code>, <code>Low</code>, <code>Close</code>, <code>Volume</code> and a <code>DatetimeIndex</code>. Returns an empty DataFrame on failure — never raises.</p>
+<p><strong>Example</strong></p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">df</span> <span class="o">=</span> <span class="n">fetch_ticker</span><span class="p">(</span><span class="s2">&quot;TCS.NS&quot;</span><span class="p">,</span> <span class="s2">&quot;1y&quot;</span><span class="p">)</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">tail</span><span class="p">(</span><span class="mi">3</span><span class="p">))</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1">#             Open     High      Low    Close  Volume</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># 2026-06-13  3850.0  3891.5  3832.0  3877.20  987450</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># 2026-06-14  3880.0  3905.0  3860.0  3890.00  1124300</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="c1"># 2026-06-15  3895.0  3920.0  3875.5  3902.50  876200</span>
+</span></code></pre></div>
 <hr />
 <h2 id="fetch_intradaysymbol"><code>fetch_intraday(symbol)</code><a class="headerlink" href="#fetch_intradaysymbol" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">fetch_intraday</span><span class="p">(</span><span class="n">symbol</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
-</code></pre></div>
-<p>Fetches today's 5-minute intraday candles for a stock. Used to compute live price when the market is open.</p>
-<p><strong>Returns:</strong> <code>pd.DataFrame</code> with 5-minute OHLCV data, or an empty DataFrame on failure.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nd">@st</span><span class="o">.</span><span class="n">cache_data</span><span class="p">(</span><span class="n">ttl</span><span class="o">=</span><span class="n">CACHE_TTL</span><span class="p">)</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">fetch_intraday</span><span class="p">(</span><span class="n">symbol</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+</span></code></pre></div>
+<p>Fetches today's 1-minute OHLCV bars. Intended for use <strong>during market hours only</strong> — returns an empty DataFrame outside market hours.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>symbol</code></td>
+<td><code>str</code></td>
+<td>Yahoo Finance ticker (e.g. <code>"INFY.NS"</code>)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong> <code>pd.DataFrame</code> with timezone-aware <code>DatetimeIndex</code> (Asia/Kolkata).</p>
+<div class="admonition note">
+<p class="admonition-title">Used internally by <code>get_last_price()</code></p>
+<p>You rarely need to call this directly. <code>build_stock_rows()</code> in <code>calculations.py</code> calls it via a passed-in function reference so it remains testable without network access.</p>
+</div>
 <hr />
 <h2 id="fetch_indices"><code>fetch_indices()</code><a class="headerlink" href="#fetch_indices" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">fetch_indices</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]:</span>
-</code></pre></div>
-<p>Fetches recent OHLCV history for all NSE indices defined in <code>utils/constants.py → NSE_INDICES</code>.</p>
-<p><strong>Returns:</strong> <code>dict</code> mapping each index symbol to its OHLCV DataFrame.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nd">@st</span><span class="o">.</span><span class="n">cache_data</span><span class="p">(</span><span class="n">ttl</span><span class="o">=</span><span class="n">CACHE_TTL</span><span class="p">)</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">fetch_indices</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]</span>
+</span></code></pre></div>
+<p>Fetches last-5-day daily bars for all indices defined in <code>utils.constants.NSE_INDICES</code>.</p>
+<p><strong>Returns</strong> <code>dict</code> mapping <code>symbol → DataFrame</code>. Missing symbols are omitted (not included as empty DataFrames).</p>
 <hr />
 <h2 id="fetch_all_stocks_5d"><code>fetch_all_stocks_5d()</code><a class="headerlink" href="#fetch_all_stocks_5d" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">fetch_all_stocks_5d</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]:</span>
-</code></pre></div>
-<p>Batch-fetches the last 5 trading days of data for all 50 Nifty stocks. Used to populate the <strong>All 50 Companies</strong> and <strong>Gainers &amp; Losers</strong> tabs.</p>
-<div class="admonition tip">
-<p class="admonition-title">Tip</p>
-<p>This function is wrapped in <code>@st.cache_data(ttl=CACHE_TTL)</code> in <code>app.py</code> to prevent redundant API calls.</p>
-</div>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nd">@st</span><span class="o">.</span><span class="n">cache_data</span><span class="p">(</span><span class="n">ttl</span><span class="o">=</span><span class="n">CACHE_TTL</span><span class="p">)</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">fetch_all_stocks_5d</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]</span>
+</span></code></pre></div>
+<p>Fetches last-5-day daily bars for all 50 Nifty 50 stocks. Used by the All Companies, Gainers, and Losers tabs.</p>
+<p><strong>Returns</strong> <code>dict</code> mapping <code>symbol → DataFrame</code>. Symbols that fail all sources are omitted.</p>
 <hr />
 <h2 id="fetch_all_history"><code>fetch_all_history()</code><a class="headerlink" href="#fetch_all_history" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">fetch_all_history</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]:</span>
-</code></pre></div>
-<p>Fetches 5 years of daily history for all 50 Nifty stocks. Used exclusively by the <strong>Time Machine</strong> tab.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nd">@st</span><span class="o">.</span><span class="n">cache_data</span><span class="p">(</span><span class="n">ttl</span><span class="o">=</span><span class="mi">3600</span><span class="p">)</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">fetch_all_history</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]</span>
+</span></code></pre></div>
+<p>Fetches 5-year daily OHLCV for all 50 Nifty stocks <strong>plus</strong> macro symbols: <code>USDINR=X</code>, <code>CL=F</code> (crude oil), <code>GC=F</code> (gold), <code>^NSEI</code>.</p>
 <div class="admonition warning">
-<p class="admonition-title">Performance</p>
-<p>This call can take 30–60 seconds on the first load. Results are cached for the Streamlit session lifetime (<code>ttl=3600</code>).</p>
+<p class="admonition-title">Heavy operation</p>
+<p>This makes ~54 sequential API calls and can take 30–60 seconds on first load. It is cached for 1 hour (<code>ttl=3600</code>). Subsequent calls within the hour are instant.</p>
 </div>
-
-
+<hr />
+<h2 id="get_source_status"><code>get_source_status()</code><a class="headerlink" href="#get_source_status" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nd">@st</span><span class="o">.</span><span class="n">cache_data</span><span class="p">(</span><span class="n">ttl</span><span class="o">=</span><span class="mi">60</span><span class="p">)</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_source_status</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span>
+</span></code></pre></div>
+<p>Probes each data source with a lightweight fetch and returns its current health.</p>
+<p><strong>Returns</strong> <code>dict</code> with keys <code>"yfinance"</code> and <code>"nselib"</code>, values one of: <code>"ok"</code>, <code>"degraded"</code>, <code>"down"</code>, <code>"not installed"</code>.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">status</span> <span class="o">=</span> <span class="n">get_source_status</span><span class="p">()</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="c1"># {&#39;yfinance&#39;: &#39;ok&#39;, &#39;nselib&#39;: &#39;not installed&#39;}</span>
+</span></code></pre></div>
 
 
 
@@ -1158,6 +1269,9 @@
 
 
   
+  
+
+
 
 
 
@@ -1180,6 +1294,46 @@
       
         <footer class="md-footer">
   
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: Overview">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Overview
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../calculations/" class="md-footer__link md-footer__link--next" aria-label="Next: Calculation Functions">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Calculation Functions
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
   <div class="md-footer-meta md-typeset">
     <div class="md-footer-meta__inner md-grid">
       <div class="md-copyright">
@@ -1199,10 +1353,7 @@
     
     
     
-      
-      
-    
-    <a href="https://github.com/jyotheeswar012-max" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+    <a href="https://github.com/jyotheeswar012-max/nifty50-stock-tracker" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
     </a>
   
@@ -1221,7 +1372,7 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.expand", "navigation.top", "navigation.footer", "search.highlight", "search.suggest", "search.share", "content.code.copy", "content.code.annotate", "content.tooltips", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
       <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>

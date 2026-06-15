@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Real-time NSE & Nifty 50 market tracker built with Streamlit and Python">
+        <meta name="description" content="Real-time NSE & Nifty 50 market tracker — live prices, P&L calculator, Time Machine, and structured logging">
       
       
         <meta name="author" content="Jyotheeswar Reddy">
@@ -15,7 +15,7 @@
         <link rel="canonical" href="https://jyotheeswar012-max.github.io/nifty50-stock-tracker/testing/">
       
       
-        <link rel="prev" href="../api/charts/">
+        <link rel="prev" href="../api/logger/">
       
       
         <link rel="next" href="../contributing/">
@@ -24,7 +24,7 @@
         
       
       
-      <link rel="icon" href="../assets/images/favicon.png">
+      <link rel="icon" href="../assets/logo.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
@@ -55,19 +55,11 @@
       
     
     
+      <link rel="stylesheet" href="../assets/extra.css">
+    
     <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
-  
-
-
-  
-  
-
-<script id="__analytics">function __md_analytics(){function e(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],e("js",new Date),e("config","G-XXXXXXXXXX"),document.addEventListener("DOMContentLoaded",(function(){document.forms.search&&document.forms.search.query.addEventListener("blur",(function(){this.value&&e("event","search",{search_term:this.value})}));document$.subscribe((function(){var t=document.forms.feedback;if(void 0!==t)for(var a of t.querySelectorAll("[type=submit]"))a.addEventListener("click",(function(a){a.preventDefault();var n=document.location.pathname,d=this.getAttribute("data-md-value");e("event","feedback",{page:n,data:d}),t.firstElementChild.disabled=!0;var r=t.querySelector(".md-feedback__note [data-md-value='"+d+"']");r&&(r.hidden=!1)})),t.hidden=!1})),location$.subscribe((function(t){e("config","G-XXXXXXXXXX",{page_path:t.pathname})}))}));var t=document.createElement("script");t.async=!0,t.src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX",document.getElementById("__analytics").insertAdjacentElement("afterEnd",t)}</script>
-  
-    <script>"undefined"!=typeof __md_analytics&&__md_analytics()</script>
-  
 
     
     
@@ -99,6 +91,10 @@
       
     </div>
     
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
     
       
 
@@ -108,8 +104,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href=".." title="Nifty 50 Tracker" class="md-header__button md-logo" aria-label="Nifty 50 Tracker" data-md-component="logo">
       
-  
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+  <img src="../assets/logo.svg" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -182,6 +177,11 @@
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
       </label>
       <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
         
         <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
           
@@ -293,7 +293,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../api/data/" class="md-tabs__link">
+        <a href="../api/" class="md-tabs__link">
           
   
   
@@ -394,8 +394,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href=".." title="Nifty 50 Tracker" class="md-nav__button md-logo" aria-label="Nifty 50 Tracker" data-md-component="logo">
       
-  
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+  <img src="../assets/logo.svg" alt="logo">
 
     </a>
     Nifty 50 Tracker
@@ -462,7 +461,9 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
         
           
           <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
@@ -604,7 +605,9 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
         
           
           <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
@@ -635,6 +638,34 @@
 
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
             
               
                 
@@ -720,6 +751,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/logger/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logger
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -780,7 +839,9 @@
       
         
 
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
   
   
   
@@ -789,7 +850,7 @@
   
     <label class="md-nav__title" for="__toc">
       <span class="md-nav__icon md-icon"></span>
-      Table of contents
+      On this page
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
@@ -805,10 +866,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#test-suite-structure" class="md-nav__link">
+  <a href="#test-structure" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Test Suite Structure
+        Test Structure
       
     </span>
   </a>
@@ -816,10 +877,49 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#key-fixtures-conftestpy" class="md-nav__link">
+  <a href="#what-is-tested" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Key Fixtures (conftest.py)
+        What Is Tested
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What Is Tested">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test_calculationspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        test_calculations.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test_chartspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        test_charts.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mocking-network-calls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mocking Network Calls
       
     </span>
   </a>
@@ -827,10 +927,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#ci-with-github-actions" class="md-nav__link">
+  <a href="#ci-github-actions" class="md-nav__link">
     <span class="md-ellipsis">
       
-        CI with GitHub Actions
+        CI — GitHub Actions
       
     </span>
   </a>
@@ -912,7 +1012,9 @@
                   <div class="md-sidebar__inner">
                     
 
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
   
   
   
@@ -921,7 +1023,7 @@
   
     <label class="md-nav__title" for="__toc">
       <span class="md-nav__icon md-icon"></span>
-      Table of contents
+      On this page
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
@@ -937,10 +1039,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#test-suite-structure" class="md-nav__link">
+  <a href="#test-structure" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Test Suite Structure
+        Test Structure
       
     </span>
   </a>
@@ -948,10 +1050,49 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#key-fixtures-conftestpy" class="md-nav__link">
+  <a href="#what-is-tested" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Key Fixtures (conftest.py)
+        What Is Tested
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What Is Tested">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test_calculationspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        test_calculations.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test_chartspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        test_charts.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mocking-network-calls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mocking Network Calls
       
     </span>
   </a>
@@ -959,10 +1100,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#ci-with-github-actions" class="md-nav__link">
+  <a href="#ci-github-actions" class="md-nav__link">
     <span class="md-ellipsis">
       
-        CI with GitHub Actions
+        CI — GitHub Actions
       
     </span>
   </a>
@@ -990,94 +1131,135 @@
 
 
 <h1 id="testing">Testing<a class="headerlink" href="#testing" title="Permanent link">&para;</a></h1>
-<p>The project uses <strong>pytest</strong> with three test layers: unit, integration, and Streamlit smoke tests.</p>
+<p>The test suite uses <code>pytest</code> and targets <code>utils/calculations.py</code> and <code>utils/charts.py</code> — the two modules with zero I/O dependencies.</p>
+<hr />
 <h2 id="running-tests">Running Tests<a class="headerlink" href="#running-tests" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Install test dependencies</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements-test.txt
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Run all tests</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>pytest
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Run with coverage report</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>pytest<span class="w"> </span>--cov<span class="o">=</span>utils<span class="w"> </span>--cov-report<span class="o">=</span>html
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>open<span class="w"> </span>htmlcov/index.html
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="c1"># Run a specific layer</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>pytest<span class="w"> </span>tests/test_utils.py<span class="w"> </span>-v<span class="w">       </span><span class="c1"># unit tests</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>pytest<span class="w"> </span>tests/test_pnl.py<span class="w"> </span>-v<span class="w">         </span><span class="c1"># P&amp;L tests</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>pytest<span class="w"> </span>tests/test_api.py<span class="w"> </span>-v<span class="w">         </span><span class="c1"># integration (mocked API)</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>pytest<span class="w"> </span>tests/test_streamlit_app.py<span class="w">  </span><span class="c1"># Streamlit smoke tests</span>
-</code></pre></div>
-<h2 id="test-suite-structure">Test Suite Structure<a class="headerlink" href="#test-suite-structure" title="Permanent link">&para;</a></h2>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Install test dependencies</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements-test.txt
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Run all tests</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>pytest
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Run with coverage report</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>pytest<span class="w"> </span>--cov<span class="o">=</span>utils<span class="w"> </span>--cov-report<span class="o">=</span>term-missing
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># Run a specific test file</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>pytest<span class="w"> </span>tests/test_calculations.py<span class="w"> </span>-v
+</span></code></pre></div>
+<hr />
+<h2 id="test-structure">Test Structure<a class="headerlink" href="#test-structure" title="Permanent link">&para;</a></h2>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>tests/
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>├── __init__.py
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>├── test_calculations.py   ← P&amp;L, beta, price helpers, stock rows
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>├── test_charts.py         ← Chart builders return valid Figure objects
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>└── conftest.py            ← Shared fixtures (sample DataFrames)
+</span></code></pre></div>
+<hr />
+<h2 id="what-is-tested">What Is Tested<a class="headerlink" href="#what-is-tested" title="Permanent link">&para;</a></h2>
+<h3 id="test_calculationspy"><code>test_calculations.py</code><a class="headerlink" href="#test_calculationspy" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>File</th>
-<th>Type</th>
-<th>Tests</th>
-<th>What it covers</th>
+<th>Test</th>
+<th>What it verifies</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>tests/conftest.py</code></td>
-<td>Fixtures</td>
-<td>—</td>
-<td>Shared OHLCV data, holdings, mock yfinance ticker</td>
+<td><code>test_safe_float_nan</code></td>
+<td>Returns default on NaN</td>
 </tr>
 <tr>
-<td><code>tests/test_utils.py</code></td>
-<td>Unit</td>
-<td>20</td>
-<td><code>clean_ohlcv</code>, returns, Sharpe ratio, max drawdown, MAs</td>
+<td><code>test_safe_float_inf</code></td>
+<td>Returns default on Infinity</td>
 </tr>
 <tr>
-<td><code>tests/test_pnl.py</code></td>
-<td>Unit</td>
-<td>10</td>
-<td><code>calc_pl</code>, portfolio summary, edge cases (zero shares)</td>
+<td><code>test_calc_pl_gain</code></td>
+<td>Positive P&amp;L calculated correctly</td>
 </tr>
 <tr>
-<td><code>tests/test_api.py</code></td>
-<td>Integration</td>
-<td>13</td>
-<td>Mocked yfinance: return types, column names, period passthrough</td>
+<td><code>test_calc_pl_loss</code></td>
+<td>Negative P&amp;L (loss) calculated correctly</td>
 </tr>
 <tr>
-<td><code>tests/test_streamlit_app.py</code></td>
-<td>Smoke</td>
-<td>10</td>
-<td>AppTest: no exceptions, charts, KPIs, sidebar, error-free load</td>
+<td><code>test_calc_pl_breakeven</code></td>
+<td>Zero P&amp;L when buy == sell</td>
+</tr>
+<tr>
+<td><code>test_calc_beta_impact</code></td>
+<td>Stock move = nifty_pct × beta</td>
+</tr>
+<tr>
+<td><code>test_build_stock_rows_structure</code></td>
+<td>Returns DataFrame with required columns</td>
+</tr>
+<tr>
+<td><code>test_build_stock_rows_na_on_missing</code></td>
+<td>Missing symbols get "N/A" not exceptions</td>
 </tr>
 </tbody>
 </table>
-<h2 id="key-fixtures-conftestpy">Key Fixtures (<code>conftest.py</code>)<a class="headerlink" href="#key-fixtures-conftestpy" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">raw_price_data</span><span class="p">():</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;30-day synthetic OHLCV DataFrame.&quot;&quot;&quot;</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="k">def</span><span class="w"> </span><span class="nf">cleaned_price_data</span><span class="p">(</span><span class="n">raw_price_data</span><span class="p">):</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Same data with DatetimeIndex applied.&quot;&quot;&quot;</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="k">def</span><span class="w"> </span><span class="nf">holdings_data</span><span class="p">():</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;4-stock portfolio: RELIANCE, HDFCBANK, INFY, TCS.&quot;&quot;&quot;</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="k">def</span><span class="w"> </span><span class="nf">mock_yfinance_ticker</span><span class="p">(</span><span class="n">cleaned_price_data</span><span class="p">):</span>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Mocked yfinance.Ticker — no real API calls.&quot;&quot;&quot;</span>
-</code></pre></div>
-<h2 id="ci-with-github-actions">CI with GitHub Actions<a class="headerlink" href="#ci-with-github-actions" title="Permanent link">&para;</a></h2>
-<p>Tests run automatically on every push and pull request via <code>.github/workflows/</code> (see the repository). To trigger manually:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>gh<span class="w"> </span>workflow<span class="w"> </span>run<span class="w"> </span>tests.yml
-</code></pre></div>
-<div class="admonition tip">
-<p class="admonition-title">AppTest Requirement</p>
-<p>The Streamlit smoke tests require <code>streamlit &gt;= 1.31</code>. They are automatically skipped (<code>pytest.importorskip</code>) on older versions.</p>
-</div>
-
-
+<h3 id="test_chartspy"><code>test_charts.py</code><a class="headerlink" href="#test_chartspy" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th>What it verifies</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>test_build_price_chart_line</code></td>
+<td>Returns <code>go.Figure</code> for Line type</td>
+</tr>
+<tr>
+<td><code>test_build_price_chart_candle</code></td>
+<td>Returns <code>go.Figure</code> for Candlestick type</td>
+</tr>
+<tr>
+<td><code>test_build_price_chart_empty_df</code></td>
+<td>Returns empty <code>go.Figure</code> on empty input</td>
+</tr>
+<tr>
+<td><code>test_build_pct_bar</code></td>
+<td>Returns <code>go.Figure</code></td>
+</tr>
+<tr>
+<td><code>test_build_trend_chart_normalised</code></td>
+<td>First value of each series normalises to 100</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="mocking-network-calls">Mocking Network Calls<a class="headerlink" href="#mocking-network-calls" title="Permanent link">&para;</a></h2>
+<p>Since <code>calculations.py</code> accepts <code>fetch_intraday_fn</code> as a parameter, network calls are trivially mockable:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">fake_intraday</span><span class="p">(</span><span class="n">symbol</span><span class="p">):</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns a synthetic 1-minute bar DataFrame.&quot;&quot;&quot;</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>        <span class="p">{</span><span class="s2">&quot;Open&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mf">100.0</span><span class="p">],</span> <span class="s2">&quot;High&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mf">105.0</span><span class="p">],</span> <span class="s2">&quot;Low&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mf">99.0</span><span class="p">],</span> <span class="s2">&quot;Close&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mf">103.5</span><span class="p">],</span> <span class="s2">&quot;Volume&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">5000</span><span class="p">]},</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>        <span class="n">index</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">([</span><span class="s2">&quot;2026-06-15 09:15:00&quot;</span><span class="p">])</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="p">)</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="k">def</span><span class="w"> </span><span class="nf">test_get_last_price_market_open</span><span class="p">(</span><span class="n">sample_5d_data</span><span class="p">):</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">curr</span><span class="p">,</span> <span class="n">prev</span> <span class="o">=</span> <span class="n">get_last_price</span><span class="p">(</span><span class="s2">&quot;RELIANCE.NS&quot;</span><span class="p">,</span> <span class="n">sample_5d_data</span><span class="p">,</span> <span class="kc">True</span><span class="p">,</span> <span class="n">fake_intraday</span><span class="p">)</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="k">assert</span> <span class="n">curr</span> <span class="o">==</span> <span class="mf">103.5</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="k">assert</span> <span class="n">prev</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+</span></code></pre></div>
+<hr />
+<h2 id="ci-github-actions">CI — GitHub Actions<a class="headerlink" href="#ci-github-actions" title="Permanent link">&para;</a></h2>
+<p>Tests run automatically on every push and pull request via <code>.github/workflows/tests.yml</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Tests</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">push</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">pull_request</span><span class="p p-Indicator">]</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">jobs</span><span class="p">:</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">test</span><span class="p">:</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v5</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">        </span><span class="nt">with</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> python-version</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;3.11&#39;</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pip install -r requirements.txt -r requirements-test.txt</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest --tb=short</span>
+</span></code></pre></div>
 
 
 
@@ -1086,6 +1268,9 @@
 
 
   
+  
+
+
 
 
 
@@ -1108,6 +1293,46 @@
       
         <footer class="md-footer">
   
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../api/logger/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Logger">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Logger
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../contributing/" class="md-footer__link md-footer__link--next" aria-label="Next: Contributing">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Contributing
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
   <div class="md-footer-meta md-typeset">
     <div class="md-footer-meta__inner md-grid">
       <div class="md-copyright">
@@ -1127,10 +1352,7 @@
     
     
     
-      
-      
-    
-    <a href="https://github.com/jyotheeswar012-max" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+    <a href="https://github.com/jyotheeswar012-max/nifty50-stock-tracker" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
     </a>
   
@@ -1149,7 +1371,7 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "content.code.annotate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.expand", "navigation.top", "navigation.footer", "search.highlight", "search.suggest", "search.share", "content.code.copy", "content.code.annotate", "content.tooltips", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
       <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
