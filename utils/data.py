@@ -1,16 +1,18 @@
-"""Data fetching helpers with multi-source fallback + structured logging.
+"""Data fetching helpers with multi-source fallback.
 
 Fetch priority
 --------------
-1. yfinance  — primary (global CDN, battle-tested, OHLCV + intraday)
-2. nselib    — fallback (official NSE India REST API, no auth)
+1. yfinance  — primary (global CDN, battle-tested, supports OHLCV + intraday)
+2. nselib    — fallback (official NSE India REST API, no auth required)
 3. Stale-cache guard — if both fail and a previous result exists, serve it
-                       with a warning queued in st.session_state["data_warnings"].
+                       with a visible staleness warning surfaced via
+                       st.session_state["data_warnings"].
+
+All @st.cache_data decorators live here so caching is co-located with
+the fetch logic.  app.py imports only the cached public functions.
 """
 from __future__ import annotations
 
-import functools
-import time
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -21,7 +23,7 @@ import yfinance as yf
 from utils.constants import CACHE_TTL, NIFTY50, NSE_INDICES, SYMBOLS
 from utils.logger import get_logger
 
-log = get_logger(__name__)
+log = get_logger(__name__)   # nse_tracker.utils.data
 
 # ---------------------------------------------------------------------------
 # nselib availability check (optional dependency)
@@ -29,26 +31,10 @@ log = get_logger(__name__)
 try:
     from nselib import capital_market as _cm
     NSELIB_OK = True
-    log.info("nselib loaded successfully — fallback source available")
+    log.info("nselib loaded successfully")
 except Exception as _nselib_exc:
     NSELIB_OK = False
-    log.warning("nselib not available (%s) — yfinance-only mode", _nselib_exc)
-
-
-# ---------------------------------------------------------------------------
-# Timing decorator (for profiling slow fetches in logs)
-# ---------------------------------------------------------------------------
-
-def _timed(fn):
-    """Log execution time of any fetch function at DEBUG level."""
-    @functools.wraps(fn)
-    def wrapper(*args, **kwargs):
-        t0     = time.perf_counter()
-        result = fn(*args, **kwargs)
-        elapsed = (time.perf_counter() - t0) * 1000
-        log.debug("%s(%s) completed in %.1f ms", fn.__name__, args[:2], elapsed)
-        return result
-    return wrapper
+    log.warning("nselib not available (%s) — fallback source disabled", _nselib_exc)
 
 
 # ---------------------------------------------------------------------------
@@ -62,19 +48,19 @@ def is_nse_open() -> tuple[bool, str, str]:
         now = datetime.now(ist)
         if now.weekday() >= 5:
             lbl = "Last Close: Fri " + (now - timedelta(days=now.weekday() - 4)).strftime("%d %b %Y, 3:30 PM")
-            log.info("Market status: Weekend")
+            log.debug("Market check: Weekend")
             return False, "Weekend", lbl
         mo = now.replace(hour=9,  minute=15, second=0, microsecond=0)
         mc = now.replace(hour=15, minute=30, second=0, microsecond=0)
         if mo <= now <= mc:
-            log.info("Market status: OPEN at %s IST", now.strftime("%H:%M:%S"))
+            log.debug("Market check: Open at %s IST", now.strftime("%H:%M:%S"))
             return True, "Open", ""
         elif now < mo:
             lbl = "Last Close: " + (now - timedelta(days=1)).strftime("%d %b %Y, 3:30 PM IST")
-            log.info("Market status: Pre-Market")
+            log.debug("Market check: Pre-Market")
             return False, "Pre-Market", lbl
         else:
-            log.info("Market status: Closed")
+            log.debug("Market check: Closed")
             return False, "Closed", "Last Close: " + now.strftime("%d %b %Y, 3:30 PM IST")
     except Exception as exc:
         log.error("is_nse_open() failed: %s", exc, exc_info=True)
@@ -86,6 +72,7 @@ def is_nse_open() -> tuple[bool, str, str]:
 # ---------------------------------------------------------------------------
 
 def _flatten_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Flatten MultiIndex columns produced by yfinance batch downloads."""
     if isinstance(df.columns, pd.MultiIndex):
         lvl0 = list(df.columns.get_level_values(0))
         df.columns = (
@@ -97,6 +84,7 @@ def _flatten_cols(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _clean_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalise daily OHLCV: flatten MultiIndex cols, strip timezone, normalize dates."""
     try:
         if df is None or df.empty:
             return pd.DataFrame()
@@ -106,22 +94,24 @@ def _clean_df(df: pd.DataFrame) -> pd.DataFrame:
         df.index = pd.to_datetime(df.index).normalize()
         return df
     except Exception as exc:
-        log.error("_clean_df failed: %s", exc, exc_info=True)
+        log.error("_clean_df() failed: %s", exc, exc_info=True)
         return pd.DataFrame()
 
 
 def _clean_intraday_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalise intraday: flatten MultiIndex cols, keep timezone."""
     try:
         if df is None or df.empty:
             return pd.DataFrame()
         df = _flatten_cols(df.copy())
         return df
     except Exception as exc:
-        log.error("_clean_intraday_df failed: %s", exc, exc_info=True)
+        log.error("_clean_intraday_df() failed: %s", exc, exc_info=True)
         return pd.DataFrame()
 
 
 def _validate_ohlcv(df: pd.DataFrame) -> bool:
+    """Return True if df has the required OHLCV columns and at least one row."""
     return (
         df is not None
         and not df.empty
@@ -133,31 +123,31 @@ def _validate_ohlcv(df: pd.DataFrame) -> bool:
 # Source 1 — yfinance
 # ---------------------------------------------------------------------------
 
-@_timed
 def _yf_history(symbol: str, period: str) -> pd.DataFrame:
     try:
+        log.debug("yfinance fetch: symbol=%s period=%s", symbol, period)
         df = yf.Ticker(symbol).history(period=period, auto_adjust=True)
         df = _clean_df(df)
         if _validate_ohlcv(df):
-            log.info("yfinance OK  | %s | period=%s | rows=%d", symbol, period, len(df))
+            log.debug("yfinance OK: symbol=%s rows=%d", symbol, len(df))
             return df
-        log.warning("yfinance returned empty/invalid frame for %s [period=%s]", symbol, period)
+        log.warning("yfinance returned empty/invalid data: symbol=%s period=%s", symbol, period)
     except Exception as exc:
-        log.error("yfinance FAILED | %s | period=%s | %s", symbol, period, exc)
+        log.error("yfinance fetch failed: symbol=%s period=%s error=%s", symbol, period, exc, exc_info=True)
     return pd.DataFrame()
 
 
-@_timed
 def _yf_intraday(symbol: str, period: str = "1d", interval: str = "1m") -> pd.DataFrame:
     try:
+        log.debug("yfinance intraday: symbol=%s period=%s interval=%s", symbol, period, interval)
         df = yf.Ticker(symbol).history(period=period, interval=interval, auto_adjust=True)
         df = _clean_intraday_df(df)
         if _validate_ohlcv(df):
-            log.info("yfinance intraday OK | %s | rows=%d", symbol, len(df))
+            log.debug("yfinance intraday OK: symbol=%s rows=%d", symbol, len(df))
             return df
-        log.warning("yfinance intraday empty for %s", symbol)
+        log.warning("yfinance intraday empty: symbol=%s", symbol)
     except Exception as exc:
-        log.error("yfinance intraday FAILED | %s | %s", symbol, exc)
+        log.error("yfinance intraday failed: symbol=%s error=%s", symbol, exc, exc_info=True)
     return pd.DataFrame()
 
 
@@ -165,29 +155,32 @@ def _yf_intraday(symbol: str, period: str = "1d", interval: str = "1m") -> pd.Da
 # Source 2 — nselib  (official NSE India REST API)
 # ---------------------------------------------------------------------------
 
-@_timed
 def _nselib_history(symbol: str, period: str) -> pd.DataFrame:
+    """
+    Attempt to fetch historical OHLCV from nselib.
+    nselib uses 'DD-MM-YYYY' date strings and strips '.NS' suffixes.
+    """
     if not NSELIB_OK:
         return pd.DataFrame()
     try:
         ticker   = symbol.replace(".NS", "").replace("^", "")
         days_map = {
-            "1d": 2, "5d": 7, "1mo": 32, "3mo": 95,
+            "1d": 2,   "5d": 7,  "1mo": 32, "3mo": 95,
             "6mo": 185, "1y": 366, "2y": 732, "5y": 1827,
         }
         lookback = days_map.get(period, 95)
-        end      = datetime.now()
-        start    = end - timedelta(days=lookback)
-        fmt      = "%d-%m-%Y"
+        end   = datetime.now()
+        start = end - timedelta(days=lookback)
+        fmt   = "%d-%m-%Y"
+        log.debug("nselib fetch: ticker=%s from=%s to=%s", ticker, start.strftime(fmt), end.strftime(fmt))
 
-        log.info("nselib fetch | %s | %s → %s", ticker, start.strftime(fmt), end.strftime(fmt))
         raw = _cm.price_volume_and_deliverable_position_data(
             symbol=ticker,
             from_date=start.strftime(fmt),
             to_date=end.strftime(fmt),
         )
         if raw is None or raw.empty:
-            log.warning("nselib returned empty frame for %s", ticker)
+            log.warning("nselib returned empty: ticker=%s period=%s", ticker, period)
             return pd.DataFrame()
 
         raw.columns = raw.columns.str.strip()
@@ -201,7 +194,7 @@ def _nselib_history(symbol: str, period: str) -> pd.DataFrame:
         )
         raw = raw.rename(columns=col_map)
         if "Date" not in raw.columns:
-            log.error("nselib frame for %s has no Date column — columns: %s", ticker, list(raw.columns))
+            log.error("nselib: no Date column after rename for ticker=%s; columns=%s", ticker, list(raw.columns))
             return pd.DataFrame()
         raw["Date"] = pd.to_datetime(raw["Date"], dayfirst=True, errors="coerce")
         raw = raw.dropna(subset=["Date"]).set_index("Date").sort_index()
@@ -212,120 +205,152 @@ def _nselib_history(symbol: str, period: str) -> pd.DataFrame:
             raw["Volume"] = pd.to_numeric(raw["Volume"].astype(str).str.replace(",", ""), errors="coerce").fillna(0)
         df = _clean_df(raw)
         if _validate_ohlcv(df):
-            log.info("nselib OK (fallback) | %s | rows=%d", symbol, len(df))
+            log.info("nselib fallback used: symbol=%s rows=%d", symbol, len(df))
             return df
-        log.warning("nselib frame invalid after cleaning for %s", symbol)
+        log.warning("nselib data invalid after cleaning: symbol=%s", symbol)
     except Exception as exc:
-        log.error("nselib FAILED | %s | period=%s | %s", symbol, period, exc, exc_info=True)
+        log.error("nselib fetch failed: symbol=%s period=%s error=%s", symbol, period, exc, exc_info=True)
     return pd.DataFrame()
 
 
 # ---------------------------------------------------------------------------
-# Staleness guard
+# Staleness guard helpers
 # ---------------------------------------------------------------------------
 
 _STALE_STORE: dict[str, pd.DataFrame] = {}
 
 
 def _warn(msg: str) -> None:
+    """Queue a warning to be displayed by app.py via session_state."""
     try:
         existing = st.session_state.get("data_warnings", [])
         if msg not in existing:
             st.session_state["data_warnings"] = existing + [msg]
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("_warn() could not write to session_state: %s", exc)
 
 
 def _fetch_with_fallback(symbol: str, period: str) -> pd.DataFrame:
-    """3-tier fetch: yfinance → nselib → stale-cache."""
+    """
+    Core multi-source fetch used by all public cached functions.
+
+    Order:
+      1. yfinance primary
+      2. nselib fallback  (if yfinance returned empty)
+      3. Stale cache      (if both live sources failed)
+    """
     key = f"{symbol}:{period}"
 
+    # --- Source 1: yfinance ---
     df = _yf_history(symbol, period)
     if not df.empty:
         _STALE_STORE[key] = df
         return df
 
-    log.warning("yfinance unavailable for %s — trying nselib fallback", symbol)
+    # --- Source 2: nselib ---
+    log.warning("yfinance failed for %s/%s — trying nselib", symbol, period)
     df = _nselib_history(symbol, period)
     if not df.empty:
         _STALE_STORE[key] = df
-        _warn(f"\U0001f504 Using NSE backup source for **{symbol}** (Yahoo Finance unavailable)")
+        _warn(f"🔄 Using NSE backup source for **{symbol}** (Yahoo Finance unavailable)")
         return df
 
+    # --- Source 3: stale cache ---
+    log.error("Both live sources failed for %s/%s — checking stale cache", symbol, period)
     stale = _STALE_STORE.get(key)
     if stale is not None and not stale.empty:
-        log.warning("Both sources failed for %s — serving STALE data from cache", symbol)
-        _warn(f"\u26a0\ufe0f Serving **stale** data for {symbol} \u2014 both live sources failed")
+        log.warning("Serving stale data for %s (age unknown)", symbol)
+        _warn(f"⚠️ Serving **stale** data for {symbol} — both live sources failed")
         return stale
 
-    log.error("All data sources failed for %s [period=%s] — returning empty DataFrame", symbol, period)
+    log.error("No data available for %s/%s from any source", symbol, period)
     return pd.DataFrame()
 
 
 # ---------------------------------------------------------------------------
-# Public cached fetch functions
+# Public cached fetch functions — import these in app.py
 # ---------------------------------------------------------------------------
 
 @st.cache_data(ttl=CACHE_TTL)
 def fetch_ticker(symbol: str, period: str = "3mo") -> pd.DataFrame:
-    """Fetch daily OHLCV (yfinance → nselib → stale)."""
+    """Fetch daily OHLCV for one symbol (yfinance → nselib → stale cache)."""
+    log.info("fetch_ticker called: symbol=%s period=%s", symbol, period)
     return _fetch_with_fallback(symbol, period)
 
 
 @st.cache_data(ttl=CACHE_TTL)
 def fetch_intraday(symbol: str) -> pd.DataFrame:
-    """Fetch today's 1-minute bars (yfinance only)."""
+    """Fetch today's 1-minute bars (market-hours only, yfinance only)."""
+    log.debug("fetch_intraday called: symbol=%s", symbol)
     return _yf_intraday(symbol, period="1d", interval="1m")
 
 
 @st.cache_data(ttl=CACHE_TTL)
 def fetch_indices() -> dict[str, pd.DataFrame]:
-    """Fetch last-5-day bars for all NSE_INDICES."""
-    log.info("fetch_indices() called — fetching %d indices", len(NSE_INDICES))
+    """Fetch last-5-day daily bars for all NSE_INDICES."""
+    log.info("fetch_indices called")
     result: dict[str, pd.DataFrame] = {}
     for idx in NSE_INDICES:
         df = _fetch_with_fallback(idx["symbol"], "5d")
         if not df.empty:
             result[idx["symbol"]] = df
-    log.info("fetch_indices() returned %d/%d indices", len(result), len(NSE_INDICES))
+        else:
+            log.warning("fetch_indices: no data for %s", idx["symbol"])
+    log.info("fetch_indices: loaded %d/%d indices", len(result), len(NSE_INDICES))
     return result
 
 
 @st.cache_data(ttl=CACHE_TTL)
 def fetch_all_stocks_5d() -> dict[str, pd.DataFrame]:
-    """Fetch last-5-day bars for all 50 Nifty stocks."""
-    log.info("fetch_all_stocks_5d() called")
+    """Fetch last-5-day daily bars for all 50 Nifty stocks."""
+    log.info("fetch_all_stocks_5d called")
     result: dict[str, pd.DataFrame] = {}
+    failed: list[str] = []
     for s in NIFTY50:
         df = _fetch_with_fallback(s["symbol"], "5d")
         if not df.empty:
             result[s["symbol"]] = df
-    log.info("fetch_all_stocks_5d() returned %d/50 stocks", len(result))
+        else:
+            failed.append(s["symbol"])
+    if failed:
+        log.warning("fetch_all_stocks_5d: no data for %d symbols: %s", len(failed), failed)
+    log.info("fetch_all_stocks_5d: loaded %d/50 symbols", len(result))
     return result
 
 
 @st.cache_data(ttl=3600)
 def fetch_all_history() -> dict[str, pd.DataFrame]:
-    """Fetch 5-year bars for all stocks + macro (Time Machine)."""
-    log.info("fetch_all_history() called — heavy call, ttl=3600s")
+    """Fetch 5-year daily bars for all 50 stocks + macro symbols (Time Machine)."""
+    log.info("fetch_all_history called (heavy fetch, TTL=3600s)")
     result: dict[str, pd.DataFrame] = {}
-    for sym in SYMBOLS + ["USDINR=X", "CL=F", "GC=F", "^NSEI"]:
+    all_syms = SYMBOLS + ["USDINR=X", "CL=F", "GC=F", "^NSEI"]
+    failed: list[str] = []
+    for sym in all_syms:
         df = _fetch_with_fallback(sym, "5y")
         if not df.empty:
             result[sym] = df
-    log.info("fetch_all_history() returned %d symbols", len(result))
+        else:
+            failed.append(sym)
+    if failed:
+        log.warning("fetch_all_history: no data for %d symbols: %s", len(failed), failed)
+    log.info("fetch_all_history: loaded %d/%d symbols", len(result), len(all_syms))
     return result
 
 
+# ---------------------------------------------------------------------------
+# Source health-check — used by app.py to show data source badge
+# ---------------------------------------------------------------------------
+
 @st.cache_data(ttl=60)
 def get_source_status() -> dict[str, str]:
-    """Live health check for each data source."""
+    """Return live status of each data source: 'ok' | 'degraded' | 'down'."""
+    log.info("get_source_status probe running")
     status: dict[str, str] = {}
     try:
         df = _yf_history("^NSEI", "5d")
         status["yfinance"] = "ok" if not df.empty else "degraded"
     except Exception as exc:
-        log.error("yfinance health-check failed: %s", exc)
+        log.error("yfinance health probe failed: %s", exc, exc_info=True)
         status["yfinance"] = "down"
 
     if NSELIB_OK:
@@ -333,10 +358,10 @@ def get_source_status() -> dict[str, str]:
             df = _nselib_history("RELIANCE.NS", "5d")
             status["nselib"] = "ok" if not df.empty else "degraded"
         except Exception as exc:
-            log.error("nselib health-check failed: %s", exc)
+            log.error("nselib health probe failed: %s", exc, exc_info=True)
             status["nselib"] = "down"
     else:
         status["nselib"] = "not installed"
 
-    log.info("Source status: %s", status)
+    log.info("get_source_status result: %s", status)
     return status

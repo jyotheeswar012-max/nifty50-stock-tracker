@@ -1,37 +1,59 @@
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
+*$py.class
+*.so
 .Python
 build/
+develop-eggs/
 dist/
-*.egg-info/
+downloads/
+eggs/
 .eggs/
+lib/
+lib64/
+pipes/
+put/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
 # Virtual environments
-.venv/
-venv/
-env/
 .env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 
 # Streamlit
 .streamlit/secrets.toml
 
-# Logs — keep the directory, ignore the rolling files
+# Logs — keep the folder structure, ignore the actual log files
 logs/*.log
 logs/*.log.*
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# IDEs
-.vscode/
+# IDE
 .idea/
-*.sublime-workspace
+.vscode/
+*.swp
+*.swo
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
