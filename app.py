@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, date, timedelta
 import pytz
+import time
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -42,6 +43,8 @@ except Exception:
 # ============================================================
 # CONSTANTS
 # ============================================================
+REFRESH_INTERVAL = 60   # seconds between auto-refreshes during market hours
+
 NIFTY50 = [
     {"symbol":"RELIANCE.NS",   "name":"Reliance Industries",    "sector":"Energy",             "beta":0.90},
     {"symbol":"HDFCBANK.NS",   "name":"HDFC Bank",              "sector":"Financial Services", "beta":1.10},
@@ -119,12 +122,6 @@ FAMOUS_DATES = {
     "All-time High Sep 27 2024":  date(2024,9,27),
 }
 
-PERIOD_MAP = {
-    "1mo": "1mo", "3mo": "3mo", "6mo": "6mo",
-    "1y": "1y",  "2y": "2y",  "5y": "5y",
-    "5d": "5d",
-}
-
 PLT = "plotly_white"
 PLT_LAYOUT = dict(
     paper_bgcolor="#ffffff", plot_bgcolor="#fafafa",
@@ -163,7 +160,6 @@ def _clean_df(df):
     """Flatten MultiIndex columns and strip timezone from index."""
     if df is None or df.empty:
         return pd.DataFrame()
-    # Flatten MultiIndex: take level-0 if it contains OHLCV names, else level-1
     if isinstance(df.columns, pd.MultiIndex):
         lvl0 = list(df.columns.get_level_values(0))
         ohlcv = {"Open", "High", "Low", "Close", "Volume"}
@@ -171,7 +167,6 @@ def _clean_df(df):
             df.columns = lvl0
         else:
             df.columns = list(df.columns.get_level_values(1))
-    # Strip timezone
     if hasattr(df.index, "tz") and df.index.tz is not None:
         df.index = df.index.tz_localize(None)
     df.index = pd.to_datetime(df.index).normalize()
@@ -230,9 +225,26 @@ def sec(label):
 def divider():
     st.markdown('<hr class="ui-divider">', unsafe_allow_html=True)
 
-# ---- Market state ----
+
+# ============================================================
+# AUTO-REFRESH LOGIC
+# ============================================================
 market_open, market_status, last_close_label = is_nse_open()
-_TTL = 300 if market_open else 1800   # 5 min live, 30 min closed
+_TTL = 60 if market_open else 1800   # cache TTL = 60s live, 30 min closed
+
+# Initialise last-refresh timestamp in session state
+if "_last_refresh" not in st.session_state:
+    st.session_state["_last_refresh"] = time.time()
+
+# Auto-rerun only during market hours
+if market_open:
+    elapsed = time.time() - st.session_state["_last_refresh"]
+    remaining = max(0, REFRESH_INTERVAL - elapsed)
+    if elapsed >= REFRESH_INTERVAL:
+        # Clear price caches so new data is fetched on rerun
+        st.cache_data.clear()
+        st.session_state["_last_refresh"] = time.time()
+        st.rerun()
 
 
 # ============================================================
@@ -371,6 +383,27 @@ def tm_get_snapshot(all_hist, target):
 
 
 # ============================================================
+# REFRESH COUNTDOWN BANNER  (shown at top of every tab)
+# ============================================================
+def _market_banner():
+    if market_open:
+        elapsed  = time.time() - st.session_state["_last_refresh"]
+        secs_left = max(0, int(REFRESH_INTERVAL - elapsed))
+        ist_now   = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%I:%M:%S %p IST")
+        st.success(
+            f"\u25cf NSE OPEN \u2014 Auto-refreshing every {REFRESH_INTERVAL}s "
+            f"\u2502 Next refresh in **{secs_left}s** "
+            f"\u2502 Last updated: {ist_now}"
+        )
+    else:
+        st.warning(
+            "NSE CLOSED \u2014 " + market_status +
+            (" | " + last_close_label if last_close_label else "") +
+            " | Showing last closing prices"
+        )
+
+
+# ============================================================
 # MAIN TABS
 # ============================================================
 TAB_LABELS = [
@@ -383,17 +416,6 @@ TAB_LABELS = [
     "Time Machine",
 ]
 tabs = st.tabs(TAB_LABELS)
-
-
-def _market_banner():
-    if market_open:
-        st.success("NSE OPEN - Live prices updating every 5 min")
-    else:
-        st.warning(
-            "NSE CLOSED - " + market_status +
-            (" | " + last_close_label if last_close_label else "") +
-            " | Showing last closing prices"
-        )
 
 
 # -- 0: Market Overview ---------------------------------------
@@ -753,3 +775,15 @@ with tabs[6]:
                 st.plotly_chart(fig, use_container_width=True)
             except Exception:
                 pass
+
+
+# ============================================================
+# SCHEDULE NEXT RERUN (non-blocking, only during market hours)
+# ============================================================
+if market_open:
+    elapsed   = time.time() - st.session_state["_last_refresh"]
+    wait_secs = max(1, REFRESH_INTERVAL - elapsed)
+    time.sleep(wait_secs)
+    st.cache_data.clear()
+    st.session_state["_last_refresh"] = time.time()
+    st.rerun()
