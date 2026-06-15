@@ -5,10 +5,11 @@ Call ``get_logger(__name__)`` at the top of every module:
     from utils.logger import get_logger
     log = get_logger(__name__)
 
-That's it.  The first call to this module sets up:
-  - A rotating file handler  -> logs/app.log  (5 MB x 3 backups)
-  - A console (stderr) handler at WARNING level so Streamlit's UI stays clean
-  - ISO-8601 timestamps, log level, module name, and line number in every record
+Public helpers
+--------------
+get_logger(name)          -> logging.Logger  (primary usage)
+read_recent_logs(n)       -> list[str]       (last n lines from app.log)
+log_file_path()           -> str             (absolute path to app.log)
 
 Environment override
 --------------------
@@ -112,3 +113,38 @@ def get_logger(name: str) -> logging.Logger:
     # Prefix every module logger so they all route through 'nse_tracker'
     child_name = name if name.startswith("nse_tracker") else f"nse_tracker.{name}"
     return logging.getLogger(child_name)
+
+
+# ---------------------------------------------------------------------------
+# Log-file reader — used by the sidebar "Live Logs" widget in app.py
+# ---------------------------------------------------------------------------
+
+def log_file_path() -> str:
+    """Return the absolute path to the active log file as a string."""
+    return str(_LOG_FILE)
+
+
+def read_recent_logs(n: int = 100) -> list[str]:
+    """Return the last *n* lines from app.log as a list of strings.
+
+    Returns an empty list (never raises) if the file does not exist yet
+    or cannot be read — e.g. on Streamlit Cloud where the filesystem
+    may be read-only or the log file hasn't been created yet.
+
+    Parameters
+    ----------
+    n:
+        Number of lines to return from the tail of the file (default 100).
+    """
+    try:
+        if not _LOG_FILE.exists():
+            return []
+        with _LOG_FILE.open("r", encoding="utf-8", errors="replace") as fh:
+            lines = fh.readlines()
+        # Strip trailing newlines and return last n non-empty lines
+        trimmed = [l.rstrip("\n") for l in lines if l.strip()]
+        return trimmed[-n:] if len(trimmed) > n else trimmed
+    except Exception as exc:
+        # Silently fail — the sidebar widget handles the empty list gracefully
+        print(f"[logger] read_recent_logs() failed: {exc}", file=sys.stderr)
+        return []
