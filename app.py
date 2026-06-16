@@ -26,19 +26,14 @@ from utils.logger import get_logger, read_recent_logs, log_file_path
 log = get_logger(__name__)
 log.info("app.py startup — Streamlit session initialised")
 
-from utils.auth_ui import auth_gate, render_logout_button
-auth_gate()
-
 try:
     from utils.theme import inject, inject_topbar
     inject()
 except Exception:
     pass
 
-from utils.firebase_auth import get_current_user
-user = get_current_user()
 try:
-    inject_topbar(user=user)
+    inject_topbar(user=None)
 except Exception:
     pass
 
@@ -147,7 +142,6 @@ def _show_data_warnings():
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    render_logout_button()
     st.markdown("### ⚙️ System")
 
     with st.expander("🔌 Data Source Status", expanded=False):
@@ -512,31 +506,20 @@ with tabs[6]:
 with tabs[7]:
     try:
         t0 = time.perf_counter()
-        _hero("🔔 Price Alerts", "Get notified by email and/or SMS when a stock hits your target")
+        _hero("🔔 Price Alerts", "Get notified by email when a stock hits your target")
 
         # ── Delivery channel status ──────────────────────────────────────────
-        ec, tc = st.columns(2)
-        with ec:
-            if smtp_configured():
-                st.success("📧 Email alerts: **configured**")
-            else:
-                st.warning("📧 Email alerts: not configured — add [smtp] to Secrets")
-        with tc:
-            if twilio_configured():
-                st.success("📱 SMS alerts: **configured**")
-            else:
-                st.warning("📱 SMS alerts: not configured — add [twilio] to Secrets")
+        if smtp_configured():
+            st.success("📧 Email alerts: **configured**")
+        else:
+            st.warning("📧 Email alerts: not configured — add [smtp] to Streamlit Cloud Secrets")
 
         _divider()
 
         # ── Add new alert ────────────────────────────────────────────────────
         _sec("➕ Add New Alert")
         with st.form("add_alert_form", clear_on_submit=True):
-            r1c1, r1c2 = st.columns(2)
-            with r1c1:
-                al_email = st.text_input("Your Email", placeholder="you@example.com")
-            with r1c2:
-                al_phone = st.text_input("Your Phone (optional)", placeholder="+91 98765 43210")
+            al_email = st.text_input("📧 Your Email", placeholder="you@example.com")
 
             r2c1, r2c2, r2c3 = st.columns([2, 1, 1])
             with r2c1:
@@ -556,9 +539,9 @@ with tabs[7]:
 
             submitted = st.form_submit_button("🔔 Set Alert", type="primary", use_container_width=True)
             if submitted:
-                if not al_email and not al_phone:
-                    st.error("Enter at least an email or phone number to receive the alert.")
-                elif al_email and not al_email.strip().count("@"):
+                if not al_email:
+                    st.error("Enter your email to receive the alert.")
+                elif not al_email.strip().count("@"):
                     st.error("Enter a valid email address.")
                 else:
                     direction = "above" if "above" in al_direction else "below"
@@ -568,7 +551,7 @@ with tabs[7]:
                         direction=direction,
                         threshold=al_thresh,
                         email=al_email,
-                        phone=al_phone,
+                        phone="",
                     )
                     st.success(f"✅ Alert set: {al_stock_name} {'>' if direction == 'above' else '<'} Rs.{al_thresh:,.2f}")
 
@@ -587,10 +570,9 @@ with tabs[7]:
                 col_info, col_del = st.columns([5, 1])
                 with col_info:
                     arrow = "↑" if al["direction"] == "above" else "↓"
-                    contact = al["email"] or al["phone"] or "in-app only"
                     st.markdown(
                         f"**{al['stock']}** price {arrow} Rs.{al['threshold']:,.2f}  "
-                        f"· 📬 {contact}  · `#{al['id']}`"
+                        f"· 📧 {al['email']}  · `#{al['id']}`"
                     )
                 with col_del:
                     if st.button("🗑️", key=f"del_{al['id']}", help="Remove this alert"):
@@ -619,7 +601,7 @@ with tabs[7]:
                     arrow = "↑" if al["direction"] == "above" else "↓"
                     st.markdown(
                         f"~~**{al['stock']}**~~ price {arrow} Rs.{al['threshold']:,.2f}  "
-                        f"· 📬 {al['email'] or al['phone'] or '—'}  · `#{al['id']}` · {al['created']}"
+                        f"· 📧 {al['email']}  · `#{al['id']}` · {al['created']}"
                     )
 
         # ── Notification dispatch log ────────────────────────────────────────
