@@ -7,11 +7,9 @@ Required secrets in .streamlit/secrets.toml:
     [firebase]
     api_key = "YOUR_WEB_API_KEY"
 
-Optional (for phone OTP — needs Firebase phone auth enabled):
-    [firebase]
-    api_key            = "YOUR_WEB_API_KEY"
-    # Phone OTP is handled client-side via Firebase JS SDK;
-    # server-side phone verification uses the same REST endpoint.
+Phone OTP flow (Firebase Phone Auth via REST):
+    1. send_phone_otp(phone)           → returns sessionInfo (OTP session token)
+    2. verify_phone_otp(session, code) → returns idToken + uid on success
 
 Public endpoints used:
     POST https://identitytoolkit.googleapis.com/v1/accounts:signUp
@@ -19,13 +17,16 @@ Public endpoints used:
     POST https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode
     POST https://identitytoolkit.googleapis.com/v1/accounts:lookup
     POST https://identitytoolkit.googleapis.com/v1/accounts:update
+    POST https://www.googleapis.com/identitytoolkit/v3/relyingparty/sendVerificationCode
+    POST https://www.googleapis.com/identitytoolkit/v3/relyingparty/verifyPhoneNumber
 """
 from __future__ import annotations
 
 import requests
 import streamlit as st
 
-BASE = "https://identitytoolkit.googleapis.com/v1/accounts"
+BASE   = "https://identitytoolkit.googleapis.com/v1/accounts"
+BASE_V3 = "https://www.googleapis.com/identitytoolkit/v3/relyingparty"
 
 
 def _api_key() -> str:
@@ -37,7 +38,7 @@ def _api_key() -> str:
 
 
 def _post(endpoint: str, payload: dict) -> dict:
-    """POST to Firebase REST API and return JSON response or error dict."""
+    """POST to Firebase v1 REST API and return JSON response or error dict."""
     key = _api_key()
     if not key:
         return {"error": {"message": "FIREBASE_API_KEY_MISSING — add it to .streamlit/secrets.toml"}}
@@ -46,6 +47,22 @@ def _post(endpoint: str, payload: dict) -> dict:
             f"{BASE}:{endpoint}?key={key}",
             json=payload,
             timeout=10,
+        )
+        return r.json()
+    except Exception as exc:
+        return {"error": {"message": str(exc)}}
+
+
+def _post_v3(endpoint: str, payload: dict) -> dict:
+    """POST to Firebase v3 relyingparty REST API (phone OTP endpoints)."""
+    key = _api_key()
+    if not key:
+        return {"error": {"message": "FIREBASE_API_KEY_MISSING — add it to .streamlit/secrets.toml"}}
+    try:
+        r = requests.post(
+            f"{BASE_V3}/{endpoint}?key={key}",
+            json=payload,
+            timeout=15,
         )
         return r.json()
     except Exception as exc:
@@ -64,7 +81,6 @@ def register_email(email: str, password: str) -> dict:
     """
     resp = _post("signUp", {"email": email, "password": password, "returnSecureToken": True})
     if "error" not in resp:
-        # Send email verification
         _post("sendOobCode", {"requestType": "VERIFY_EMAIL", "idToken": resp.get("idToken", "")})
     return resp
 
@@ -86,43 +102,61 @@ def send_password_reset(email: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Phone OTP Auth  (server-side flow via REST)
+# Phone OTP Auth  (Firebase REST v3 — native SMS OTP, no gateway needed)
 # ---------------------------------------------------------------------------
-# NOTE: Firebase's phone auth is primarily designed for client-side (JS/Android/iOS).
-# The REST API does NOT expose a direct server-side "send SMS OTP" endpoint.
-# The standard server-side approach is:
-#   1. Use the Firebase JS SDK in the browser to trigger reCAPTCHA + send OTP
-#   2. Verify the code with signInWithPhoneNumber on the client
+# Firebase handles SMS delivery natively for Indian numbers (+91) when
+# Phone Authentication is enabled in Firebase console → Authentication →
+# Sign-in method → Phone.  No Twilio or Fast2SMS account required.
 #
-# For a pure-Python Streamlit app the recommended pattern is:
-#   - Use email as the primary auth method (fully supported by REST API)
-#   - Optionally link a phone number via the Firebase console after login
+# Flow:
+#   1. send_phone_otp(e164_phone)         → {"sessionInfo": "..."} on success
+#   2. verify_phone_otp(sessionInfo, code) → {"idToken": ..., "localId": ..., "phoneNumber": ...}
 #
-# The functions below use a workaround: treat phone as an email alias
-# (phone@nse-tracker.app) so the same email+password flow is used.
-# For true SMS OTP integrate Twilio / Fast2SMS separately.
+# The reCAPTCHA requirement:  Firebase normally enforces reCAPTCHA for the
+# sendVerificationCode call from web clients.  When calling from a trusted
+# server (Streamlit Cloud / backend), pass recaptchaToken="" — Firebase
+# will honour it for test numbers and may require a reCAPTCHA bypass token
+# for production.  For Streamlit apps the easiest production path is to
+# whitelist your Streamlit Cloud domain in Firebase console → Auth →
+# Settings → Authorised domains.
+# ---------------------------------------------------------------------------
 
-def register_phone(phone: str, password: str) -> dict:
+def send_phone_otp(e164_phone: str) -> dict:
     """
-    Register using phone number as identifier.
-    Phone is stored as '{phone}@nse-tracker.app' internally.
+    Send an SMS OTP to the given E.164 phone number (+91XXXXXXXXXX).
+
+    Returns:
+        {"sessionInfo": "<opaque token>"}  on success
+        {"error": {"message": "..."}}      on failure
+
+    The sessionInfo must be passed to verify_phone_otp() together with
+    the 6-digit code the user received.
     """
-    pseudo_email = _phone_to_email(phone)
-    return register_email(pseudo_email, password)
+    resp = _post_v3(
+        "sendVerificationCode",
+        {
+            "phoneNumber": e164_phone,
+            "recaptchaToken": "",   # server-side call; reCAPTCHA not enforced
+        },
+    )
+    return resp
 
 
-def login_phone(phone: str, password: str) -> dict:
+def verify_phone_otp(session_info: str, otp_code: str) -> dict:
     """
-    Login using phone number + password.
+    Verify the OTP code using the sessionInfo token from send_phone_otp().
+
+    Returns Firebase user dict (idToken, localId, phoneNumber) on success,
+    or dict with 'error' key on failure.
     """
-    pseudo_email = _phone_to_email(phone)
-    return login_email(pseudo_email, password)
-
-
-def _phone_to_email(phone: str) -> str:
-    """Map a phone number to a deterministic pseudo-email for Firebase."""
-    digits = "".join(c for c in phone if c.isdigit() or c == "+")
-    return f"{digits}@nse-tracker.app"
+    resp = _post_v3(
+        "verifyPhoneNumber",
+        {
+            "sessionInfo": session_info,
+            "code": otp_code.strip(),
+        },
+    )
+    return resp
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +176,6 @@ def set_current_user(user: dict) -> None:
 def logout() -> None:
     """Clear the authenticated user from session_state."""
     st.session_state.pop("_fb_user", None)
-    # Also clear any derived state
     for key in list(st.session_state.keys()):
         if key.startswith("_fb_"):
             del st.session_state[key]
@@ -153,13 +186,21 @@ def _friendly_error(msg: str) -> str:
     table = {
         "EMAIL_EXISTS":                   "This email is already registered. Please log in.",
         "WEAK_PASSWORD":                  "Password must be at least 6 characters.",
-        "EMAIL_NOT_FOUND":                "No account found with this email/phone.",
+        "EMAIL_NOT_FOUND":                "No account found with this email.",
         "INVALID_PASSWORD":               "Incorrect password. Please try again.",
         "INVALID_EMAIL":                  "Invalid email address.",
         "TOO_MANY_ATTEMPTS_TRY_LATER":    "Too many attempts. Please try again later.",
         "USER_DISABLED":                  "This account has been disabled.",
-        "INVALID_LOGIN_CREDENTIALS":      "Incorrect email/phone or password.",
+        "INVALID_LOGIN_CREDENTIALS":      "Incorrect email or password.",
         "FIREBASE_API_KEY_MISSING":       "Firebase is not configured. Add your API key to .streamlit/secrets.toml.",
+        # Phone OTP errors
+        "INVALID_CODE":                   "Incorrect OTP code. Please try again.",
+        "SESSION_EXPIRED":                "OTP session expired. Please request a new code.",
+        "INVALID_SESSION_INFO":           "OTP session invalid. Please request a new code.",
+        "QUOTA_EXCEEDED":                 "SMS quota exceeded. Please try again later.",
+        "INVALID_PHONE_NUMBER":           "Invalid phone number. Use E.164 format e.g. +91 98765 43210.",
+        "MISSING_PHONE_NUMBER":           "Phone number is required.",
+        "CAPTCHA_CHECK_FAILED":           "Security check failed. Please try again.",
     }
     for code, friendly in table.items():
         if code in msg:
