@@ -1,10 +1,4 @@
-"""NSE & Nifty 50 Tracker — Streamlit entry point.
-
-This file's only job is UI orchestration:
-  - page config, auth gate, auto-refresh
-  - render each tab by calling helpers from utils/
-  - surface data-source warnings and log viewer in expanders
-"""
+"""NSE & Nifty 50 Tracker — Streamlit entry point."""
 import time
 import warnings
 from datetime import datetime
@@ -21,7 +15,6 @@ try:
 except ImportError:
     AUTOREFRESH_AVAILABLE = False
 
-# -- Page config (must be first Streamlit call) --
 st.set_page_config(
     page_title="NSE & Nifty 50 Tracker",
     page_icon="chart_with_upwards_trend",
@@ -29,16 +22,13 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# -- Logging must be configured before anything else --
 from utils.logger import get_logger, read_recent_logs, log_file_path
 log = get_logger(__name__)
 log.info("app.py startup — Streamlit session initialised")
 
-# -- Auth gate: renders login/register page and blocks until authenticated --
 from utils.auth_ui import auth_gate, render_logout_button
-auth_gate()   # <-- stops here if not logged in
+auth_gate()
 
-# -- Optional theme --
 try:
     from utils.theme import inject, inject_topbar
     inject()
@@ -52,7 +42,6 @@ try:
 except Exception:
     pass
 
-# -- Module imports --
 from utils.constants import REFRESH_MS, NIFTY50, NSE_INDICES, FAMOUS_DATES, CACHE_TTL
 from utils.data import (
     is_nse_open,
@@ -67,6 +56,8 @@ from utils.calculations import (
 from utils.charts import (
     build_price_chart, build_pct_bar, build_closing_bar, build_trend_chart,
 )
+from utils.alerts import get_alerts, add_alert, remove_alert, fire_alerts
+from utils.notifications import smtp_configured, twilio_configured
 
 # ---------------------------------------------------------------------------
 # Market state
@@ -146,34 +137,29 @@ def _show_pl_result(pl):
 
 
 def _show_data_warnings():
-    """Surface any queued data-source warnings (set by utils/data.py)."""
     warnings_list = st.session_state.get("data_warnings", [])
     for w in warnings_list:
         st.warning(w)
 
 
 # ---------------------------------------------------------------------------
-# Sidebar — user info + logout + source health + log viewer
+# Sidebar
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    render_logout_button()      # shows user email/phone + logout button
+    render_logout_button()
     st.markdown("### ⚙️ System")
 
-    # Data source status badge
     with st.expander("🔌 Data Source Status", expanded=False):
         try:
             src = get_source_status()
             icons = {"ok": "🟢", "degraded": "🟡", "down": "🔴", "not installed": "⚫"}
             st.markdown(f"{icons.get(src.get('yfinance','?'), '?')} **Yahoo Finance**: `{src.get('yfinance','?')}`")
             st.markdown(f"{icons.get(src.get('nselib','?'), '?')} **NSE (nselib)**: `{src.get('nselib','?')}`")
-            if src.get("yfinance") != "ok":
-                log.warning("Sidebar: yfinance status = %s", src.get('yfinance'))
         except Exception as exc:
             log.error("Source status widget failed: %s", exc)
             st.caption("Status unavailable")
 
-    # Live log viewer
     with st.expander("📋 Live Logs", expanded=False):
         try:
             n_lines = st.slider("Lines", 20, 200, 50, step=10, key="log_lines")
@@ -210,6 +196,7 @@ tabs = st.tabs([
     "P&L Calculator",
     "Stock Chart",
     "Time Machine",
+    "🔔 Alerts",
 ])
 
 # ── Tab 0: Market Overview ──────────────────────────────────────────────────
@@ -240,7 +227,6 @@ with tabs[0]:
                         "_pct": pt,
                     })
                 else:
-                    log.warning("Tab0: insufficient data for index %s", idx["name"])
                     idx_rows.append({"Index": idx["name"], val_lbl: "N/A",
                         "Change (pts)": "N/A", "Change (%)": "N/A",
                         "High": "N/A", "Low": "N/A", "_pct": None})
@@ -309,7 +295,6 @@ with tabs[1]:
 
         nifty = fetch_ticker("^NSEI", n_period)
         if nifty.empty or "Close" not in nifty.columns:
-            log.warning("Tab1: Nifty 50 data empty for period=%s", n_period)
             st.warning("Could not fetch Nifty 50 data.")
         else:
             c  = safe_float(nifty["Close"].iloc[-1])
@@ -376,7 +361,6 @@ with tabs[3]:
         top_n   = st.slider("Top N", 3, 10, 5, key="gl_n")
 
         if valid.empty:
-            log.warning("Tab3: no valid rows for Gainers/Losers")
             st.warning("No data available.")
         else:
             gainers   = safe_sort(valid, "_pct", ascending=False).head(top_n)
@@ -423,7 +407,6 @@ with tabs[4]:
             min_value=0.01, value=round(lp, 2) if lp > 0 else 100.0, step=0.5, key="pl_sp",
         )
         pl, inv, ret = calc_pl(buy_p, sell_p, qty)
-        log.info("P&L calc: stock=%s buy=%.2f sell=%.2f qty=%d → pl=%.2f", sel_name, buy_p, sell_p, qty, pl)
         _divider()
         mc1, mc2, mc3 = st.columns(3)
         mc1.metric("Investment", "Rs." + format(inv, ",.2f"))
@@ -467,10 +450,8 @@ with tabs[5]:
 
         sc_sym = next(s["symbol"] for s in NIFTY50 if s["name"] == sc_name)
         sc_h   = fetch_ticker(sc_sym, sc_per)
-        log.info("Tab5: chart for %s (%s) | rows=%d", sc_name, sc_per, len(sc_h))
 
         if sc_h.empty or "Close" not in sc_h.columns:
-            log.warning("Tab5: no data for %s [%s]", sc_sym, sc_per)
             st.warning("No data found for this stock.")
         else:
             c  = safe_float(sc_h["Close"].iloc[-1])
@@ -507,15 +488,12 @@ with tabs[6]:
             st.info("Loaded: " + preset + " — " + str(tm_date))
 
         if st.button("Travel to this date", key="tm_go"):
-            log.info("Time Machine travel requested: %s", tm_date)
             with st.spinner("Loading historical data (may take 30–60s first time)..."):
                 all_hist = fetch_all_history()
             snap = build_time_machine_snapshot(all_hist, tm_date)
             if snap.empty:
-                log.warning("Time Machine: no data for %s", tm_date)
                 st.error("No data for this date. Try a nearby trading day.")
             else:
-                log.info("Time Machine: snapshot for %s — %d stocks", tm_date, len(snap))
                 st.success("Snapshot for " + str(tm_date))
                 st.dataframe(snap, use_container_width=True)
                 try:
@@ -529,3 +507,129 @@ with tabs[6]:
     except Exception as exc:
         log.error("Tab6 fatal: %s", exc, exc_info=True)
         st.error("Time Machine error: " + str(exc))
+
+# ── Tab 7: Alerts ───────────────────────────────────────────────────────────
+with tabs[7]:
+    try:
+        t0 = time.perf_counter()
+        _hero("🔔 Price Alerts", "Get notified by email and/or SMS when a stock hits your target")
+
+        # ── Delivery channel status ──────────────────────────────────────────
+        ec, tc = st.columns(2)
+        with ec:
+            if smtp_configured():
+                st.success("📧 Email alerts: **configured**")
+            else:
+                st.warning("📧 Email alerts: not configured — add [smtp] to Secrets")
+        with tc:
+            if twilio_configured():
+                st.success("📱 SMS alerts: **configured**")
+            else:
+                st.warning("📱 SMS alerts: not configured — add [twilio] to Secrets")
+
+        _divider()
+
+        # ── Add new alert ────────────────────────────────────────────────────
+        _sec("➕ Add New Alert")
+        with st.form("add_alert_form", clear_on_submit=True):
+            r1c1, r1c2 = st.columns(2)
+            with r1c1:
+                al_email = st.text_input("Your Email", placeholder="you@example.com")
+            with r1c2:
+                al_phone = st.text_input("Your Phone (optional)", placeholder="+91 98765 43210")
+
+            r2c1, r2c2, r2c3 = st.columns([2, 1, 1])
+            with r2c1:
+                al_stock_name = st.selectbox("Stock", [s["name"] for s in NIFTY50], key="al_stock")
+            with r2c2:
+                al_direction = st.selectbox("Alert when price", ["rises above ↑", "drops below ↓"])
+            with r2c3:
+                al_sym    = next(s["symbol"] for s in NIFTY50 if s["name"] == al_stock_name)
+                live_data = fetch_ticker(al_sym, "5d")
+                live_px   = safe_float(live_data["Close"].iloc[-1]) if not live_data.empty and "Close" in live_data.columns else 100.0
+                al_thresh = st.number_input(
+                    "Target Price (Rs.)",
+                    min_value=0.01,
+                    value=round(live_px, 2),
+                    step=1.0,
+                )
+
+            submitted = st.form_submit_button("🔔 Set Alert", type="primary", use_container_width=True)
+            if submitted:
+                if not al_email and not al_phone:
+                    st.error("Enter at least an email or phone number to receive the alert.")
+                elif al_email and not al_email.strip().count("@"):
+                    st.error("Enter a valid email address.")
+                else:
+                    direction = "above" if "above" in al_direction else "below"
+                    add_alert(
+                        stock=al_stock_name,
+                        symbol=al_sym,
+                        direction=direction,
+                        threshold=al_thresh,
+                        email=al_email,
+                        phone=al_phone,
+                    )
+                    st.success(f"✅ Alert set: {al_stock_name} {'>' if direction == 'above' else '<'} Rs.{al_thresh:,.2f}")
+
+        _divider()
+
+        # ── Active alerts ────────────────────────────────────────────────────
+        alerts = get_alerts()
+        active  = [a for a in alerts if not a["triggered"]]
+        fired   = [a for a in alerts if a["triggered"]]
+
+        _sec(f"📋 Active Alerts ({len(active)})")
+        if not active:
+            st.caption("No active alerts. Add one above.")
+        else:
+            for al in active:
+                col_info, col_del = st.columns([5, 1])
+                with col_info:
+                    arrow = "↑" if al["direction"] == "above" else "↓"
+                    contact = al["email"] or al["phone"] or "in-app only"
+                    st.markdown(
+                        f"**{al['stock']}** price {arrow} Rs.{al['threshold']:,.2f}  "
+                        f"· 📬 {contact}  · `#{al['id']}`"
+                    )
+                with col_del:
+                    if st.button("🗑️", key=f"del_{al['id']}", help="Remove this alert"):
+                        remove_alert(al["id"])
+                        st.rerun()
+
+        # ── Fire check on every refresh ──────────────────────────────────────
+        if active:
+            try:
+                live_rows = _build_stock_rows_cached()
+                price_map = dict(zip(
+                    [s["symbol"] for s in NIFTY50],
+                    live_rows["_curr"].fillna(0).tolist(),
+                )) if "_curr" in live_rows.columns else {}
+                n_fired = fire_alerts(price_map)
+                if n_fired:
+                    st.toast(f"🔔 {n_fired} alert(s) triggered!", icon="🔔")
+                    st.rerun()
+            except Exception as exc:
+                log.error("Alerts fire_alerts failed: %s", exc)
+
+        # ── Triggered history ────────────────────────────────────────────────
+        if fired:
+            with st.expander(f"✅ Triggered Alerts ({len(fired)})", expanded=False):
+                for al in fired:
+                    arrow = "↑" if al["direction"] == "above" else "↓"
+                    st.markdown(
+                        f"~~**{al['stock']}**~~ price {arrow} Rs.{al['threshold']:,.2f}  "
+                        f"· 📬 {al['email'] or al['phone'] or '—'}  · `#{al['id']}` · {al['created']}"
+                    )
+
+        # ── Notification dispatch log ────────────────────────────────────────
+        alert_log = st.session_state.get("_alert_log", [])
+        if alert_log:
+            with st.expander("📜 Notification Log", expanded=False):
+                for entry in alert_log:
+                    st.text(entry)
+
+        log.info("Tab7 Alerts rendered in %.0f ms", (time.perf_counter() - t0) * 1000)
+    except Exception as exc:
+        log.error("Tab7 fatal: %s", exc, exc_info=True)
+        st.error("Alerts error: " + str(exc))

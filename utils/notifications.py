@@ -1,10 +1,29 @@
 """
-utils/notifications.py  —  safe SMTP + Twilio helpers.
-All secrets are read with .get() so missing config never crashes the app.
+utils/notifications.py  —  SMTP email + Twilio SMS helpers.
+
+Secret key layout expected in .streamlit/secrets.toml:
+
+    [smtp]
+    host     = "smtp.gmail.com"
+    port     = 587
+    user     = "nifty50alerts@gmail.com"
+    password = "xxxx xxxx xxxx xxxx"   # Gmail App Password
+    from     = "Nifty50 Tracker <nifty50alerts@gmail.com>"
+
+    [twilio]
+    sid   = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    token = "your_auth_token"
+    from  = "+1415XXXXXXX"
+
+All secrets are read with .get() so missing config never crashes.
 """
 from __future__ import annotations
 import streamlit as st
 
+
+# ---------------------------------------------------------------------------
+# Config checks
+# ---------------------------------------------------------------------------
 
 def smtp_configured() -> bool:
     try:
@@ -17,42 +36,53 @@ def smtp_configured() -> bool:
 def twilio_configured() -> bool:
     try:
         t = st.secrets.get("twilio", {})
-        return bool(t.get("account_sid") and t.get("auth_token") and t.get("from_number"))
+        return bool(t.get("sid") and t.get("token") and t.get("from"))
     except Exception:
         return False
 
 
+# ---------------------------------------------------------------------------
+# Send helpers
+# ---------------------------------------------------------------------------
+
 def send_email(to: str, subject: str, body: str) -> tuple[bool, str]:
+    """Send a plain-text email via Gmail SMTP (or any STARTTLS host)."""
     if not smtp_configured():
-        return False, "SMTP not configured"
+        return False, "SMTP not configured — add [smtp] to secrets.toml"
     try:
         import smtplib
-        from email.mime.text import MIMEText
         from email.mime.multipart import MIMEMultipart
-        s   = st.secrets["smtp"]
-        msg = MIMEMultipart()
-        msg["From"]    = s["user"]
+        from email.mime.text import MIMEText
+
+        s        = st.secrets["smtp"]
+        from_hdr = s.get("from", s["user"])
+        port     = int(s.get("port", 587))
+
+        msg             = MIMEMultipart()
+        msg["From"]    = from_hdr
         msg["To"]      = to
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "plain"))
-        port = int(s.get("port", 587))
-        with smtplib.SMTP(s["host"], port, timeout=10) as srv:
+
+        with smtplib.SMTP(s["host"], port, timeout=12) as srv:
+            srv.ehlo()
             srv.starttls()
             srv.login(s["user"], s["password"])
             srv.sendmail(s["user"], to, msg.as_string())
         return True, ""
-    except Exception as e:
-        return False, str(e)
+    except Exception as exc:
+        return False, str(exc)
 
 
 def send_sms(to: str, body: str) -> tuple[bool, str]:
+    """Send an SMS via Twilio."""
     if not twilio_configured():
-        return False, "Twilio not configured"
+        return False, "Twilio not configured — add [twilio] to secrets.toml"
     try:
         from twilio.rest import Client
         t   = st.secrets["twilio"]
-        cli = Client(t["account_sid"], t["auth_token"])
-        cli.messages.create(body=body, from_=t["from_number"], to=to)
+        cli = Client(t["sid"], t["token"])
+        cli.messages.create(body=body, from_=t["from"], to=to)
         return True, ""
-    except Exception as e:
-        return False, str(e)
+    except Exception as exc:
+        return False, str(exc)
