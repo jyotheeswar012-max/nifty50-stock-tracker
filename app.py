@@ -1,7 +1,7 @@
 """NSE & Nifty 50 Tracker — Streamlit entry point.
 
 This file's only job is UI orchestration:
-  - page config, auth, auto-refresh
+  - page config, auth gate, auto-refresh
   - render each tab by calling helpers from utils/
   - surface data-source warnings and log viewer in expanders
 """
@@ -34,18 +34,18 @@ from utils.logger import get_logger, read_recent_logs, log_file_path
 log = get_logger(__name__)
 log.info("app.py startup — Streamlit session initialised")
 
-# -- Optional theme / auth --
+# -- Auth gate: renders login/register page and blocks until authenticated --
+from utils.auth_ui import auth_gate, render_logout_button
+auth_gate()   # <-- stops here if not logged in
+
+# -- Optional theme --
 try:
     from utils.theme import inject, inject_topbar
     inject()
 except Exception:
     pass
 
-try:
-    from utils.supabase_auth import get_current_user
-except Exception:
-    def get_current_user(): return None
-
+from utils.firebase_auth import get_current_user
 user = get_current_user()
 try:
     inject_topbar(user=user)
@@ -153,10 +153,11 @@ def _show_data_warnings():
 
 
 # ---------------------------------------------------------------------------
-# Sidebar — source health + log viewer
+# Sidebar — user info + logout + source health + log viewer
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
+    render_logout_button()      # shows user email/phone + logout button
     st.markdown("### ⚙️ System")
 
     # Data source status badge
@@ -186,7 +187,7 @@ with st.sidebar:
                 min_idx   = lvl_order.index(level_filter)
                 lines = [l for l in lines if any(lv in l for lv in lvl_order[min_idx:])]
             if lines:
-                st.code("\n".join(lines), language="")   # monospace, no syntax highlight
+                st.code("\n".join(lines), language="")
             else:
                 st.caption("No log entries yet.")
             st.caption(f"Log file: `{log_file_path()}`")

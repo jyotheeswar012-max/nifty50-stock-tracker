@@ -5,13 +5,14 @@ pandas>=2.0
 numpy>=1.26
 plotly>=5.20
 pytz
+requests>=2.31
 streamlit-autorefresh>=1.0.1
+
+# ── Firebase Auth (REST API — no Admin SDK needed) ───────────────
+# No extra package required; uses `requests` (above) directly.
 
 # ── Optional: NSE India fallback (gracefully skipped if absent) ───
 # nselib>=2.0
-
-# ── Optional: Supabase backend (gracefully skipped if absent) ────
-# supabase
 
 # ── Optional: News feed ──────────────────────────────────────────
 # newsapi-python>=0.2.7
