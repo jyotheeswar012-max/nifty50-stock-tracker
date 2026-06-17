@@ -144,27 +144,29 @@ def build_trend_chart(series_dict, title="Normalised Performance (base=100)",
 def build_sector_pie(df_rows: pd.DataFrame, title: str = "Sector Allocation",
                      height: int = 420) -> go.Figure:
     """Donut chart — weighted by current price sum per sector."""
-    log.debug("build_sector_pie: rows=%d", len(df_rows))
+    log.debug("build_sector_pie: rows=%d cols=%s", len(df_rows), list(df_rows.columns))
     try:
         if "Sector" not in df_rows.columns:
             raise ValueError("'Sector' column missing from df_rows")
 
         if "_curr" in df_rows.columns:
-            grp = (
-                df_rows.groupby("Sector")["_curr"]
-                .apply(lambda s: pd.to_numeric(s, errors="coerce").dropna().sum())
-                .reset_index()
-            )
-            grp.columns = ["Sector", "Value"]
+            # Explicit numeric cast on a plain copy — avoids pandas MultiIndex
+            # column bug that occurs with groupby().apply() in newer pandas.
+            tmp = df_rows[["Sector", "_curr"]].copy()
+            tmp["_curr"] = pd.to_numeric(tmp["_curr"], errors="coerce")
+            tmp = tmp.dropna(subset=["_curr"])
+            grp = tmp.groupby("Sector", as_index=False)["_curr"].sum()
+            grp = grp.rename(columns={"_curr": "Value"})
             values_col, value_label = "Value", "Cumulative Price (Rs.)"
         else:
-            grp = df_rows.groupby("Sector").size().reset_index(name="Count")
+            grp = df_rows.groupby("Sector", as_index=False).size()
+            grp = grp.rename(columns={"size": "Count"})
             values_col, value_label = "Count", "Stock Count"
 
         grp = grp[grp[values_col] > 0].copy()
 
         if grp.empty:
-            log.warning("build_sector_pie: no sectors with positive value")
+            log.warning("build_sector_pie: no sectors with positive value after filter")
             return go.Figure()
 
         _PALETTE = [
