@@ -223,7 +223,7 @@ with tabs[0]:
         if not valid_idx.empty:
             try:
                 title = "Today's % Change by Index" if market_open else "Last Session % Change by Index"
-                st.plotly_chart(build_pct_bar(valid_idx, "Index", "_pct", title, text_col="Change (%)", height=300), use_container_width=True)
+                st.plotly_chart(build_pct_bar(valid_idx, "Index", "_pct", title, text_col="Change (%)", height=300), use_container_width=False)
             except Exception: pass
         _divider()
         _sec("Trend Comparison")
@@ -243,7 +243,7 @@ with tabs[0]:
                     if not h.empty and "Close" in h.columns:
                         series[ni] = {"df": h, "color": meta["color"]}
                 if series:
-                    st.plotly_chart(build_trend_chart(series, height=360), use_container_width=True)
+                    st.plotly_chart(build_trend_chart(series, height=360), use_container_width=False)
             except Exception: st.info("Could not render trend chart.")
     except Exception as exc:
         st.error("Market Overview error: " + str(exc))
@@ -270,7 +270,7 @@ with tabs[1]:
             m4.metric("Period Low",  "Rs." + format(safe_float(nifty["Low"].min()),  ",.2f"))
             m5.metric("Avg Volume",  format(int(safe_float(nifty["Volume"].mean())), ","))
             _divider()
-            try: st.plotly_chart(build_price_chart(nifty, "Nifty 50", n_period, chart_type, y_title="Index Value", height=440), use_container_width=True)
+            try: st.plotly_chart(build_price_chart(nifty, "Nifty 50", n_period, chart_type, y_title="Index Value", height=440), use_container_width=False)
             except Exception: st.info("Chart unavailable.")
     except Exception as exc:
         st.error("Nifty 50 error: " + str(exc))
@@ -288,7 +288,7 @@ with tabs[2]:
         if not valid.empty:
             try:
                 title = "1-Day % Change" if market_open else "1-Day % Change (last session)"
-                st.plotly_chart(build_pct_bar(valid, "Symbol", "_pct", title, text_col="Change (%)"), use_container_width=True)
+                st.plotly_chart(build_pct_bar(valid, "Symbol", "_pct", title, text_col="Change (%)"), use_container_width=False)
             except Exception: pass
     except Exception as exc:
         st.error("Companies error: " + str(exc))
@@ -315,7 +315,7 @@ with tabs[3]:
                 st.dataframe(_sanitize_df(losers[["Symbol", "Company", price_col, "Change (%)"]]), width="stretch", hide_index=True)
             try:
                 combined = pd.concat([gainers, losers]).drop_duplicates(subset="Symbol")
-                st.plotly_chart(build_pct_bar(combined[combined["_pct"].notna()], "Symbol", "_pct", "Gainers vs Losers", text_col="Change (%)"), use_container_width=True)
+                st.plotly_chart(build_pct_bar(combined[combined["_pct"].notna()], "Symbol", "_pct", "Gainers vs Losers", text_col="Change (%)"), use_container_width=False)
             except Exception: pass
     except Exception as exc:
         st.error("Gainers/Losers error: " + str(exc))
@@ -375,7 +375,7 @@ with tabs[5]:
             m2.metric("Change", format(ch, "+.2f"), delta=format(pt, "+.2f") + "%")
             m3.metric("High", "Rs." + format(safe_float(sc_h["High"].max()), ",.2f"))
             m4.metric("Low",  "Rs." + format(safe_float(sc_h["Low"].min()),  ",.2f"))
-            try: st.plotly_chart(build_price_chart(sc_h, sc_name, sc_per, sc_ct, height=440), use_container_width=True)
+            try: st.plotly_chart(build_price_chart(sc_h, sc_name, sc_per, sc_ct, height=440), use_container_width=False)
             except Exception: st.info("Chart unavailable.")
     except Exception as exc:
         st.error("Stock Chart error: " + str(exc))
@@ -399,7 +399,7 @@ with tabs[6]:
             else:
                 st.success("Snapshot for " + str(tm_date))
                 st.dataframe(_sanitize_df(snap), width="stretch")
-                try: st.plotly_chart(build_closing_bar(snap.reset_index(), "Symbol", "Close", "Closing Prices — " + str(tm_date)), use_container_width=True)
+                try: st.plotly_chart(build_closing_bar(snap.reset_index(), "Symbol", "Close", "Closing Prices — " + str(tm_date)), use_container_width=False)
                 except Exception: pass
     except Exception as exc:
         st.error("Time Machine error: " + str(exc))
@@ -432,8 +432,6 @@ with tabs[7]:
         _divider()
 
         # ── Add new alert ─────────────────────────────────────────────────
-        # FIX: stock selectbox and live price fetch must be OUTSIDE the form
-        # so they don't trigger a StreamlitAPIException on auto-refresh reruns.
         _sec("➕ Add New Alert")
         st.caption(f"Alert emails will be sent to **{user_email}** when the price target is hit.")
 
