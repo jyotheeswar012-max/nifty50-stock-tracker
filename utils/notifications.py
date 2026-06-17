@@ -1,39 +1,23 @@
 """
-utils/notifications.py  —  SMTP email + Twilio SMS helpers.
-
-Secret key layout expected in .streamlit/secrets.toml:
-
-    [smtp]
-    host     = "smtp.gmail.com"
-    port     = 587
-    user     = "nifty50alerts@gmail.com"
-    password = "xxxx xxxx xxxx xxxx"   # Gmail App Password
-    from     = "Nifty50 Tracker <nifty50alerts@gmail.com>"
-
-    [twilio]
-    sid   = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-    token = "your_auth_token"
-    from  = "+1415XXXXXXX"
+utils/notifications.py  —  SMTP email helpers.
 """
 from __future__ import annotations
 import streamlit as st
 
+# _CACHE_BUST = 4   # increment to force .pyc regeneration
 
 def _scrub(text: str) -> str:
-    """Replace every non-ASCII byte with a plain-ASCII equivalent."""
-    return (
-        text
-        .replace("\xa0",  " ")
-        .replace("\u20b9", "Rs.")
-        .replace("\u20a8", "Rs.")
-        .encode("ascii", errors="ignore")
-        .decode("ascii")
-    )
+    s = str(text)
+    # Kill every known non-ASCII offender explicitly
+    s = s.replace("\xa0", " ")      # non-breaking space
+    s = s.replace("\u00a0", " ")    # same, via unicode name
+    s = s.replace("\u20b9", "Rs.")  # rupee
+    s = s.replace("\u20a8", "Rs.")  # rupee legacy
+    s = s.replace("\u2013", "-")    # en-dash
+    s = s.replace("\u2014", "-")    # em-dash
+    # Nuclear option: drop anything still non-ASCII
+    return s.encode("ascii", errors="ignore").decode("ascii")
 
-
-# ---------------------------------------------------------------------------
-# Config checks
-# ---------------------------------------------------------------------------
 
 def smtp_configured() -> bool:
     try:
@@ -51,32 +35,19 @@ def twilio_configured() -> bool:
         return False
 
 
-# ---------------------------------------------------------------------------
-# Send helpers
-# ---------------------------------------------------------------------------
-
 def send_email(to: str, subject: str, body: str) -> tuple[bool, str]:
-    """Send a plain-text email via Gmail SMTP.
-
-    Builds the MIME message manually as a UTF-8 encoded bytes object so
-    smtplib NEVER touches the subject/body through its ASCII codec path.
-    srv.sendmail() receives raw bytes — no encoding happens inside smtplib.
-    """
     if not smtp_configured():
-        return False, "SMTP not configured — add [smtp] to secrets.toml"
+        return False, "SMTP not configured"
     try:
         import smtplib
-
-        s        = st.secrets["smtp"]
-        port     = int(s.get("port", 587))
+        s         = st.secrets["smtp"]
+        port      = int(s.get("port", 587))
         from_addr = _scrub(str(s.get("from", s["user"])))
-
-        # Scrub all user-supplied strings
         subject   = _scrub(str(subject))
         body      = _scrub(str(body))
+        to        = _scrub(str(to))
 
-        # Build raw RFC-2822 message as bytes — UTF-8 throughout.
-        # We never call msg.as_string() which triggers the ASCII codec.
+        # Build raw bytes — bypasses smtplib's ASCII codec entirely
         raw = (
             f"From: {from_addr}\r\n"
             f"To: {to}\r\n"
@@ -93,23 +64,21 @@ def send_email(to: str, subject: str, body: str) -> tuple[bool, str]:
             srv.starttls()
             srv.ehlo()
             srv.login(s["user"], s["password"])
-            # sendmail() with bytes skips all internal encoding in smtplib
             srv.sendmail(from_addr, [to], raw)
-
         return True, ""
     except Exception as exc:
         return False, str(exc)
 
 
 def send_sms(to: str, body: str) -> tuple[bool, str]:
-    """Send an SMS via Twilio."""
     if not twilio_configured():
-        return False, "Twilio not configured — add [twilio] to secrets.toml"
+        return False, "Twilio not configured"
     try:
         from twilio.rest import Client
-        t   = st.secrets["twilio"]
-        cli = Client(t["sid"], t["token"])
-        cli.messages.create(body=_scrub(body), from_=t["from"], to=to)
+        t = st.secrets["twilio"]
+        Client(t["sid"], t["token"]).messages.create(
+            body=_scrub(body), from_=t["from"], to=to
+        )
         return True, ""
     except Exception as exc:
         return False, str(exc)

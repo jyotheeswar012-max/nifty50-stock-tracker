@@ -15,32 +15,26 @@ IST = pytz.timezone("Asia/Kolkata")
 _KEY = "_alerts_by_user"
 _LOG = "_alert_log"
 
+# _CACHE_BUST = 4
+
+def _clean(text: str) -> str:
+    s = str(text)
+    s = s.replace("\xa0", " ")
+    s = s.replace("\u00a0", " ")
+    s = s.replace("\u20b9", "Rs.")
+    s = s.replace("\u20a8", "Rs.")
+    s = s.replace("\u2013", "-")
+    s = s.replace("\u2014", "-")
+    return s.encode("ascii", errors="ignore").decode("ascii").strip()
+
 
 def _fmt(value: float) -> str:
-    """Format a price as a plain ASCII string with comma thousands separator."""
     integer_part, decimal_part = f"{value:.2f}".split(".")
     chars = list(integer_part)
     for i in range(len(chars) - 3, 0, -3):
         chars.insert(i, ",")
     return "".join(chars) + "." + decimal_part
 
-
-def _clean(text: str) -> str:
-    """Strip every non-ASCII character — kills \\xa0, rupee signs, etc."""
-    return (
-        str(text)
-        .replace("\xa0", " ")
-        .replace("\u20b9", "Rs.")
-        .replace("\u20a8", "Rs.")
-        .encode("ascii", errors="ignore")
-        .decode("ascii")
-        .strip()
-    )
-
-
-# ---------------------------------------------------------------------------
-# Storage helpers
-# ---------------------------------------------------------------------------
 
 def _all_alerts() -> dict[str, list[dict]]:
     return st.session_state.setdefault(_KEY, {})
@@ -57,14 +51,14 @@ def add_alert(stock: str, symbol: str, direction: str, threshold: float,
     alerts = alerts_by_user.setdefault(email, [])
     alerts.append({
         "id": str(uuid.uuid4())[:8],
-        "stock": _clean(stock),        # sanitise at write time — kills \xa0 forever
-        "symbol": _clean(symbol),
+        "stock":     _clean(stock),
+        "symbol":    _clean(symbol),
         "direction": direction,
         "threshold": threshold,
-        "email": email,
-        "phone": phone.strip(),
+        "email":     email,
+        "phone":     phone.strip(),
         "triggered": False,
-        "created": datetime.now(IST).strftime("%H:%M:%S"),
+        "created":   datetime.now(IST).strftime("%H:%M:%S"),
     })
 
 
@@ -77,7 +71,7 @@ def remove_alert(alert_id: str, user_email: str) -> None:
 
 
 def _append_log(user_email: str, msg: str) -> None:
-    log_map = st.session_state.setdefault(_LOG, {})
+    log_map  = st.session_state.setdefault(_LOG, {})
     user_log = log_map.setdefault(user_email, [])
     ts = datetime.now(IST).strftime("%H:%M:%S")
     user_log.insert(0, f"[{ts}] {msg}")
@@ -85,13 +79,9 @@ def _append_log(user_email: str, msg: str) -> None:
         user_log.pop()
 
 
-# ---------------------------------------------------------------------------
-# Alert firing
-# ---------------------------------------------------------------------------
-
 def fire_alerts(live_prices: dict[str, float], user_email: str) -> int:
     alerts = _all_alerts().get(user_email, [])
-    fired = 0
+    fired  = 0
 
     for alert in alerts:
         if alert["triggered"]:
@@ -111,14 +101,12 @@ def fire_alerts(live_prices: dict[str, float], user_email: str) -> int:
         fired += 1
 
         direction_word = "crossed above" if alert["direction"] == "above" else "dropped below"
+        stock_name     = _clean(alert["stock"])          # scrub even old dirty alerts
+        threshold_str  = _fmt(alert["threshold"])
+        price_str      = _fmt(price)
 
-        # _clean() here handles any old alerts already in session_state with \xa0
-        stock_name    = _clean(alert["stock"])
-        threshold_str = _fmt(alert["threshold"])
-        price_str     = _fmt(price)
-
-        subject = f"Nifty50 Alert: {stock_name} {direction_word} Rs.{threshold_str}"
-        body = (
+        subject = _clean(f"Nifty50 Alert: {stock_name} {direction_word} Rs.{threshold_str}")
+        body    = _clean(
             f"Your price alert has been triggered!\n\n"
             f"Stock     : {stock_name} ({_clean(alert['symbol'])})\n"
             f"Condition : Price {direction_word} Rs.{threshold_str}\n"
@@ -128,7 +116,7 @@ def fire_alerts(live_prices: dict[str, float], user_email: str) -> int:
         )
 
         log_parts = [f"Alert #{alert['id']} fired -- {stock_name} @ Rs.{price_str}"]
-        ok, err = send_email(alert["email"], subject, body)
+        ok, err   = send_email(alert["email"], subject, body)
         log_parts.append(f"Email {'OK' if ok else 'FAILED: ' + err}")
         _append_log(user_email, " | ".join(log_parts))
 
