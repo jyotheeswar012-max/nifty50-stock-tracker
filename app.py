@@ -101,16 +101,10 @@ def _build_stock_rows_cached():
 
 
 def _sanitize_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Coerce any string 'NA' placeholders in numeric columns to float NaN.
-
-    When yfinance rate-limits and nselib fallback is used, missing prices
-    may appear as the string 'NA' instead of float('nan'), which causes
-    PyArrow / Streamlit's Arrow serializer to raise ArrowInvalid.
-    """
+    """Coerce any string 'NA' placeholders in numeric columns to float NaN."""
     df = df.copy()
     for col in df.columns:
         if df[col].dtype == object:
-            # Only coerce columns that look numeric (contain digits or NA)
             sample = df[col].dropna().astype(str)
             if sample.empty:
                 continue
@@ -410,13 +404,13 @@ with tabs[6]:
     except Exception as exc:
         st.error("Time Machine error: " + str(exc))
 
-# ── Tab 7: Alerts ───────────────────────────────────────────────────────────
+# ── Tab 7: Alerts ────────────────────────────────────────────────────────────
 with tabs[7]:
     try:
         t0 = time.perf_counter()
         _hero("🔔 Price Alerts", f"Signed in as {user_email}")
 
-        # ── SMTP status + test button ───────────────────────────────────────
+        # ── SMTP status + test button ─────────────────────────────────────
         c_smtp, c_test = st.columns([3, 1])
         with c_smtp:
             if smtp_configured():
@@ -437,19 +431,30 @@ with tabs[7]:
 
         _divider()
 
-        # ── Add new alert ────────────────────────────────────────────────
+        # ── Add new alert ─────────────────────────────────────────────────
+        # FIX: stock selectbox and live price fetch must be OUTSIDE the form
+        # so they don't trigger a StreamlitAPIException on auto-refresh reruns.
         _sec("➕ Add New Alert")
         st.caption(f"Alert emails will be sent to **{user_email}** when the price target is hit.")
+
+        r2c1, r2c2 = st.columns([2, 1])
+        with r2c1:
+            al_stock_name = st.selectbox("Stock", [s["name"] for s in NIFTY50], key="al_stock")
+        with r2c2:
+            al_direction = st.selectbox("Alert when price", ["rises above ↑", "drops below ↓"], key="al_dir")
+
+        # Fetch live price outside form (safe on every rerun)
+        al_sym = next(s["symbol"] for s in NIFTY50 if s["name"] == al_stock_name)
+        try:
+            live_data = fetch_ticker(al_sym, "5d")
+            live_px = safe_float(live_data["Close"].iloc[-1]) if not live_data.empty and "Close" in live_data.columns else 100.0
+        except Exception:
+            live_px = 100.0
+
+        st.caption(f"📊 Current price of **{al_stock_name}**: **Rs.{live_px:,.2f}**")
+
         with st.form("add_alert_form", clear_on_submit=True):
-            r2c1, r2c2, r2c3 = st.columns([2, 1, 1])
-            with r2c1: al_stock_name = st.selectbox("Stock", [s["name"] for s in NIFTY50], key="al_stock")
-            with r2c2: al_direction  = st.selectbox("Alert when price", ["rises above ↑", "drops below ↓"])
-            with r2c3:
-                al_sym    = next(s["symbol"] for s in NIFTY50 if s["name"] == al_stock_name)
-                live_data = fetch_ticker(al_sym, "5d")
-                live_px   = safe_float(live_data["Close"].iloc[-1]) if not live_data.empty and "Close" in live_data.columns else 100.0
-                al_thresh = st.number_input("Target Price (Rs.)", min_value=0.01, value=round(live_px, 2), step=1.0)
-            st.caption(f"📊 Current price of {al_stock_name}: **Rs.{live_px:,.2f}**")
+            al_thresh = st.number_input("Target Price (Rs.)", min_value=0.01, value=round(live_px, 2), step=1.0)
             submitted = st.form_submit_button("🔔 Set Alert", type="primary", use_container_width=True)
             if submitted:
                 direction = "above" if "above" in al_direction else "below"
@@ -458,14 +463,14 @@ with tabs[7]:
 
         _divider()
 
-        # ── Build live price map ────────────────────────────────────────────
+        # ── Build live price map ──────────────────────────────────────────
         try:
             live_rows = _build_stock_rows_cached()
             price_map = dict(zip([s["symbol"] for s in NIFTY50], live_rows["_curr"].fillna(0).tolist())) if "_curr" in live_rows.columns else {}
         except Exception:
             price_map = {}
 
-        # ── Active alerts ────────────────────────────────────────────────
+        # ── Active alerts ─────────────────────────────────────────────────
         alerts = get_alerts(user_email)
         active = [a for a in alerts if not a["triggered"]]
         fired  = [a for a in alerts if a["triggered"]]
@@ -491,7 +496,7 @@ with tabs[7]:
                         remove_alert(al["id"], user_email)
                         st.rerun()
 
-        # ── Fire check ───────────────────────────────────────────────────────
+        # ── Fire check ────────────────────────────────────────────────────
         if active and price_map:
             try:
                 n_fired = fire_alerts(price_map, user_email)
@@ -501,14 +506,14 @@ with tabs[7]:
             except Exception as exc:
                 log.error("Alerts fire_alerts failed: %s", exc)
 
-        # ── Triggered history ──────────────────────────────────────────────
+        # ── Triggered history ─────────────────────────────────────────────
         if fired:
             with st.expander(f"✅ Triggered Alerts ({len(fired)})", expanded=False):
                 for al in fired:
                     arrow = "↑" if al["direction"] == "above" else "↓"
                     st.markdown(f"~~**{al['stock']}**~~ {arrow} Rs.{al['threshold']:,.2f} · `#{al['id']}` · {al['created']}")
 
-        # ── Notification log ────────────────────────────────────────────────
+        # ── Notification log ──────────────────────────────────────────────
         alert_log = st.session_state.get("_alert_log", {})
         user_log = alert_log.get(user_email, []) if isinstance(alert_log, dict) else []
         if user_log:
