@@ -59,7 +59,7 @@ def _show_data_warnings() -> None:
         st.warning(w)
 
 
-# ── Sidebar ────────────────────────────────────────────────────────────────────────────
+# ── Sidebar ──────────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### \u2699\ufe0f System")
     with st.expander("\U0001f50c Data Source Status", expanded=False):
@@ -99,7 +99,7 @@ with st.sidebar:
             st.caption("Log viewer unavailable")
 
 
-# ── Live status banner ─────────────────────────────────────────────────────────────────────
+# ── Live status banner ───────────────────────────────────────────────────────────────────────────────────────
 @st.fragment(run_every=REFRESH_MS / 1000 if market_open else None)
 def _status_banner() -> None:
     try:
@@ -127,7 +127,7 @@ def _status_banner() -> None:
 _status_banner()
 _show_data_warnings()
 
-# ── Tabs ─────────────────────────────────────────────────────────────────────────────
+# ── Tabs ────────────────────────────────────────────────────────────────────────────────────
 tabs = st.tabs([
     "Market Overview",
     "Nifty 50 Index",
@@ -145,7 +145,7 @@ _ctx = dict(
     last_close_label=last_close_label,
 )
 
-# NOTE: imports use tabs/ (not pages/) so Streamlit never registers them as pages.
+# NOTE: ALL imports use tabs/ (not pages/) so Streamlit never registers them as pages.
 with tabs[0]:
     from tabs.tab_overview import render as _r0
     _r0(**_ctx)
@@ -155,7 +155,7 @@ with tabs[1]:
     _r1(**_ctx)
 
 with tabs[2]:
-    from pages.tab_companies import render as _r2
+    from tabs.tab_companies import render as _r2  # fixed: was pages.tab_companies
     _r2(**_ctx, build_stock_rows_cached=_build_stock_rows_cached)
 
 with tabs[3]:
