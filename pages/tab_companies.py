@@ -40,29 +40,34 @@ def _sanitize_numeric_cols(df: pd.DataFrame) -> pd.DataFrame:
 
 def _get_history() -> tuple[dict, bool]:
     """Return (history_dict, is_live).
-    Tries live yfinance first; always falls back to static synthetic data.
+    Tries live yfinance first; ALWAYS falls back to static synthetic data.
+    Static data is guaranteed non-empty so charts always render.
     """
+    # --- Try live ---
     try:
         from utils.data import fetch_all_history
         hist = fetch_all_history()
-        if hist and len(hist) >= 10:
+        if isinstance(hist, dict) and len(hist) >= 10:
+            log.info("tab_companies: using live history (%d symbols)", len(hist))
             return hist, True
     except Exception as exc:
-        log.warning("tab_companies: fetch_all_history failed: %s", exc)
-    log.info("tab_companies: using static synthetic history fallback")
-    return _build_static_history(), False
+        log.warning("tab_companies: live fetch failed: %s", exc)
+
+    # --- Guaranteed fallback ---
+    log.info("tab_companies: using static synthetic history")
+    static = _build_static_history()
+    return static, False
 
 
 def _build_pie_from_history(history: dict, title: str) -> object:
-    """Build sector pie directly from a history dict (no live price rows needed)."""
+    """Build sector pie directly from a history dict."""
     rows = []
     for s in NIFTY50:
         h = history.get(s["symbol"])
         if h is not None and not h.empty and "Close" in h.columns:
-            close_series = h["Close"].dropna()
-            price = float(close_series.iloc[-1]) if not close_series.empty else s.get("beta", 1.0) * 1000
+            close_vals = h["Close"].dropna()
+            price = float(close_vals.iloc[-1]) if not close_vals.empty else 1000.0
         else:
-            # Use seed price from static history as final fallback
             price = 1000.0
         rows.append({"Sector": s["sector"], "_curr": price})
     return build_sector_pie(pd.DataFrame(rows), title=title)
@@ -112,11 +117,19 @@ def render(
     with st.spinner("Loading price history…"):
         all_hist, is_live = _get_history()
 
+    # Defensive: if somehow still empty, force static
+    if not all_hist:
+        log.error("tab_companies: _get_history returned empty dict — forcing static")
+        all_hist = _build_static_history()
+        is_live = False
+
     if not is_live:
         st.info(
-            "⚠\ufe0f Live market history unavailable right now. "
-            "Charts below use representative synthetic data so you can explore all dashboards."
+            "⚠️ Live market history unavailable. "
+            "Charts below use representative synthetic data."
         )
+
+    log.info("tab_companies: all_hist has %d symbols", len(all_hist))
 
     # Narrow to selected sector
     if sel_sec != "All":
@@ -142,7 +155,7 @@ def render(
         if fig_pie.data:
             st.plotly_chart(fig_pie, use_container_width=True)
         else:
-            st.warning("⚠\ufe0f Could not render sector pie.")
+            st.warning("⚠️ Could not render sector pie.")
     except Exception as exc:
         log.error("tab_companies: sector pie failed: %s", exc, exc_info=True)
         st.warning("Sector Allocation chart could not be rendered.")
@@ -168,6 +181,9 @@ def render(
         "Pairwise Pearson correlations of daily returns over the last 30 trading sessions. "
         "Blue\u00a0=\u00a0negative, red\u00a0=\u00a0positive."
     )
+    # Log which symbols from the sector are actually in all_hist
+    present = [s for s in sector_syms if s in all_hist]
+    log.info("tab_companies: heatmap — %d/%d sector symbols in history", len(present), len(sector_syms))
     try:
         hm_height = max(400, min(700, len(sector_syms) * 14 + 120))
         fig_hm = build_correlation_heatmap(
