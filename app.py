@@ -1,7 +1,7 @@
 """NSE & Nifty 50 Tracker — Streamlit entry point.
 
-app.py is intentionally thin: it owns only startup, sidebar, the status
-banner, and tab wiring. All tab logic lives in pages/tab_*.py.
+app.py is intentionally thin: startup, sidebar, status banner, tab wiring.
+All tab logic lives in pages/tab_*.py.
 """
 import time
 import warnings
@@ -23,6 +23,10 @@ from utils.logger import get_logger, read_recent_logs, log_file_path
 
 log = get_logger(__name__)
 log.info("app.py startup")
+
+# Inject responsive CSS before any content renders
+from utils.mobile_css import inject_mobile_css
+inject_mobile_css()
 
 try:
     from utils.theme import inject, inject_topbar
@@ -55,15 +59,20 @@ def _show_data_warnings() -> None:
         st.warning(w)
 
 
-# ── Sidebar ──────────────────────────────────────────────────────────────────
+# ── Sidebar ─────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### \u2699\ufe0f System")
     with st.expander("\U0001f50c Data Source Status", expanded=False):
         try:
             src = get_source_status()
-            icons = {"ok": "\U0001f7e2", "degraded": "\U0001f7e1", "down": "\U0001f534", "not installed": "\u26ab"}
-            st.markdown(f"{icons.get(src.get('yfinance', '?'), '?')} **Yahoo Finance**: `{src.get('yfinance', '?')}`")
-            st.markdown(f"{icons.get(src.get('nselib', '?'), '?')} **NSE (nselib)**: `{src.get('nselib', '?')}`")
+            icons = {
+                "ok": "\U0001f7e2",
+                "degraded": "\U0001f7e1",
+                "down": "\U0001f534",
+                "not installed": "\u26ab",
+            }
+            st.markdown(f"{icons.get(src.get('yfinance','?'),'?')} **Yahoo Finance**: `{src.get('yfinance','?')}`")
+            st.markdown(f"{icons.get(src.get('nselib','?'),'?')} **NSE (nselib)**: `{src.get('nselib','?')}`")
         except Exception as exc:  # noqa: BLE001
             log.error("sidebar: get_source_status failed: %s", exc, exc_info=True)
             st.caption("Status unavailable")
@@ -73,8 +82,7 @@ with st.sidebar:
             level_filter = st.selectbox(
                 "Min level",
                 ["ALL", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-                index=2,
-                key="log_level_filter",
+                index=2, key="log_level_filter",
             )
             lines = read_recent_logs(n_lines)
             if level_filter != "ALL":
@@ -91,7 +99,7 @@ with st.sidebar:
             st.caption("Log viewer unavailable")
 
 
-# ── Live status banner (fragment so it ticks independently) ──────────────────
+# ── Live status banner ─────────────────────────────────────────────────────────
 @st.fragment(run_every=REFRESH_MS / 1000 if market_open else None)
 def _status_banner() -> None:
     try:

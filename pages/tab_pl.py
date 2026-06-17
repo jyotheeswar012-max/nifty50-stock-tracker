@@ -5,12 +5,14 @@ from utils.logger import get_logger
 from utils.constants import NIFTY50
 from utils.data import fetch_ticker, get_beta
 from utils.calculations import safe_float, calc_pl, calc_beta_impact
+from utils.export import export_buttons
 
 log = get_logger(__name__)
 
 
 def render(market_open: bool, market_status: str, last_close_label: str) -> None:
     from utils.app_helpers import hero, divider, sec, closed_banner, show_pl_result
+    import pandas as pd
     hero("P&L Calculator", "Calculate profit / loss")
     closed_banner(market_open, market_status, last_close_label)
 
@@ -21,35 +23,32 @@ def render(market_open: bool, market_status: str, last_close_label: str) -> None
     sel_s = next(s for s in NIFTY50 if s["name"] == sel_name)
 
     lp = 0.0
-    try:
-        sc_data = fetch_ticker(sel_s["symbol"], "5d")
-        if not sc_data.empty and "Close" in sc_data.columns:
-            lp = safe_float(sc_data["Close"].iloc[-1])
-        else:
-            log.warning("tab_pl: empty data for symbol '%s'", sel_s["symbol"])
-    except OSError as exc:
-        log.error("tab_pl: network error fetching '%s': %s", sel_s["symbol"], exc, exc_info=True)
-        st.warning("Network error — using default price of Rs.\ 100.")
-    except Exception as exc:  # noqa: BLE001
-        log.error("tab_pl: unexpected error fetching '%s': %s", sel_s["symbol"], exc, exc_info=True)
+    # ── Spinner: live price fetch ──────────────────────────────────────────────
+    with st.spinner(f"Fetching latest price for {sel_name}…"):
+        try:
+            sc_data = fetch_ticker(sel_s["symbol"], "5d")
+            if not sc_data.empty and "Close" in sc_data.columns:
+                lp = safe_float(sc_data["Close"].iloc[-1])
+            else:
+                log.warning("tab_pl: empty data for '%s'", sel_s["symbol"])
+        except OSError as exc:
+            log.error("tab_pl: network error for '%s': %s", sel_s["symbol"], exc, exc_info=True)
+            st.warning("Network error — using default price of Rs. 100.")
+        except Exception as exc:  # noqa: BLE001
+            log.error("tab_pl: unexpected error for '%s': %s", sel_s["symbol"], exc, exc_info=True)
 
     with c2:
         buy_p = st.number_input(
-            "Buy Price (Rs.)",
-            min_value=0.01,
-            value=round(lp, 2) if lp > 0 else 100.0,
-            step=0.5,
-            key="pl_bp",
+            "Buy Price (Rs.)", min_value=0.01,
+            value=round(lp, 2) if lp > 0 else 100.0, step=0.5, key="pl_bp",
         )
     with c3:
         qty = st.number_input("Quantity", min_value=1, value=10, step=1, key="pl_q")
 
     sell_p = st.number_input(
         "Sell / Current Price (Rs.)" if market_open else "Sell Price (Rs.)",
-        min_value=0.01,
-        value=round(lp, 2) if lp > 0 else 100.0,
-        step=0.5,
-        key="pl_sp",
+        min_value=0.01, value=round(lp, 2) if lp > 0 else 100.0,
+        step=0.5, key="pl_sp",
     )
 
     if buy_p <= 0 or sell_p <= 0 or qty <= 0:
@@ -66,27 +65,47 @@ def render(market_open: bool, market_status: str, last_close_label: str) -> None
     show_pl_result(pl)
     divider()
 
+    # Export P&L summary
+    pl_summary = pd.DataFrame([{
+        "Stock": sel_name,
+        "Symbol": sel_s["symbol"].replace(".NS", ""),
+        "Buy Price (Rs.)": buy_p,
+        "Sell Price (Rs.)": sell_p,
+        "Quantity": qty,
+        "Investment (Rs.)": round(inv, 2),
+        "P&L (Rs.)": round(pl, 2),
+        "Return (%)": round(ret, 2),
+    }])
+    export_buttons(
+        pl_summary,
+        filename_stem=f"pl_{sel_s['symbol'].replace('.NS', '')}",
+        title=f"P&L Summary — {sel_name}",
+        key_suffix="pl",
+    )
+
+    divider()
     sec("Beta-Adjusted Impact")
     ni_col, bv_col = st.columns(2)
     with ni_col:
         nifty_move = st.slider("Nifty Move (%)", -20.0, 20.0, 0.0, 0.5, key="pl_nm")
     with bv_col:
-        # Prefer dynamic beta; fall back to static in constants
         default_beta = float(get_beta(sel_s["symbol"]))
         beta_val = st.number_input(
-            "Beta", 0.1, 3.0, value=default_beta, step=0.05, key="pl_bv"
+            "Beta", 0.1, 3.0, value=default_beta, step=0.05, key="pl_bv",
         )
 
     if nifty_move != 0:
         try:
-            spct, pchg, nsp, _ov, _nv, pl_beta = calc_beta_impact(nifty_move, buy_p, qty, beta_val)
+            spct, pchg, nsp, _ov, _nv, pl_beta = calc_beta_impact(
+                nifty_move, buy_p, qty, beta_val
+            )
             b1, b2, b3, b4 = st.columns(4)
             b1.metric("Stock Move", format(spct, "+.2f") + "%")
             b2.metric("Price Change", "Rs." + format(pchg, "+.2f"))
             b3.metric("New Price", "Rs." + format(nsp, ".2f"))
             b4.metric("P&L Impact", "Rs." + format(pl_beta, "+,.2f"))
         except (ArithmeticError, ValueError) as exc:
-            log.error("tab_pl: beta impact calculation error: %s", exc, exc_info=True)
+            log.error("tab_pl: beta impact error: %s", exc, exc_info=True)
             st.error("Beta impact calculation failed — check inputs.")
         except Exception as exc:  # noqa: BLE001
             log.error("tab_pl: beta impact unexpected: %s", exc, exc_info=True)
