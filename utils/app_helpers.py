@@ -1,41 +1,38 @@
-"""Shared UI helper functions used by all page modules.
+"""Shared Streamlit UI helper functions used across all tab modules.
 
-Keeping these here (rather than in app.py) means page modules never need
-to import from app.py, avoiding circular imports.
+All functions here are thin wrappers over st.markdown / st.divider so that
+individual tab modules don’t have to repeat boilerplate.
 """
+from __future__ import annotations
+
 import streamlit as st
-from utils.calculations import safe_float
 
 
-def hero(title: str, sub: str = "") -> None:
-    st.subheader(title)
-    if sub:
-        st.caption(sub)
+def hero(title: str, subtitle: str = "") -> None:
+    """Render a page/section hero heading with optional subtitle."""
+    st.markdown(f"## {title}")
+    if subtitle:
+        st.caption(subtitle)
 
 
 def sec(label: str) -> None:
-    st.markdown("**" + label + "**")
+    """Render a section sub-heading."""
+    st.markdown(f"### {label}")
 
 
 def divider() -> None:
+    """Render a horizontal rule divider."""
     st.markdown("---")
 
 
-def closed_banner(market_open: bool, market_status: str, last_close_label: str) -> None:
+def closed_banner(
+    market_open: bool,
+    market_status: str,
+    last_close_label: str,
+) -> None:
+    """Show a warning banner when NSE is closed."""
     if not market_open:
-        st.warning(
-            "NSE CLOSED \u2014 "
-            + market_status
-            + (" | " + last_close_label if last_close_label else "")
-            + " | Showing last closing prices"
-        )
-
-
-def show_pl_result(pl) -> None:
-    pl = safe_float(pl)
-    if pl > 0:
-        st.success("GAIN  Rs." + format(pl, ",.2f"))
-    elif pl < 0:
-        st.error("LOSS  Rs." + format(abs(pl), ",.2f"))
-    else:
-        st.info("No Change")
+        msg = f"⏰ NSE is closed — {market_status}"
+        if last_close_label:
+            msg += f" | {last_close_label}"
+        st.info(msg)

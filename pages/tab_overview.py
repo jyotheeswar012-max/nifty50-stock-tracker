@@ -1,189 +1,133 @@
-"""Tab 0 — NSE Market Overview."""
-import pandas as pd
+"""Tab 0 — Market Overview.
+
+This module is imported by app.py; it is NOT a standalone Streamlit page.
+Streamlit discovers it as a page only if it's in pages/ without a _ prefix,
+which is why we keep a _tab_overview.py stub there instead.
+"""
+from __future__ import annotations
+
 import streamlit as st
-
 from utils.logger import get_logger
-from utils.constants import NSE_INDICES, NIFTY50
-from utils.data import get_stock_data, get_multiple_stocks
+from utils.constants import NIFTY50
+from utils.data import fetch_all_stocks_5d, fetch_ticker
 from utils.calculations import safe_float
-from utils.charts import build_pct_bar, build_trend_chart
-
-try:
-    from utils.charts import build_sector_pie
-    _HAS_SECTOR_PIE = True
-except ImportError:
-    _HAS_SECTOR_PIE = False
 
 log = get_logger(__name__)
 
-_NUMERIC_PAT = r"^[\-+]?[\d,\.]+$"
-
-
-def _sanitize_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Coerce exclusively-numeric string columns to float64 (strict)."""
-    df = df.copy()
-    for col in df.columns:
-        if df[col].dtype != object or df[col].dtype == bool:
-            continue
-        non_null = df[col].dropna()
-        if non_null.empty or df[col].isna().mean() > 0.05:
-            continue
-        if non_null.astype(str).str.match(_NUMERIC_PAT).all():
-            try:
-                df[col] = pd.to_numeric(
-                    df[col].astype(str).str.replace(",", "", regex=False),
-                    errors="raise",
-                )
-                log.debug("_sanitize_df: coerced '%s'", col)
-            except (ValueError, TypeError) as exc:
-                log.warning("_sanitize_df: skipping '%s': %s", col, exc)
-    return df
-
-
-def _fallback_sector_pie(height: int = 400):
-    """Build a simple sector pie using plotly.graph_objects if build_sector_pie missing."""
-    import plotly.graph_objects as go
-    from collections import Counter
-    from utils.constants import PLT_LAYOUT
-
-    counts = Counter(s["sector"] for s in NIFTY50)
-    labels = list(counts.keys())
-    values = list(counts.values())
-    fig = go.Figure(go.Pie(labels=labels, values=values, hole=0.35,
-                           textinfo="label+percent"))
-    layout = dict(PLT_LAYOUT)
-    layout["title"] = "Nifty 50 — Stocks per Sector"
-    layout["height"] = height
-    fig.update_layout(**layout)
-    return fig
-
 
 def render(market_open: bool, market_status: str, last_close_label: str) -> None:
-    from utils.app_helpers import hero, sec, divider, closed_banner
-    hero("NSE Market Overview", "National Stock Exchange")
+    from utils.app_helpers import hero, closed_banner, sec, divider
+
+    hero("🏦 Market Overview", "Nifty 50 at a glance")
     closed_banner(market_open, market_status, last_close_label)
-    sec("NSE Indices Snapshot")
 
-    # ── Fetch all index OHLCV using get_multiple_stocks ─────────────────────
-    idx_symbols = tuple(i["symbol"] for i in NSE_INDICES)
-
-    with st.spinner("Fetching index data…"):
-        try:
-            idx_data = get_multiple_stocks(idx_symbols, "1mo")
-        except OSError as exc:
-            log.error("tab_overview: fetch indices network error: %s", exc, exc_info=True)
-            st.error("Network error fetching indices — please retry.")
-            return
-        except Exception as exc:  # noqa: BLE001
-            log.error("tab_overview: fetch indices unexpected: %s", exc, exc_info=True)
-            st.error("Could not load index data.")
-            return
-
-    val_lbl = "Value" if market_open else "Last Close"
-    idx_rows = []
-    for idx in NSE_INDICES:
-        try:
-            h = idx_data.get(idx["symbol"])
-            if h is not None and not h.empty and "Close" in h.columns and len(h) >= 2:
-                c  = safe_float(h["Close"].iloc[-1])
-                p  = safe_float(h["Close"].iloc[-2], c)
-                ch = c - p
-                pt = round(ch / p * 100, 2) if p != 0 else 0.0
-                idx_rows.append({
-                    "Index": idx["name"],
-                    val_lbl: "Rs." + format(c, ",.2f"),
-                    "Change (pts)": format(ch, "+.2f"),
-                    "Change (%)": format(pt, "+.2f") + "%",
-                    "High": "Rs." + format(safe_float(h["High"].max()), ",.2f"),
-                    "Low":  "Rs." + format(safe_float(h["Low"].min()),  ",.2f"),
-                    "_pct": pt,
-                })
-            else:
-                log.warning("tab_overview: no data for index '%s'", idx["symbol"])
-                idx_rows.append({"Index": idx["name"], val_lbl: "N/A",
-                                  "Change (pts)": "N/A", "Change (%)": "N/A",
-                                  "High": "N/A", "Low": "N/A", "_pct": None})
-        except KeyError as exc:
-            log.error("tab_overview: key error for '%s': %s", idx.get("symbol"), exc, exc_info=True)
-            idx_rows.append({"Index": idx["name"], val_lbl: "N/A",
-                              "Change (pts)": "N/A", "Change (%)": "N/A",
-                              "High": "N/A", "Low": "N/A", "_pct": None})
-
-    idx_df = pd.DataFrame(idx_rows)
-    st.dataframe(_sanitize_df(idx_df.drop(columns=["_pct"])),
-                 use_container_width=True, hide_index=True)
-
-    valid_idx = idx_df[idx_df["_pct"].notna()].copy()
-    if not valid_idx.empty:
-        try:
-            title = "Today's % Change by Index" if market_open else "Last Session % Change by Index"
-            fig = build_pct_bar(valid_idx, "Index", "_pct", title,
-                                text_col="Change (%)", height=300)
-            fig.update_layout(autosize=True)
-            st.plotly_chart(fig, use_container_width=True)
-        except Exception as exc:  # noqa: BLE001
-            log.error("tab_overview: pct bar error: %s", exc, exc_info=True)
-
-    divider()
-
-    # ── Sector allocation pie ───────────────────────────────────────────────
-    sec("Nifty 50 Sector Allocation")
     try:
-        if _HAS_SECTOR_PIE:
-            sector_df = pd.DataFrame([{"Sector": s["sector"]} for s in NIFTY50])
-            fig_pie = build_sector_pie(sector_df,
-                                       title="Nifty 50 — Stocks per Sector",
-                                       height=400)
-        else:
-            fig_pie = _fallback_sector_pie(height=400)
-        fig_pie.update_layout(autosize=True)
-        st.plotly_chart(fig_pie, use_container_width=True)
-    except Exception as exc:  # noqa: BLE001
-        log.error("tab_overview: sector pie failed: %s", exc, exc_info=True)
-        st.info("Sector chart temporarily unavailable.")
+        _render_index_kpis(market_open)
+    except Exception as exc:
+        log.error("tab_overview: index KPIs failed: %s", exc, exc_info=True)
+        st.warning("Index data temporarily unavailable.")
 
     divider()
-    sec("Trend Comparison")
 
-    c_per, c_idx = st.columns([1, 3])
-    with c_per:
-        p_sel = st.selectbox("Period", ["1mo", "3mo", "6mo", "1y"], index=1, key="idx_p")
-    with c_idx:
-        sel_idx = st.multiselect(
-            "Indices", [i["name"] for i in NSE_INDICES],
-            default=["Nifty 50", "Nifty Bank", "Nifty IT"],
-        )
+    try:
+        _render_sector_heatmap()
+    except Exception as exc:
+        log.error("tab_overview: sector heatmap failed: %s", exc, exc_info=True)
+        st.info("Sector breakdown unavailable.")
 
-    sym_map = {i["name"]: i for i in NSE_INDICES}
-    if sel_idx:
-        with st.spinner("Loading trend data…"):
-            try:
-                series = {}
-                for ni in sel_idx:
-                    meta = sym_map.get(ni)
-                    if not meta:
-                        continue
-                    # Use get_stock_data (the actual public API)
-                    h = get_stock_data(meta["symbol"], p_sel)
-                    if not h.empty and "Close" in h.columns:
-                        series[ni] = {"df": h, "color": meta["color"]}
-                    else:
-                        log.warning("tab_overview: no history for '%s'", meta["symbol"])
-            except OSError as exc:
-                log.error("tab_overview: trend network error: %s", exc, exc_info=True)
-                st.info("Could not load trend data — network error.")
-                return
-            except Exception as exc:  # noqa: BLE001
-                log.error("tab_overview: trend unexpected: %s", exc, exc_info=True)
-                st.info("Could not render trend chart.")
-                return
 
-        if series:
-            try:
-                fig = build_trend_chart(series, height=360)
-                fig.update_layout(autosize=True)
-                st.plotly_chart(fig, use_container_width=True)
-            except Exception as exc:  # noqa: BLE001
-                log.error("tab_overview: trend chart error: %s", exc, exc_info=True)
-        else:
-            st.info("No data available for selected indices.")
+def _render_index_kpis(market_open: bool) -> None:
+    import pandas as pd
+    from utils.charts import build_price_chart
+
+    nifty_sym = "^NSEI"
+    with st.spinner("Loading Nifty 50 index…"):
+        df = fetch_ticker(nifty_sym, "1mo")
+
+    if df.empty or "Close" not in df.columns:
+        st.warning("⚠️ Nifty 50 index data unavailable right now.")
+        return
+
+    close   = safe_float(df["Close"].iloc[-1])
+    prev    = safe_float(df["Close"].iloc[-2]) if len(df) > 1 else close
+    chg     = close - prev
+    pct     = (chg / prev * 100) if prev else 0.0
+    hi52    = safe_float(df["High"].max())
+    lo52    = safe_float(df["Low"].min())
+    vol_avg = int(df["Volume"].mean()) if "Volume" in df.columns else 0
+
+    lbl = "Live Price" if market_open else "Last Close"
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric(lbl, f"₹{close:,.2f}")
+    c2.metric("Change", f"{chg:+.2f}", delta=f"{pct:+.2f}%")
+    c3.metric("1M High", f"₹{hi52:,.2f}")
+    c4.metric("1M Low",  f"₹{lo52:,.2f}")
+    c5.metric("Avg Volume", f"{vol_avg:,}")
+
+    st.markdown("### Nifty 50 — 1 Month Trend")
+    try:
+        fig = build_price_chart(df, "Nifty 50", "1mo", "Line", height=320)
+        fig.update_layout(autosize=True)
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as exc:
+        log.warning("tab_overview: Nifty chart failed: %s", exc)
+        st.line_chart(df["Close"])
+
+
+def _render_sector_heatmap() -> None:
+    import pandas as pd
+    import plotly.graph_objects as go
+
+    st.markdown("### Sector Breakdown")
+    with st.spinner("Loading sector data…"):
+        stock_data = fetch_all_stocks_5d()
+
+    sector_map: dict[str, list[float]] = {}
+    for s in NIFTY50:
+        sym    = s["symbol"]
+        sector = s["sector"]
+        df     = stock_data.get(sym)
+        if df is None or df.empty or "Close" not in df.columns:
+            continue
+        closes = df["Close"].dropna()
+        if len(closes) < 2:
+            continue
+        pct = (safe_float(closes.iloc[-1]) - safe_float(closes.iloc[-2]))
+        pct = pct / safe_float(closes.iloc[-2]) * 100 if safe_float(closes.iloc[-2]) else 0.0
+        sector_map.setdefault(sector, []).append(pct)
+
+    if not sector_map:
+        st.info("Sector data not available.")
+        return
+
+    rows = [
+        {"Sector": sec, "Avg Change (%)": round(sum(v) / len(v), 2), "Stocks": len(v)}
+        for sec, v in sorted(sector_map.items(), key=lambda x: -sum(x[1]) / len(x[1]))
+    ]
+    df_sec = pd.DataFrame(rows)
+
+    colors = [
+        "#22c55e" if x > 0 else ("#f97316" if x == 0 else "#ef4444")
+        for x in df_sec["Avg Change (%)"]
+    ]
+    fig = go.Figure(go.Bar(
+        x=df_sec["Sector"],
+        y=df_sec["Avg Change (%)"],
+        marker_color=colors,
+        text=[f"{v:+.2f}%" for v in df_sec["Avg Change (%)"]],
+        textposition="outside",
+        hovertemplate="<b>%{x}</b><br>Avg: %{y:.2f}%<extra></extra>",
+    ))
+    fig.update_layout(
+        title="Sector Avg % Change (Last Session)",
+        xaxis_title="Sector",
+        yaxis_title="Avg Change (%)",
+        plot_bgcolor="#0f172a",
+        paper_bgcolor="#0f172a",
+        font_color="#e2e8f0",
+        height=380,
+        margin=dict(t=50, b=80, l=40, r=20),
+    )
+    fig.add_hline(y=0, line_dash="dash", line_color="#64748b", line_width=1)
+    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(df_sec, use_container_width=True, hide_index=True)

@@ -1,61 +1,70 @@
 """Tab 1 — Nifty 50 Index detail."""
-import streamlit as st
+from __future__ import annotations
 
+import streamlit as st
 from utils.logger import get_logger
 from utils.data import fetch_ticker
 from utils.calculations import safe_float
-from utils.charts import build_price_chart
 
 log = get_logger(__name__)
 
 
 def render(market_open: bool, market_status: str, last_close_label: str) -> None:
-    from utils.app_helpers import hero, divider, closed_banner
-    hero("Nifty 50 Index", "^NSEI \u2014 NSE Flagship Index")
+    from utils.app_helpers import hero, closed_banner, sec, divider
+    from utils.charts import build_price_chart
+
+    hero("📈 Nifty 50 Index", "Live index chart & stats")
     closed_banner(market_open, market_status, last_close_label)
 
-    c1, c2 = st.columns([1, 3])
+    c1, c2 = st.columns([2, 1])
     with c1:
-        n_period = st.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=2, key="nf_p")
+        period = st.selectbox(
+            "Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=2, key="nifty_period"
+        )
     with c2:
-        chart_type = st.radio("Chart", ["Line", "Candlestick", "Area"], horizontal=True, key="nf_ct")
+        chart_type = st.radio(
+            "Chart type", ["Line", "Candlestick", "Area"],
+            horizontal=True, key="nifty_ct"
+        )
 
-    try:
-        nifty = fetch_ticker("^NSEI", n_period)
-    except OSError as exc:
-        log.error("tab_nifty: network error fetching ^NSEI: %s", exc, exc_info=True)
-        st.error("Network error — could not fetch Nifty 50 data.")
+    with st.spinner("Loading Nifty 50 data…"):
+        try:
+            df = fetch_ticker("^NSEI", period)
+        except Exception as exc:
+            log.error("tab_nifty: fetch failed: %s", exc, exc_info=True)
+            st.error("Could not fetch Nifty 50 data.")
+            return
+
+    if df.empty or "Close" not in df.columns:
+        st.warning("No data available for Nifty 50.")
         return
-    except Exception as exc:  # noqa: BLE001
-        log.error("tab_nifty: unexpected error fetching ^NSEI: %s", exc, exc_info=True)
-        st.error("Could not load Nifty 50 data.")
-        return
 
-    if nifty.empty or "Close" not in nifty.columns:
-        log.warning("tab_nifty: empty or missing Close column for ^NSEI period=%s", n_period)
-        st.warning("Could not fetch Nifty 50 data.")
-        return
+    close = safe_float(df["Close"].iloc[-1])
+    prev  = safe_float(df["Close"].iloc[-2]) if len(df) > 1 else close
+    chg   = close - prev
+    pct   = (chg / prev * 100) if prev else 0.0
+    hi    = safe_float(df["High"].max())
+    lo    = safe_float(df["Low"].min())
 
-    c = safe_float(nifty["Close"].iloc[-1])
-    p = safe_float(nifty["Close"].iloc[-2]) if len(nifty) > 1 else c
-    ch = c - p
-    pt = ch / p * 100 if p else 0
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Index" if market_open else "Last Close", f"₹{close:,.2f}")
+    m2.metric("Change", f"{chg:+.2f}", delta=f"{pct:+.2f}%")
+    m3.metric(f"Period High", f"₹{hi:,.2f}")
+    m4.metric(f"Period Low",  f"₹{lo:,.2f}")
 
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Price" if market_open else "Last Close", "Rs." + format(c, ",.2f"))
-    m2.metric("Change", format(ch, "+.2f"), delta=format(pt, "+.2f") + "%")
-    m3.metric("Period High", "Rs." + format(safe_float(nifty["High"].max()), ",.2f"))
-    m4.metric("Period Low", "Rs." + format(safe_float(nifty["Low"].min()), ",.2f"))
-    m5.metric("Avg Volume", format(int(safe_float(nifty["Volume"].mean())), ","))
     divider()
 
     try:
-        fig = build_price_chart(nifty, "Nifty 50", n_period, chart_type, y_title="Index Value", height=440)
+        fig = build_price_chart(df, "Nifty 50", period, chart_type, height=460)
         fig.update_layout(autosize=True)
         st.plotly_chart(fig, use_container_width=True)
-    except ValueError as exc:
-        log.error("tab_nifty: chart ValueError: %s", exc, exc_info=True)
-        st.info("Chart unavailable — invalid data range.")
-    except Exception as exc:  # noqa: BLE001
-        log.error("tab_nifty: chart unexpected error: %s", exc, exc_info=True)
-        st.info("Chart unavailable.")
+    except Exception as exc:
+        log.error("tab_nifty: chart build failed: %s", exc, exc_info=True)
+        st.line_chart(df["Close"])
+
+    divider()
+    sec("Raw OHLCV Data")
+    st.dataframe(
+        df[["Open", "High", "Low", "Close", "Volume"]].tail(30).sort_index(ascending=False),
+        use_container_width=True,
+    )
