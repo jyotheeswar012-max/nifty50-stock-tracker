@@ -20,7 +20,13 @@ try:
 except Exception:
     def get_current_user(): return None
     def is_guest(): return True
-    def login_nudge(msg=""): st.info("💡 Sign in to save your data.")
+    def login_nudge(msg=""): st.info("Sign in to save your data.")
+
+try:
+    from utils.notifications import send_email, smtp_configured
+except Exception:
+    def send_email(to, subject, body): return False, "notifications module unavailable"
+    def smtp_configured(): return False
 
 user = get_current_user()
 try:
@@ -93,6 +99,45 @@ def sf(v, d=0.0):
         return d
 
 
+def _fmt(value: float) -> str:
+    """ASCII-safe price string — avoids locale \\xa0 thousands separator."""
+    integer_part, decimal_part = f"{value:.2f}".split(".")
+    chars = list(integer_part)
+    for i in range(len(chars) - 3, 0, -3):
+        chars.insert(i, ",")
+    return "".join(chars) + "." + decimal_part
+
+
+def _send_alert_email(alert: dict, cp: float, user_email: str) -> None:
+    """Send a triggered-alert email. Silently logs result to session state."""
+    if not smtp_configured():
+        return
+    # Skip if already emailed for this trigger
+    if alert.get("email_sent"):
+        return
+    target_str = _fmt(alert["target"])
+    cp_str     = _fmt(cp)
+    ttype      = alert["type"]
+    stock      = alert["stock"]
+    subject = f"Nifty50 Alert: {stock} {ttype} target Rs.{target_str} hit!"
+    body = (
+        f"Your price alert has been triggered!\n\n"
+        f"Stock   : {stock} ({alert['symbol']})\n"
+        f"Trigger : {ttype} Rs.{target_str}\n"
+        f"Current : Rs.{cp_str}\n"
+        f"Time    : {datetime.now(IST).strftime('%d %b %Y %I:%M:%S %p IST')}\n"
+    )
+    if alert.get("note"):
+        body += f"Note    : {alert['note']}\n"
+    body += "\n-- NSE & Nifty 50 Tracker"
+
+    ok, err = send_email(user_email, subject, body)
+    alert["email_sent"] = True
+    log = st.session_state.setdefault("alert_email_log", [])
+    ts  = datetime.now(IST).strftime("%H:%M:%S")
+    log.insert(0, f"[{ts}] {stock} -> {'OK' if ok else 'FAILED: ' + err}")
+
+
 @st.cache_data(ttl=60)
 def get_price(sym):
     for period, interval in [("1d", "1m"), ("5d", None)]:
@@ -113,7 +158,7 @@ def get_price(sym):
     return None
 
 
-for k, v in [("alerts", []), ("alert_history", [])]:
+for k, v in [("alerts", []), ("alert_history", []), ("alert_email_log", [])]:
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -123,7 +168,7 @@ st.markdown("""
   <div>
     <div class="hero-title">Price Alerts</div>
     <div class="hero-sub">
-      <span class='ui-badge badge-live'>🟢 Live Monitoring</span>
+      <span class='ui-badge badge-live'>Live Monitoring</span>
       &nbsp;&nbsp;Get notified when stocks hit your target price
     </div>
   </div>
@@ -133,27 +178,39 @@ st.markdown("""
 if is_guest():
     login_nudge("save your alerts permanently")
 
-tab_set, tab_active, tab_hist = st.tabs(["➕  Set Alert", "🔔  Active Alerts", "📜  Alert History"])
+# Show SMTP status
+if not smtp_configured():
+    st.warning("Email notifications are not configured. Add [smtp] to your secrets.toml to receive email alerts.")
+
+# Email recipient — use logged-in user's email or let them enter one
+alert_email = ""
+if user and getattr(user, "email", None):
+    alert_email = user.email
+    st.caption(f"Alert emails will be sent to **{alert_email}**")
+else:
+    alert_email = st.text_input("Alert email address", placeholder="you@example.com", key="alert_email_input")
+
+tab_set, tab_active, tab_hist = st.tabs(["Set Alert", "Active Alerts", "Alert History"])
 
 with tab_set:
-    st.markdown("<p class='sec-label'>➕ Create New Alert</p>", unsafe_allow_html=True)
+    st.markdown("<p class='sec-label'>Create New Alert</p>", unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        sel_name = st.selectbox("🏢 Stock", NAMES, key="al_name")
+        sel_name = st.selectbox("Stock", NAMES, key="al_name")
     with c2:
-        al_type = st.selectbox("📈 Trigger", ["Above (↑)", "Below (↓)", "Change % (±)"], key="al_type")
+        al_type = st.selectbox("Trigger", ["Above", "Below", "Change % (+/-)"], key="al_type")
     with c3:
-        al_val = st.number_input("🎯 Target", min_value=0.0, value=0.0, step=0.5, key="al_val")
+        al_val = st.number_input("Target", min_value=0.0, value=0.0, step=0.5, key="al_val")
     with c4:
         lp = get_price(N2S[sel_name])
         if lp:
-            st.metric("Live Price", f"₹{lp:,.2f}")
+            st.metric("Live Price", f"Rs.{_fmt(lp)}")
         else:
-            st.warning("⏳ Unavailable")
-    al_note = st.text_input("📝 Note (optional)", max_chars=80, key="al_note")
-    if st.button("➕ Add Alert", type="primary", key="btn_add_alert"):
+            st.warning("Price unavailable")
+    al_note = st.text_input("Note (optional)", max_chars=80, key="al_note")
+    if st.button("Add Alert", type="primary", key="btn_add_alert"):
         if al_val <= 0:
-            st.error("❌ Target must be > 0")
+            st.error("Target must be > 0")
         else:
             st.session_state.alerts.append({
                 "stock": sel_name,
@@ -164,66 +221,80 @@ with tab_set:
                 "created": datetime.now(IST).strftime("%Y-%m-%d %H:%M"),
                 "status": "Active",
                 "current_price": lp or 0,
-                # Store ref_price so Change % alerts have a baseline
                 "ref_price": lp or 0,
+                "email_sent": False,
             })
-            st.success(f"✅ Alert set: {sel_name} {al_type} ₹{al_val:,.2f}")
+            st.success(f"Alert set: {sel_name} {al_type} Rs.{_fmt(al_val)}")
             st.rerun()
 
 with tab_active:
     alerts = st.session_state.alerts
     active = [a for a in alerts if a["status"] == "Active"]
     if not active:
-        st.info("💡 No active alerts. Create one in the 'Set Alert' tab.")
+        st.info("No active alerts. Create one in the 'Set Alert' tab.")
     else:
-        st.markdown(f"<p class='sec-label'>🔔 {len(active)} Active Alert(s)</p>", unsafe_allow_html=True)
+        st.markdown(f"<p class='sec-label'>{len(active)} Active Alert(s)</p>", unsafe_allow_html=True)
         triggered = []
         for i, a in enumerate(active):
             cp = get_price(a["symbol"]) or a["current_price"]
             a["current_price"] = cp
             trig = False
-            if a["type"] == "Above (↑)" and cp >= a["target"]:
+            if a["type"] == "Above" and cp >= a["target"]:
                 trig = True
-            elif a["type"] == "Below (↓)" and cp <= a["target"]:
+            elif a["type"] == "Below" and cp <= a["target"]:
                 trig = True
-            elif a["type"] == "Change % (±)":
+            elif a["type"] == "Change % (+/-)":
                 ref = a.get("ref_price") or cp
                 if ref and ref != 0 and abs((cp - ref) / ref * 100) >= a["target"]:
                     trig = True
+
+            # Send email the first time the alert triggers
+            if trig and alert_email and not a.get("email_sent"):
+                _send_alert_email(a, cp, alert_email)
+
             diff = cp - a["target"]
-            pct = diff / a["target"] * 100 if a["target"] else 0
-            status = "🚨 TRIGGERED" if trig else "🔍 Watching"
-            bg = "#fff1f2" if trig else "#f0fdf4"
+            pct  = diff / a["target"] * 100 if a["target"] else 0
+            status = "TRIGGERED" if trig else "Watching"
+            bg     = "#fff1f2" if trig else "#f0fdf4"
             border = "#fda4af" if trig else "#86efac"
-            note_html = f"<br><small>📝 {a['note']}</small>" if a.get("note") else ""
+            note_html = f"<br><small>{a['note']}</small>" if a.get("note") else ""
+            email_badge = " | Email sent" if a.get("email_sent") else ""
             st.markdown(
                 f"<div style='background:{bg};border-radius:10px;padding:.8rem 1.2rem;"
                 f"margin-bottom:.5rem;border:1px solid {border};'>"
-                f"<b>{a['stock']}</b> &nbsp;—&nbsp; {a['type']} <b>₹{a['target']:,.2f}</b>"
-                f" &nbsp;|&nbsp; Live: <b>₹{cp:,.2f}</b>"
-                f" &nbsp;|&nbsp; Gap: {diff:+,.2f} ({pct:+.2f}%)"
-                f" &nbsp;|&nbsp; {status}{note_html}</div>",
+                f"<b>{a['stock']}</b> &nbsp;-&nbsp; {a['type']} <b>Rs.{_fmt(a['target'])}</b>"
+                f" &nbsp;|&nbsp; Live: <b>Rs.{_fmt(cp)}</b>"
+                f" &nbsp;|&nbsp; Gap: {diff:+.2f} ({pct:+.2f}%)"
+                f" &nbsp;|&nbsp; <b>{status}</b>{email_badge}{note_html}</div>",
                 unsafe_allow_html=True,
             )
             if trig:
                 triggered.append(i)
+
+        # Show email log
+        email_log = st.session_state.get("alert_email_log", [])
+        if email_log:
+            with st.expander("Email log"):
+                for entry in email_log[:10]:
+                    st.text(entry)
+
         if triggered:
-            if st.button("✅ Mark Triggered as Done", key="btn_mark_done"):
+            if st.button("Mark Triggered as Done", key="btn_mark_done"):
                 for i in triggered:
                     st.session_state.alerts[i]["status"] = "Triggered"
                     st.session_state.alert_history.append(st.session_state.alerts[i])
                 st.session_state.alerts = [a for a in st.session_state.alerts if a["status"] == "Active"]
                 st.rerun()
-        if st.button("🗑️ Clear All Alerts", key="btn_clear_alerts"):
+        if st.button("Clear All Alerts", key="btn_clear_alerts"):
             st.session_state.alerts = []
             st.rerun()
 
 with tab_hist:
     hist = st.session_state.alert_history
     if not hist:
-        st.info("💡 No alert history yet.")
+        st.info("No alert history yet.")
     else:
         st.dataframe(pd.DataFrame(hist), use_container_width=True, hide_index=True)
-        if st.button("🗑️ Clear History", key="btn_clear_hist"):
+        if st.button("Clear History", key="btn_clear_hist"):
             st.session_state.alert_history = []
             st.rerun()
