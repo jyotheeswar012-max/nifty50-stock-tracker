@@ -1,0 +1,61 @@
+# ---------------------------------------------------------------------------
+# Nifty 50 Stock Tracker  —  docker-compose stack
+# ---------------------------------------------------------------------------
+# Usage
+# -----
+#   cp .streamlit/secrets.toml.example .streamlit/secrets.toml   # fill creds
+#   docker compose up --build
+#
+# The app will be available at http://localhost:8501
+#
+# Secrets
+# -------
+#   .streamlit/secrets.toml is bind-mounted read-only so credentials never
+#   land inside the image layer.  Fill in SMTP / Twilio / Firebase values
+#   before starting the stack.
+#
+# Data persistence
+# ----------------
+#   SQLite (price cache, model cache, watchlists) lives in the named volume
+#   nifty50_data which survives container restarts and image rebuilds.
+# ---------------------------------------------------------------------------
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nifty50-tracker:latest
+    container_name: nifty50-tracker
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8501}:8501"
+    volumes:
+      # Named volume for persistent SQLite data
+      - nifty50_data:/app/data
+      # Secrets bind-mount (read-only; never baked into the image)
+      - ./.streamlit/secrets.toml:/app/.streamlit/secrets.toml:ro
+    environment:
+      # Override any ENV from Dockerfile here or via a .env file
+      STREAMLIT_SERVER_MAX_UPLOAD_SIZE: "50"
+      # Uncomment to forward host timezone
+      # TZ: "Asia/Kolkata"
+    healthcheck:
+      test:
+        [
+          "CMD", "python", "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  nifty50_data:
+    driver: local
