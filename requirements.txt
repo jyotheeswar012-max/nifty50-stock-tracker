@@ -19,3 +19,6 @@ streamlit-autorefresh>=1.0.1
 
 # ── Optional: ML / scikit-learn (used in utils/ml_predict.py) ────
 scikit-learn>=1.3
+
+# ── PDF export (used by utils/export.py via df_to_pdf_bytes) ─────
+reportlab>=4.0

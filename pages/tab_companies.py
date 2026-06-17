@@ -4,7 +4,12 @@ import streamlit as st
 
 from utils.logger import get_logger
 from utils.constants import NIFTY50, SYMBOLS
-from utils.charts import build_pct_bar, build_correlation_heatmap, build_sparkline_table
+from utils.charts import (
+    build_pct_bar,
+    build_correlation_heatmap,
+    build_sparkline_table,
+    build_sector_pie,
+)
 from utils.export import export_buttons
 
 log = get_logger(__name__)
@@ -47,7 +52,7 @@ def render(
     sel_sec = st.selectbox("Sector", sectors, key="all_sec")
 
     # ── Spinner: heavy cached build ───────────────────────────────────────────
-    with st.spinner("Loading stock data…"):
+    with st.spinner("Loading stock data\u2026"):
         try:
             df_rows = build_stock_rows_cached()
         except Exception as exc:  # noqa: BLE001
@@ -61,15 +66,42 @@ def render(
     display_df = _sanitize_numeric_cols(
         df_rows.drop(columns=["_curr", "_pct"], errors="ignore")
     )
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    st.dataframe(display_df, width="stretch", hide_index=True)
 
     # Export buttons directly below the table
     export_buttons(
         display_df,
         filename_stem=f"nifty50_{'all' if sel_sec == 'All' else sel_sec.replace(' ', '_')}",
-        title=f"Nifty 50 Companies — {sel_sec}",
+        title=f"Nifty 50 Companies \u2014 {sel_sec}",
         key_suffix="companies",
     )
+
+    divider()
+
+    # ── Sector Allocation Pie ──────────────────────────────────────────────────
+    sec("Sector Allocation")
+    st.caption(
+        "Donut chart weighted by current price sum per sector. "
+        "Falls back to stock count if price data is unavailable."
+    )
+    try:
+        # Use the full (unfiltered by sector) df_rows for a meaningful pie
+        all_rows = build_stock_rows_cached()
+        pie_title = (
+            "Sector Allocation \u2014 Nifty 50"
+            if sel_sec == "All"
+            else f"Sector Allocation \u2014 {sel_sec} highlighted"
+        )
+        fig_pie = build_sector_pie(all_rows, title=pie_title)
+        if fig_pie.data:
+            fig_pie.update_layout(autosize=True)
+            st.plotly_chart(fig_pie, width="stretch")
+        else:
+            st.info("Not enough data to render sector pie.")
+    except Exception as exc:  # noqa: BLE001
+        log.error("tab_companies: sector pie failed: %s", exc, exc_info=True)
+
+    divider()
 
     valid = df_rows[df_rows["_pct"].notna()].copy()
     if not valid.empty:
@@ -77,7 +109,7 @@ def render(
             title = "1-Day % Change" if market_open else "1-Day % Change (last session)"
             fig = build_pct_bar(valid, "Symbol", "_pct", title, text_col="Change (%)")
             fig.update_layout(autosize=True)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         except ValueError as exc:
             log.error("tab_companies: bar chart ValueError: %s", exc, exc_info=True)
         except Exception as exc:  # noqa: BLE001
@@ -92,7 +124,7 @@ def render(
         "Blue = negative correlation, red = positive."
     )
 
-    with st.spinner("Computing correlations…"):
+    with st.spinner("Computing correlations\u2026"):
         try:
             from utils.data import fetch_all_history
             all_hist = fetch_all_history()
@@ -116,12 +148,12 @@ def render(
         try:
             fig_hm = build_correlation_heatmap(
                 all_hist, sector_syms, sector_names,
-                title=f"30-Day Correlation — {sel_sec}",
+                title=f"30-Day Correlation \u2014 {sel_sec}",
                 height=max(400, min(700, len(sector_syms) * 14 + 120)),
             )
             if fig_hm.data:
                 fig_hm.update_layout(autosize=True)
-                st.plotly_chart(fig_hm, use_container_width=True)
+                st.plotly_chart(fig_hm, width="stretch")
             else:
                 st.info("Not enough overlapping data to compute correlations.")
         except Exception as exc:  # noqa: BLE001
@@ -148,7 +180,7 @@ def render(
             )
             if fig_spark.data:
                 fig_spark.update_layout(autosize=True)
-                st.plotly_chart(fig_spark, use_container_width=True)
+                st.plotly_chart(fig_spark, width="stretch")
             else:
                 st.info("No sparkline data available.")
         except Exception as exc:  # noqa: BLE001
