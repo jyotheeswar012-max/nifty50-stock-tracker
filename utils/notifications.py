@@ -18,22 +18,30 @@ Secret key layout expected in .streamlit/secrets.toml:
 All secrets are read with .get() so missing config never crashes.
 """
 from __future__ import annotations
+import smtplib
 import streamlit as st
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.header import Header
 
 
-def _ascii_safe(text: str) -> str:
-    """Replace non-breaking spaces and any non-ASCII chars with ASCII equivalents.
+def _scrub(text: str) -> str:
+    """Replace every non-ASCII byte with a plain-ASCII equivalent.
 
-    \\xa0 (non-breaking space) → regular space
-    Rs. rupee symbol variants  → Rs.
-    Any remaining non-ASCII    → replaced with '?'
-    This prevents 'ascii codec can't encode' errors in smtplib.
+    Covers the most common culprits from Indian-locale environments:
+      \\xa0  non-breaking space     -> regular space
+      \u20b9 rupee sign             -> Rs.
+      \u20a8 rupee sign (legacy)    -> Rs.
+    Everything else that still isn't ASCII is dropped (errors='ignore').
     """
-    text = text.replace("\xa0", " ")          # non-breaking space → space
-    text = text.replace("\u20b9", "Rs.")       # ₹ → Rs.
-    text = text.replace("\u20a8", "Rs.")       # ₨ → Rs.
-    text = text.encode("ascii", errors="replace").decode("ascii")
-    return text
+    return (
+        text
+        .replace("\xa0",  " ")
+        .replace("\u20b9", "Rs.")
+        .replace("\u20a8", "Rs.")
+        .encode("ascii", errors="ignore")
+        .decode("ascii")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -63,35 +71,37 @@ def twilio_configured() -> bool:
 def send_email(to: str, subject: str, body: str) -> tuple[bool, str]:
     """Send a plain-text email via Gmail SMTP (or any STARTTLS host).
 
-    Sanitises subject and body through _ascii_safe() before sending so that
-    non-breaking spaces (\\xa0) or rupee symbols (\u20b9) never cause the
-    'ascii codec can't encode' error that smtplib raises on some Python builds.
+    Uses MIMEText with explicit utf-8 charset so the body can carry any
+    Unicode safely, AND scrubs subject + body through _scrub() first so
+    that \\xa0 / rupee symbols never reach the smtplib ASCII envelope.
+
+    Subject is encoded with RFC-2047 Header() so even if a stray non-ASCII
+    byte somehow survives _scrub(), Python handles it gracefully instead of
+    raising UnicodeEncodeError.
     """
     if not smtp_configured():
         return False, "SMTP not configured — add [smtp] to secrets.toml"
     try:
-        import smtplib
-        from email.message import EmailMessage
-
-        # Sanitise — strip any non-ASCII that would crash the legacy SMTP path
-        subject = _ascii_safe(subject)
-        body    = _ascii_safe(body)
-
         s        = st.secrets["smtp"]
         port     = int(s.get("port", 587))
-        from_hdr = _ascii_safe(s.get("from", s["user"]))
+        from_hdr = _scrub(str(s.get("from", s["user"])))
 
-        msg = EmailMessage()
+        # Scrub both fields — belt AND suspenders
+        subject = _scrub(str(subject))
+        body    = _scrub(str(body))
+
+        msg = MIMEMultipart()
         msg["From"]    = from_hdr
         msg["To"]      = to
-        msg["Subject"] = subject
-        msg.set_content(body)
+        # Header() handles any residual non-ASCII via RFC-2047 encoding
+        msg["Subject"] = Header(subject, "utf-8")
+        msg.attach(MIMEText(body, "plain", "utf-8"))
 
         with smtplib.SMTP(s["host"], port, timeout=12) as srv:
             srv.ehlo()
             srv.starttls()
             srv.login(s["user"], s["password"])
-            srv.send_message(msg)
+            srv.sendmail(from_hdr, to, msg.as_string())
 
         return True, ""
     except Exception as exc:
@@ -106,7 +116,7 @@ def send_sms(to: str, body: str) -> tuple[bool, str]:
         from twilio.rest import Client
         t   = st.secrets["twilio"]
         cli = Client(t["sid"], t["token"])
-        cli.messages.create(body=_ascii_safe(body), from_=t["from"], to=to)
+        cli.messages.create(body=_scrub(body), from_=t["from"], to=to)
         return True, ""
     except Exception as exc:
         return False, str(exc)
