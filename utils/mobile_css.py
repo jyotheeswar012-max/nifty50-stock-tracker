@@ -1,113 +1,62 @@
-"""Responsive / mobile-first CSS injected once at startup.
+"""Mobile-responsive CSS injection for the NSE Tracker.
 
-Call inject_mobile_css() from app.py.  All rules are scoped tightly
-to avoid clobbering Streamlit internals.
+Call inject_mobile_css() once at the start of app.py to apply
+responsive styles that make the dashboard work well on phones and tablets.
 """
 import streamlit as st
 
 
-_CSS = """
-<style>
-/* ===== Mobile-first base ===== */
-@media (max-width: 768px) {
-
-    /* Full-width main area on phones */
-    .main .block-container {
-        padding-left: 0.75rem !important;
-        padding-right: 0.75rem !important;
-        max-width: 100% !important;
-    }
-
-    /* Sidebar: collapse to 260px, allow horizontal scroll on very small screens */
-    section[data-testid="stSidebar"] {
-        min-width: 260px !important;
-        max-width: 85vw  !important;
-    }
-
-    /* Tab labels: smaller font so all 8 tabs stay visible */
-    .stTabs [data-baseweb="tab"] {
-        font-size: 0.72rem !important;
-        padding: 0.35rem 0.5rem !important;
-        white-space: nowrap;
-    }
-
-    /* Metric cards: stack vertically */
-    div[data-testid="column"] {
-        min-width: 140px;
-    }
-
-    /* Plotly charts: allow horizontal scroll rather than squish */
-    .js-plotly-plot, .plotly {
-        min-width: 320px;
-        overflow-x: auto;
-    }
-
-    /* st.dataframe: horizontal scroll */
-    [data-testid="stDataFrame"] > div {
-        overflow-x: auto !important;
-    }
-
-    /* Touch targets: buttons ≥ 44 × 44 px */
-    button[kind], .stButton > button, .stDownloadButton > button {
-        min-height: 44px !important;
-        min-width: 44px !important;
-        font-size: 0.9rem !important;
-    }
-
-    /* Slider thumbs easier to grab */
-    [data-testid="stSlider"] [role="slider"] {
-        width: 28px !important;
-        height: 28px !important;
-    }
-
-    /* Number inputs: larger touch zone */
-    input[type="number"] {
-        font-size: 1rem !important;
-        min-height: 40px !important;
-    }
-
-    /* Status banner: smaller text */
-    .stAlert p {
-        font-size: 0.82rem !important;
-    }
-}
-
-/* ===== Tablet (768–992 px) ===== */
-@media (min-width: 769px) and (max-width: 992px) {
-
-    .stTabs [data-baseweb="tab"] {
-        font-size: 0.80rem !important;
-        padding: 0.4rem 0.7rem !important;
-    }
-
-    .main .block-container {
-        padding-left: 1.5rem !important;
-        padding-right: 1.5rem !important;
-    }
-}
-
-/* ===== Common: download button polish ===== */
-.stDownloadButton > button {
-    border: 1px solid #6366f1 !important;
-    color: #6366f1 !important;
-    background: transparent !important;
-    transition: background 0.15s, color 0.15s;
-}
-.stDownloadButton > button:hover {
-    background: #6366f1 !important;
-    color: #ffffff !important;
-}
-
-/* ===== Common: spinner contrast ===== */
-[data-testid="stSpinner"] p {
-    font-size: 0.9rem;
-    color: #6366f1;
-    font-weight: 500;
-}
-</style>
-"""
-
-
 def inject_mobile_css() -> None:
-    """Inject responsive CSS into the Streamlit page (idempotent)."""
-    st.markdown(_CSS, unsafe_allow_html=True)
+    """Inject responsive CSS for mobile devices."""
+    st.markdown(
+        """
+        <style>
+        /* ── Mobile-first responsive tweaks ── */
+        @media (max-width: 768px) {
+            /* Stack columns on small screens */
+            [data-testid="column"] {
+                min-width: 100% !important;
+            }
+            /* Smaller tab labels */
+            .stTabs [data-baseweb="tab"] {
+                font-size: 0.75rem !important;
+                padding: 6px 8px !important;
+            }
+            /* Compact metrics */
+            [data-testid="stMetric"] {
+                padding: 8px !important;
+            }
+            [data-testid="stMetricValue"] {
+                font-size: 1.1rem !important;
+            }
+            /* Full-width charts */
+            [data-testid="stPlotlyChart"] {
+                width: 100% !important;
+            }
+            /* Compact sidebar */
+            [data-testid="stSidebar"] {
+                width: 280px !important;
+            }
+        }
+        @media (max-width: 480px) {
+            .stTabs [data-baseweb="tab-list"] {
+                flex-wrap: wrap;
+            }
+            .stTabs [data-baseweb="tab"] {
+                font-size: 0.65rem !important;
+                padding: 4px 6px !important;
+            }
+        }
+        /* Touch-friendly tap targets */
+        button, .stButton > button {
+            min-height: 44px;
+        }
+        /* Better scrollbars */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )

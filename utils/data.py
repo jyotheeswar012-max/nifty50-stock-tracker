@@ -9,6 +9,7 @@ Priority order for OHLCV history:
 Public API
 ----------
 get_stock_data(symbol, period)        → pd.DataFrame (OHLCV)
+fetch_ticker(symbol, period)          → pd.DataFrame (alias for get_stock_data)
 get_last_price(symbol)                → dict {price, change_pct, day_high, day_low}
 get_multiple_stocks(symbols, period)  → dict[str, pd.DataFrame]
 get_nifty50_data(period)              → dict[str, pd.DataFrame]
@@ -174,7 +175,6 @@ def _yf_history(symbol: str, period: str = "1mo") -> pd.DataFrame:
     if yf is None:
         return pd.DataFrame()
 
-    # Safety net for symbols with special chars (e.g. M&M.NS).
     _yf_sym = symbol
 
     for attempt in range(_YF_MAX_RETRIES):
@@ -265,6 +265,11 @@ def get_stock_data(symbol: str, period: str = "1mo") -> pd.DataFrame:
     return static.get(symbol, pd.DataFrame())
 
 
+def fetch_ticker(symbol: str, period: str = "1mo") -> pd.DataFrame:
+    """Alias for get_stock_data — used by tab_nifty and other tab modules."""
+    return get_stock_data(symbol, period)
+
+
 @st.cache_data(ttl=_CACHE_TTL_LIVE, show_spinner=False)
 def get_last_price(symbol: str) -> dict:
     """Return latest price info dict: {price, change_pct, day_high, day_low}."""
@@ -335,7 +340,7 @@ def get_nifty50_data(period: str = "1mo") -> dict[str, pd.DataFrame]:
 
 
 # ---------------------------------------------------------------------------
-# Public API — app.py helpers (previously missing)
+# Public API — app.py helpers
 # ---------------------------------------------------------------------------
 
 def is_nse_open() -> tuple[bool, str, str]:
@@ -352,7 +357,7 @@ def is_nse_open() -> tuple[bool, str, str]:
         open_time  = now.replace(hour=9,  minute=15, second=0, microsecond=0)
         close_time = now.replace(hour=15, minute=30, second=0, microsecond=0)
 
-        if weekday >= 5:  # Saturday or Sunday
+        if weekday >= 5:
             day_name = "Saturday" if weekday == 5 else "Sunday"
             last_close = "Last close: Friday 15:30 IST"
             return False, f"Weekend — {day_name}", last_close
@@ -373,16 +378,11 @@ def is_nse_open() -> tuple[bool, str, str]:
 
 @st.cache_data(ttl=_CACHE_TTL_LIVE, show_spinner=False)
 def fetch_intraday(symbol: str) -> pd.DataFrame:
-    """Fetch intraday (today's 1d) OHLCV for a single symbol.
-
-    Used by calculations.get_last_price to get live price during market hours.
-    Falls back to static history if yfinance returns nothing.
-    """
+    """Fetch intraday (today's 1d) OHLCV for a single symbol."""
     log.debug("fetch_intraday: %s", symbol)
     df = _yf_history(symbol, period="1d")
     if _validate_ohlcv(df, min_rows=1):
         return df
-    # Fallback: return last row of 5d history as a 1-row intraday proxy
     df5 = _yf_history(symbol, period="5d")
     if _validate_ohlcv(df5):
         return df5.iloc[[-1]]
@@ -391,17 +391,11 @@ def fetch_intraday(symbol: str) -> pd.DataFrame:
 
 @st.cache_data(ttl=_CACHE_TTL_LIVE, show_spinner=False)
 def fetch_all_stocks_5d() -> dict[str, pd.DataFrame]:
-    """Fetch 5-day OHLCV for all 50 Nifty stocks.
-
-    Used by build_stock_rows in calculations.py for the All Companies,
-    Gainers/Losers and Alerts tabs.
-    Falls back to static history for any symbol that fails.
-    """
+    """Fetch 5-day OHLCV for all 50 Nifty stocks."""
     log.info("fetch_all_stocks_5d: fetching all 50 symbols")
     all_syms = tuple(s["symbol"] for s in NIFTY50)
     data = get_multiple_stocks(all_syms, "5d")
 
-    # Fill any remaining gaps with static fallback
     static = _build_static_hist()
     for sym in all_syms:
         if sym not in data or not _validate_ohlcv(data[sym]):
@@ -414,20 +408,14 @@ def fetch_all_stocks_5d() -> dict[str, pd.DataFrame]:
 
 
 def get_source_status() -> dict[str, str]:
-    """Return a dict indicating live data source health.
-
-    Used by the sidebar Data Source Status expander in app.py.
-    Returns one of: 'ok', 'degraded', 'down', 'not installed'.
-    """
+    """Return a dict indicating live data source health."""
     status: dict[str, str] = {}
 
-    # yfinance check
     yf = _import_yfinance()
     if yf is None:
         status["yfinance"] = "not installed"
     else:
         try:
-            # Quick probe: fetch fast_info for a single liquid stock
             info = yf.Ticker("RELIANCE.NS").fast_info
             price = float(info.last_price or 0)
             status["yfinance"] = "ok" if price > 0 else "degraded"
@@ -435,7 +423,6 @@ def get_source_status() -> dict[str, str]:
             log.warning("get_source_status: yfinance probe failed: %s", exc)
             status["yfinance"] = "degraded"
 
-    # nselib check
     try:
         import nselib  # noqa: F401
         status["nselib"] = "ok"
@@ -454,11 +441,7 @@ def get_source_status() -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 def _build_static_hist() -> dict[str, pd.DataFrame]:
-    """Return approximate end-of-2024 price history for all 50 symbols.
-
-    Used only when yfinance is completely unavailable (no internet / cold start).
-    Never used for trading signals.
-    """
+    """Return approximate end-of-2024 price history for all 50 symbols."""
     base_date = datetime.date(2024, 12, 31)
     dates = pd.date_range(end=base_date, periods=30, freq="B")
 
@@ -480,7 +463,6 @@ def _build_static_hist() -> dict[str, pd.DataFrame]:
         "BAJAJAUTO.NS": 9500, "SBILIFE.NS": 1580,    "BRITANNIA.NS": 5200,
         "TATACONSUM.NS": 940, "HINDUNILVR.NS": 2400, "LTF.NS": 180,
         "SHRIRAMFIN.NS": 680, "BEL.NS": 290,         "ZOMATO.NS": 265,
-        "INDUSINDBK.NS": 960,
     }
 
     result: dict[str, pd.DataFrame] = {}
