@@ -1,8 +1,5 @@
 """
 utils/alerts.py  —  Price alert storage + dispatch.
-
-Alerts are stored per signed-in email in st.session_state["_alerts_by_user"] so
-simple email login can keep each user's alerts separate for the current app session.
 """
 from __future__ import annotations
 
@@ -20,21 +17,25 @@ _LOG = "_alert_log"
 
 
 def _fmt(value: float) -> str:
-    """Format a price as a plain ASCII string with comma thousands separator.
-
-    Python's f"{x:,.2f}" can emit a non-breaking space (\xa0) as the
-    thousands separator when the process locale uses it (common on some
-    Linux/cloud environments).  Building the string manually guarantees
-    only ASCII characters, which keeps SMTP transport happy.
-    """
-    # Round to 2 dp, then split on decimal point
+    """Format a price as a plain ASCII string with comma thousands separator."""
     integer_part, decimal_part = f"{value:.2f}".split(".")
-    # Insert commas every 3 digits from the right (Indian-style not needed;
-    # standard international format is fine for email)
     chars = list(integer_part)
     for i in range(len(chars) - 3, 0, -3):
         chars.insert(i, ",")
     return "".join(chars) + "." + decimal_part
+
+
+def _clean(text: str) -> str:
+    """Strip every non-ASCII character — kills \\xa0, rupee signs, etc."""
+    return (
+        str(text)
+        .replace("\xa0", " ")
+        .replace("\u20b9", "Rs.")
+        .replace("\u20a8", "Rs.")
+        .encode("ascii", errors="ignore")
+        .decode("ascii")
+        .strip()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -56,8 +57,8 @@ def add_alert(stock: str, symbol: str, direction: str, threshold: float,
     alerts = alerts_by_user.setdefault(email, [])
     alerts.append({
         "id": str(uuid.uuid4())[:8],
-        "stock": stock,
-        "symbol": symbol,
+        "stock": _clean(stock),        # sanitise at write time — kills \xa0 forever
+        "symbol": _clean(symbol),
         "direction": direction,
         "threshold": threshold,
         "email": email,
@@ -111,21 +112,22 @@ def fire_alerts(live_prices: dict[str, float], user_email: str) -> int:
 
         direction_word = "crossed above" if alert["direction"] == "above" else "dropped below"
 
-        # Use _fmt() to guarantee ASCII-only price strings (no \xa0 thousands sep)
+        # _clean() here handles any old alerts already in session_state with \xa0
+        stock_name    = _clean(alert["stock"])
         threshold_str = _fmt(alert["threshold"])
         price_str     = _fmt(price)
 
-        subject = f"Nifty50 Alert: {alert['stock']} {direction_word} Rs.{threshold_str}"
+        subject = f"Nifty50 Alert: {stock_name} {direction_word} Rs.{threshold_str}"
         body = (
             f"Your price alert has been triggered!\n\n"
-            f"Stock     : {alert['stock']} ({alert['symbol']})\n"
+            f"Stock     : {stock_name} ({_clean(alert['symbol'])})\n"
             f"Condition : Price {direction_word} Rs.{threshold_str}\n"
             f"Current   : Rs.{price_str}\n"
             f"Time      : {datetime.now(IST).strftime('%d %b %Y %I:%M:%S %p IST')}\n\n"
             f"-- NSE & Nifty 50 Tracker"
         )
 
-        log_parts = [f"Alert #{alert['id']} fired -- {alert['stock']} @ Rs.{price_str}"]
+        log_parts = [f"Alert #{alert['id']} fired -- {stock_name} @ Rs.{price_str}"]
         ok, err = send_email(alert["email"], subject, body)
         log_parts.append(f"Email {'OK' if ok else 'FAILED: ' + err}")
         _append_log(user_email, " | ".join(log_parts))
