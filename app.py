@@ -1,5 +1,4 @@
 """NSE & Nifty 50 Tracker — Streamlit entry point."""
-import re
 import time
 import warnings
 from datetime import datetime
@@ -19,7 +18,7 @@ st.set_page_config(
 
 from utils.logger import get_logger, read_recent_logs, log_file_path
 log = get_logger(__name__)
-log.info("app.py startup — Streamlit session initialised")
+log.info("app.py startup")
 
 try:
     from utils.theme import inject, inject_topbar
@@ -27,38 +26,8 @@ try:
 except Exception:
     pass
 
-LOGIN_KEY = "user_email"
-
-
-def _valid_email(email: str) -> bool:
-    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email.strip()))
-
-
-def _login_gate() -> str:
-    email = st.session_state.get(LOGIN_KEY, "").strip()
-    if email and _valid_email(email):
-        return email
-    st.title("🔐 Login")
-    st.caption("Sign in with your email to save your alerts and receive email notifications.")
-    with st.form("email_login_form"):
-        entered = st.text_input("Email", placeholder="you@example.com")
-        submitted = st.form_submit_button("Continue", type="primary", use_container_width=True)
-        if submitted:
-            entered = entered.strip().lower()
-            if not _valid_email(entered):
-                st.error("Enter a valid email address.")
-            else:
-                st.session_state[LOGIN_KEY] = entered
-                st.rerun()
-    st.stop()
-
-
-user_email = _login_gate()
-
-try:
-    inject_topbar(user={"email": user_email})
-except Exception:
-    pass
+# No login — use a fixed internal key for alert storage
+USER_KEY = "nifty50_user"
 
 from utils.constants import REFRESH_MS, NIFTY50, NSE_INDICES, FAMOUS_DATES, CACHE_TTL
 from utils.data import (
@@ -78,31 +47,22 @@ from utils.alerts import get_alerts, add_alert, remove_alert, fire_alerts
 from utils.notifications import smtp_configured, send_email
 
 # ---------------------------------------------------------------------------
-# Market state  (computed once per session — not inside any fragment)
-# ---------------------------------------------------------------------------
 market_open, market_status, last_close_label = is_nse_open()
 
-# ---------------------------------------------------------------------------
-# Cached data builder
-# ---------------------------------------------------------------------------
 @st.cache_data(ttl=CACHE_TTL)
 def _build_stock_rows_cached():
     return build_stock_rows(fetch_all_stocks_5d(), market_open, fetch_intraday)
 
 
 def _sanitize_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Coerce any string 'NA' placeholders in numeric columns to float NaN."""
     df = df.copy()
     for col in df.columns:
         if df[col].dtype == object:
             sample = df[col].dropna().astype(str)
             if sample.empty:
                 continue
-            looks_numeric = sample.str.match(r"^[\-+]?[\d,\.]+$|^NA$").mean() > 0.5
-            if looks_numeric:
-                df[col] = pd.to_numeric(
-                    df[col].replace("NA", float("nan")), errors="coerce"
-                )
+            if sample.str.match(r"^[\-+]?[\d,\.]+$|^NA$").mean() > 0.5:
+                df[col] = pd.to_numeric(df[col].replace("NA", float("nan")), errors="coerce")
     return df
 
 
@@ -117,19 +77,13 @@ def _sec(label):
 def _divider():
     st.markdown("---")
 
-# ---------------------------------------------------------------------------
-# Status banner — wrapped in @st.fragment so it auto-refreshes WITHOUT
-# re-running the entire app (no white flash, no full rerun).
-# ---------------------------------------------------------------------------
+
 @st.fragment(run_every=REFRESH_MS / 1000 if market_open else None)
 def _status_banner():
-    """Live ticker banner.  Refreshes in-place every REFRESH_MS ms when
-    market is open.  Completely idle (no timer) when market is closed."""
     try:
         ist_now = datetime.now(pytz.timezone("Asia/Kolkata"))
         ist_str = ist_now.strftime("%I:%M:%S %p IST")
         if market_open:
-            # Alternate pulse indicator using seconds — no session-state counter needed
             pulse = "[LIVE]" if int(time.time()) % 2 == 0 else "[ -- ]"
             next_data_in = CACHE_TTL - (int(time.time()) % CACHE_TTL)
             st.success(
@@ -150,7 +104,9 @@ def _status_banner():
 
 def _closed_banner():
     if not market_open:
-        st.warning("NSE CLOSED \u2014 " + market_status + (" | " + last_close_label if last_close_label else "") + " | Showing last closing prices")
+        st.warning("NSE CLOSED \u2014 " + market_status
+                   + (" | " + last_close_label if last_close_label else "")
+                   + " | Showing last closing prices")
 
 def _show_pl_result(pl):
     pl = safe_float(pl)
@@ -163,14 +119,9 @@ def _show_data_warnings():
         st.warning(w)
 
 # ---------------------------------------------------------------------------
-# Sidebar
+# Sidebar — no logout, just system info
 # ---------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown(f"### 👤 {user_email}")
-    if st.button("Logout", use_container_width=True):
-        for key in [LOGIN_KEY, "_alerts_by_user", "_alert_log"]:
-            st.session_state.pop(key, None)
-        st.rerun()
     st.markdown("### ⚙️ System")
     with st.expander("🔌 Data Source Status", expanded=False):
         try:
@@ -178,7 +129,7 @@ with st.sidebar:
             icons = {"ok": "🟢", "degraded": "🟡", "down": "🔴", "not installed": "⚫"}
             st.markdown(f"{icons.get(src.get('yfinance','?'), '?')} **Yahoo Finance**: `{src.get('yfinance','?')}`")
             st.markdown(f"{icons.get(src.get('nselib','?'), '?')} **NSE (nselib)**: `{src.get('nselib','?')}`")
-        except Exception as exc:
+        except Exception:
             st.caption("Status unavailable")
     with st.expander("📋 Live Logs", expanded=False):
         try:
@@ -191,11 +142,9 @@ with st.sidebar:
                 lines = [l for l in lines if any(lv in l for lv in lvl_order[min_idx:])]
             st.code("\n".join(lines) if lines else "No log entries yet.", language="")
             st.caption(f"Log file: `{log_file_path()}`")
-        except Exception as exc:
+        except Exception:
             st.caption("Log viewer unavailable")
 
-# ---------------------------------------------------------------------------
-# Render — status banner first (fragment), then static tabs
 # ---------------------------------------------------------------------------
 _status_banner()
 _show_data_warnings()
@@ -204,7 +153,6 @@ tabs = st.tabs(["Market Overview", "Nifty 50 Index", "All 50 Companies", "Gainer
 
 with tabs[0]:
     try:
-        t0 = time.perf_counter()
         _hero("NSE Market Overview", "National Stock Exchange")
         _closed_banner()
         _sec("NSE Indices Snapshot")
@@ -222,7 +170,7 @@ with tabs[0]:
                     idx_rows.append({"Index": idx["name"], val_lbl: "Rs." + format(c, ",.2f"), "Change (pts)": format(ch, "+.2f"), "Change (%)": format(pt, "+.2f") + "%", "High": "Rs." + format(safe_float(h["High"].max()), ",.2f"), "Low": "Rs." + format(safe_float(h["Low"].min()), ",.2f"), "_pct": pt})
                 else:
                     idx_rows.append({"Index": idx["name"], val_lbl: "N/A", "Change (pts)": "N/A", "Change (%)": "N/A", "High": "N/A", "Low": "N/A", "_pct": None})
-            except Exception as exc:
+            except Exception:
                 idx_rows.append({"Index": idx["name"], val_lbl: "N/A", "Change (pts)": "N/A", "Change (%)": "N/A", "High": "N/A", "Low": "N/A", "_pct": None})
         idx_df = pd.DataFrame(idx_rows)
         st.dataframe(_sanitize_df(idx_df.drop(columns=["_pct"])), width="stretch", hide_index=True)
@@ -257,7 +205,6 @@ with tabs[0]:
 
 with tabs[1]:
     try:
-        t0 = time.perf_counter()
         _hero("Nifty 50 Index", "^NSEI \u2014 NSE Flagship Index")
         _closed_banner()
         c1, c2 = st.columns([1, 3])
@@ -411,38 +358,45 @@ with tabs[6]:
     except Exception as exc:
         st.error("Time Machine error: " + str(exc))
 
-# ── Tab 7: Alerts ────────────────────────────────────────────────────────────────────────────
+# ── Tab 7: Alerts ─────────────────────────────────────────────────────────
 with tabs[7]:
     try:
-        t0 = time.perf_counter()
-        _hero("🔔 Price Alerts", f"Signed in as {user_email}")
+        _hero("🔔 Price Alerts")
 
-        # ── SMTP status + test button ───────────────────────────────────────────────────
-        c_smtp, c_test = st.columns([3, 1])
-        with c_smtp:
-            if smtp_configured():
-                st.success("📧 Email alerts: **configured** \u2014 emails will be sent when alerts fire")
-            else:
-                st.error("📧 Email alerts: **NOT configured** \u2014 add [smtp] to Streamlit Cloud Secrets")
-        with c_test:
-            if st.button("📧 Send Test Email", use_container_width=True, disabled=not smtp_configured()):
+        # Ask for email to receive alerts (optional, not a login gate)
+        stored_email = st.session_state.get("alert_email", "").strip()
+        alert_email_input = st.text_input(
+            "📧 Email for alert notifications (optional)",
+            value=stored_email,
+            placeholder="you@example.com",
+            key="alert_email_input",
+        )
+        if alert_email_input.strip() != stored_email:
+            st.session_state["alert_email"] = alert_email_input.strip().lower()
+            st.rerun()
+        alert_email = st.session_state.get("alert_email", "").strip().lower()
+
+        # SMTP status
+        if smtp_configured():
+            st.success("📧 Email alerts: **configured**")
+        else:
+            st.warning("📧 Email alerts: **NOT configured** \u2014 add [smtp] to Streamlit Cloud Secrets")
+
+        if alert_email and smtp_configured():
+            if st.button("📧 Send Test Email", use_container_width=False):
                 ok, err = send_email(
-                    user_email,
-                    "🧪 Nifty50 Alert \u2014 Test Email",
-                    f"Hi! This is a test from NSE & Nifty 50 Tracker.\n\nSMTP is working correctly.\nAlerts will be delivered to: {user_email}\n\n\u2014 NSE Tracker"
+                    alert_email,
+                    "Nifty50 Alert - Test Email",
+                    f"Hi! This is a test from NSE & Nifty 50 Tracker.\nSMTP is working correctly.\nAlerts will be sent to: {alert_email}\n\n-- NSE Tracker"
                 )
                 if ok:
-                    st.success(f"✅ Test email sent to {user_email}! Check your inbox (and spam folder).")
+                    st.success(f"Test email sent to {alert_email}!")
                 else:
-                    st.error(f"❌ Email failed: {err}")
+                    st.error(f"Email failed: {err}")
 
         _divider()
+        _sec("Add New Alert")
 
-        # ── Add new alert ───────────────────────────────────────────────────────────────────
-        _sec("➕ Add New Alert")
-        st.caption(f"Alert emails will be sent to **{user_email}** when the price target is hit.")
-
-        # Show success banner from previous form submission (outside any form)
         if st.session_state.get("_alert_added_msg"):
             st.success(st.session_state.pop("_alert_added_msg"))
 
@@ -463,83 +417,79 @@ with tabs[7]:
             st.session_state[_px_key] = round(_fetched, 2)
         live_px = st.session_state[_px_key]
 
-        st.caption(f"📊 Current price of **{al_stock_name}**: **Rs.{live_px:,.2f}**")
+        st.caption(f"Current price of **{al_stock_name}**: **Rs.{live_px:,.2f}**")
 
         with st.form("add_alert_form", clear_on_submit=True):
             al_thresh = st.number_input("Target Price (Rs.)", min_value=0.01, value=live_px, step=1.0)
-            submitted = st.form_submit_button("🔔 Set Alert", type="primary", use_container_width=True)
+            submitted = st.form_submit_button("Set Alert", type="primary", use_container_width=True)
             if submitted:
                 direction = "above" if "above" in al_direction else "below"
                 add_alert(stock=al_stock_name, symbol=al_sym, direction=direction,
-                          threshold=al_thresh, email=user_email, phone="")
+                          threshold=al_thresh, email=alert_email or USER_KEY, phone="")
                 st.session_state["_alert_added_msg"] = (
-                    f"✅ Alert set: {al_stock_name} "
-                    f"{'>' if direction == 'above' else '<'} Rs.{al_thresh:,.2f} \u2014 will email {user_email}"
+                    f"Alert set: {al_stock_name} "
+                    f"{'>' if direction == 'above' else '<'} Rs.{al_thresh:,.2f}"
+                    + (f" — will email {alert_email}" if alert_email else "")
                 )
                 st.session_state.pop(_px_key, None)
                 st.rerun()
 
         _divider()
 
-        # ── Build live price map ──────────────────────────────────────────────────────
+        # Build live price map
         try:
             live_rows = _build_stock_rows_cached()
             price_map = dict(zip([s["symbol"] for s in NIFTY50], live_rows["_curr"].fillna(0).tolist())) if "_curr" in live_rows.columns else {}
         except Exception:
             price_map = {}
 
-        # ── Active alerts ─────────────────────────────────────────────────────────────────────
-        alerts = get_alerts(user_email)
+        alerts = get_alerts(alert_email or USER_KEY)
         active = [a for a in alerts if not a["triggered"]]
         fired  = [a for a in alerts if a["triggered"]]
 
-        _sec(f"📋 Active Alerts ({len(active)})")
+        _sec(f"Active Alerts ({len(active)})")
         if not active:
             st.caption("No active alerts. Add one above.")
         else:
             for al in active:
                 col_info, col_del = st.columns([6, 1])
                 live_px_al = price_map.get(al["symbol"], 0)
-                arrow = "↑" if al["direction"] == "above" else "↓"
+                arrow = "\u2191" if al["direction"] == "above" else "\u2193"
                 gap   = live_px_al - al["threshold"] if al["direction"] == "above" else al["threshold"] - live_px_al
                 gap_str = f"Rs.{abs(gap):,.2f} {'above' if gap >= 0 else 'below'} target"
                 status_icon = "🟢" if (al["direction"] == "above" and live_px_al >= al["threshold"]) or (al["direction"] == "below" and live_px_al <= al["threshold"]) else "🟡"
                 with col_info:
                     st.markdown(
-                        f"{status_icon} **{al['stock']}** price {arrow} Rs.{al['threshold']:,.2f} "
+                        f"{status_icon} **{al['stock']}** {arrow} Rs.{al['threshold']:,.2f} "
                         f"| Live: **Rs.{live_px_al:,.2f}** | {gap_str} \xb7 `#{al['id']}`"
                     )
                 with col_del:
-                    if st.button("🗑️", key=f"del_{al['id']}", help="Remove this alert"):
-                        remove_alert(al["id"], user_email)
+                    if st.button("\U0001f5d1\ufe0f", key=f"del_{al['id']}", help="Remove"):
+                        remove_alert(al["id"], alert_email or USER_KEY)
                         st.rerun()
 
-        # ── Fire check ─────────────────────────────────────────────────────────────────────────────────
         if active and price_map:
             try:
-                n_fired = fire_alerts(price_map, user_email)
+                n_fired = fire_alerts(price_map, alert_email or USER_KEY)
                 if n_fired:
-                    st.toast(f"🔔 {n_fired} alert(s) triggered \u2014 email sent!", icon="🔔")
+                    st.toast(f"{n_fired} alert(s) triggered!", icon="🔔")
                     st.rerun()
             except Exception as exc:
-                log.error("Alerts fire_alerts failed: %s", exc)
+                log.error("fire_alerts failed: %s", exc)
 
-        # ── Triggered history ───────────────────────────────────────────────────────────────────
         if fired:
-            with st.expander(f"✅ Triggered Alerts ({len(fired)})", expanded=False):
+            with st.expander(f"Triggered Alerts ({len(fired)})", expanded=False):
                 for al in fired:
-                    arrow = "↑" if al["direction"] == "above" else "↓"
+                    arrow = "\u2191" if al["direction"] == "above" else "\u2193"
                     st.markdown(f"~~**{al['stock']}**~~ {arrow} Rs.{al['threshold']:,.2f} \xb7 `#{al['id']}` \xb7 {al['created']}")
 
-        # ── Notification log ───────────────────────────────────────────────────────────────────
         alert_log = st.session_state.get("_alert_log", {})
-        user_log = alert_log.get(user_email, []) if isinstance(alert_log, dict) else []
+        user_log = alert_log.get(alert_email or USER_KEY, []) if isinstance(alert_log, dict) else []
         if user_log:
-            with st.expander("📜 Notification Log", expanded=True):
+            with st.expander("Notification Log", expanded=True):
                 for entry in user_log:
                     st.text(entry)
 
-        log.info("Tab7 Alerts rendered in %.0f ms", (time.perf_counter() - t0) * 1000)
     except Exception as exc:
         log.error("Tab7 fatal: %s", exc, exc_info=True)
         st.error("Alerts error: " + str(exc))
