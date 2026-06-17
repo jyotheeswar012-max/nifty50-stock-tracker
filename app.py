@@ -23,6 +23,7 @@ log.info("app.py startup")
 try:
     from utils.theme import inject, inject_topbar
     inject()
+    inject_topbar()   # no user arg — login removed
 except Exception:
     pass
 
@@ -119,7 +120,7 @@ def _show_data_warnings():
         st.warning(w)
 
 # ---------------------------------------------------------------------------
-# Sidebar — no logout, just system info
+# Sidebar — system info only
 # ---------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("### ⚙️ System")
@@ -363,7 +364,6 @@ with tabs[7]:
     try:
         _hero("🔔 Price Alerts")
 
-        # Ask for email to receive alerts (optional, not a login gate)
         stored_email = st.session_state.get("alert_email", "").strip()
         alert_email_input = st.text_input(
             "📧 Email for alert notifications (optional)",
@@ -376,7 +376,6 @@ with tabs[7]:
             st.rerun()
         alert_email = st.session_state.get("alert_email", "").strip().lower()
 
-        # SMTP status
         if smtp_configured():
             st.success("📧 Email alerts: **configured**")
         else:
@@ -387,7 +386,7 @@ with tabs[7]:
                 ok, err = send_email(
                     alert_email,
                     "Nifty50 Alert - Test Email",
-                    f"Hi! This is a test from NSE & Nifty 50 Tracker.\nSMTP is working correctly.\nAlerts will be sent to: {alert_email}\n\n-- NSE Tracker"
+                    f"Hi! This is a test from NSE & Nifty 50 Tracker.\nSMTP is working.\nAlerts will be sent to: {alert_email}\n\n-- NSE Tracker"
                 )
                 if ok:
                     st.success(f"Test email sent to {alert_email}!")
@@ -429,14 +428,13 @@ with tabs[7]:
                 st.session_state["_alert_added_msg"] = (
                     f"Alert set: {al_stock_name} "
                     f"{'>' if direction == 'above' else '<'} Rs.{al_thresh:,.2f}"
-                    + (f" — will email {alert_email}" if alert_email else "")
+                    + (f" \u2014 will email {alert_email}" if alert_email else "")
                 )
                 st.session_state.pop(_px_key, None)
                 st.rerun()
 
         _divider()
 
-        # Build live price map
         try:
             live_rows = _build_stock_rows_cached()
             price_map = dict(zip([s["symbol"] for s in NIFTY50], live_rows["_curr"].fillna(0).tolist())) if "_curr" in live_rows.columns else {}
