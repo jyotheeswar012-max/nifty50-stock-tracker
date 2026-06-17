@@ -7,7 +7,7 @@ import pytz
 import warnings
 warnings.filterwarnings("ignore")
 
-st.set_page_config(page_title="Price Alerts", page_icon="🔔", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Price Alerts", page_icon="\U0001f514", layout="wide", initial_sidebar_state="collapsed")
 
 try:
     from utils.theme import inject, inject_topbar
@@ -100,35 +100,61 @@ def sf(v, d=0.0):
 
 
 def _fmt(value: float) -> str:
-    """ASCII-safe price string — avoids locale \\xa0 thousands separator."""
-    integer_part, decimal_part = f"{value:.2f}".split(".")
+    """Strictly ASCII price string — no locale, no \\xa0, no Unicode.
+
+    Builds thousands-separated string purely from str/list operations
+    so it is guaranteed to contain only ASCII characters 0-9, comma, dot.
+    """
+    # Work entirely with plain Python strings — no locale, no f-string number formatting
+    # that might pull in a locale-specific thousands separator (\xa0 on some systems).
+    raw = f"{abs(value):.2f}"            # e.g. "1328.50"  -- always ASCII
+    integer_part, decimal_part = raw.split(".")
     chars = list(integer_part)
     for i in range(len(chars) - 3, 0, -3):
         chars.insert(i, ",")
-    return "".join(chars) + "." + decimal_part
+    result = ("-" if value < 0 else "") + "".join(chars) + "." + decimal_part
+    # Final safety net: drop anything that slipped through
+    return result.encode("ascii", errors="ignore").decode("ascii")
+
+
+def _clean(text: str) -> str:
+    """Strip every non-ASCII character from a string before it touches SMTP."""
+    return (
+        text
+        .replace("\xa0", " ")       # non-breaking space
+        .replace("\u20b9", "Rs.")    # rupee sign \u20b9
+        .replace("\u20a8", "Rs.")    # rupee sign \u20a8
+        .encode("ascii", errors="replace")
+        .decode("ascii")
+    )
 
 
 def _send_alert_email(alert: dict, cp: float, user_email: str) -> None:
     """Send a triggered-alert email. Silently logs result to session state."""
     if not smtp_configured():
         return
-    # Skip if already emailed for this trigger
     if alert.get("email_sent"):
         return
-    target_str = _fmt(alert["target"])
-    cp_str     = _fmt(cp)
-    ttype      = alert["type"]
-    stock      = alert["stock"]
+
+    # Build every string field through _clean() so \xa0 / \u20b9 can never reach smtplib
+    stock      = _clean(str(alert["stock"]))
+    symbol     = _clean(str(alert["symbol"]))
+    ttype      = _clean(str(alert["type"]))
+    target_str = _clean(_fmt(float(alert["target"])))
+    cp_str     = _clean(_fmt(float(cp)))
+    note_str   = _clean(str(alert.get("note", "")))
+    time_str   = _clean(datetime.now(IST).strftime("%d %b %Y %I:%M:%S %p IST"))
+
     subject = f"Nifty50 Alert: {stock} {ttype} target Rs.{target_str} hit!"
     body = (
         f"Your price alert has been triggered!\n\n"
-        f"Stock   : {stock} ({alert['symbol']})\n"
+        f"Stock   : {stock} ({symbol})\n"
         f"Trigger : {ttype} Rs.{target_str}\n"
         f"Current : Rs.{cp_str}\n"
-        f"Time    : {datetime.now(IST).strftime('%d %b %Y %I:%M:%S %p IST')}\n"
+        f"Time    : {time_str}\n"
     )
-    if alert.get("note"):
-        body += f"Note    : {alert['note']}\n"
+    if note_str:
+        body += f"Note    : {note_str}\n"
     body += "\n-- NSE & Nifty 50 Tracker"
 
     ok, err = send_email(user_email, subject, body)
@@ -164,7 +190,7 @@ for k, v in [("alerts", []), ("alert_history", []), ("alert_email_log", [])]:
 
 st.markdown("""
 <div class="hero-banner">
-  <div class="hero-icon">🔔</div>
+  <div class="hero-icon">\U0001f514</div>
   <div>
     <div class="hero-title">Price Alerts</div>
     <div class="hero-sub">
@@ -178,11 +204,9 @@ st.markdown("""
 if is_guest():
     login_nudge("save your alerts permanently")
 
-# Show SMTP status
 if not smtp_configured():
     st.warning("Email notifications are not configured. Add [smtp] to your secrets.toml to receive email alerts.")
 
-# Email recipient — use logged-in user's email or let them enter one
 alert_email = ""
 if user and getattr(user, "email", None):
     alert_email = user.email
@@ -248,7 +272,6 @@ with tab_active:
                 if ref and ref != 0 and abs((cp - ref) / ref * 100) >= a["target"]:
                     trig = True
 
-            # Send email the first time the alert triggers
             if trig and alert_email and not a.get("email_sent"):
                 _send_alert_email(a, cp, alert_email)
 
@@ -271,7 +294,6 @@ with tab_active:
             if trig:
                 triggered.append(i)
 
-        # Show email log
         email_log = st.session_state.get("alert_email_log", [])
         if email_log:
             with st.expander("Email log"):
