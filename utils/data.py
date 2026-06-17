@@ -1,20 +1,35 @@
-"""Data fetching helpers with multi-source fallback.
+"""Data fetching helpers with multi-source fallback + SQLite price cache.
 
-Fetch priority
---------------
-1. yfinance batch (yf.download all 50 at once) — primary, fastest
+Fetch waterfall
+---------------
+0. SQLite cache  (utils/db.price_cache_read)  — fastest, survives rate limits
+1. yfinance batch  (yf.download all 50 at once)
 2. yfinance single (per-symbol fallback for any that failed the batch)
-3. nselib    — fallback (official NSE India REST API, no auth required)
-4. Stale-cache guard — if all sources fail, serve previous result with warning
+3. nselib           — official NSE India REST API, no auth required
+4. SQLite stale    (price_cache_read_stale)   — last resort, any age accepted
+
+Every successful live fetch is written through to the SQLite cache
+(price_cache_write) so Layer 0 is always warm after the first run.
+
+Dynamic beta computation
+------------------------
+After fetch_all_history() assembles its result dict, compute_betas()
+calculates a 1-year rolling OLS beta for every equity symbol against
+^NSEI daily returns.  The results are stored in
+  st.session_state["dynamic_betas"]  →  {"RELIANCE.NS": 0.92, ...}
+and consumed by calculations.py / app.py instead of the static
+constants.NIFTY50[i]["beta"] values.  Constants betas remain as
+a cold-start fallback when history data is not yet loaded.
 
 All @st.cache_data decorators live here so caching is co-located with
 the fetch logic.  app.py imports only the cached public functions.
 
 Importability note
 ------------------
-When this module is imported outside a running Streamlit server (e.g. during
-pytest), `@st.cache_data` is replaced with a transparent no-op decorator so
-all public functions remain fully testable without a live Streamlit context.
+When this module is imported outside a running Streamlit server (e.g.
+during pytest), `@st.cache_data` is replaced with a transparent no-op
+decorator so all public functions remain fully testable without a live
+Streamlit context.
 """
 from __future__ import annotations
 
@@ -22,6 +37,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Callable
 
+import numpy as np
 import pandas as pd
 import pytz
 import yfinance as yf
@@ -29,8 +45,20 @@ from yfinance.exceptions import YFRateLimitError
 
 from utils.constants import CACHE_TTL, NIFTY50, NSE_INDICES, SYMBOLS
 from utils.logger import get_logger
+from utils.db import (
+    price_cache_read,
+    price_cache_read_stale,
+    price_cache_write,
+    price_cache_purge_old,
+)
 
 log = get_logger(__name__)   # nse_tracker.utils.data
+
+# Evict DB rows older than 7 days on first import (lazy housekeeping)
+try:
+    price_cache_purge_old(max_age_days=7)
+except Exception:
+    pass
 
 # ---------------------------------------------------------------------------
 # Streamlit import guard
@@ -57,6 +85,8 @@ if not _STREAMLIT_RUNNING:
             @classmethod
             def get(cls, key, default=None):
                 return cls._store.get(key, default)
+            def __setitem__(cls, key, value):
+                cls._store[key] = value
             def __class_getitem__(cls, key):
                 return cls._store.get(key)
 
@@ -162,6 +192,16 @@ def _to_series(col: "pd.Series | pd.DataFrame") -> pd.Series:
 
 
 # ---------------------------------------------------------------------------
+# Source 0 — SQLite cache read (fastest, survives rate limits)
+# ---------------------------------------------------------------------------
+
+# TTL for considering a SQLite-cached row "fresh" enough to skip live fetch.
+# Intentionally slightly longer than CACHE_TTL so a single Streamlit cache
+# expiry doesn't force a redundant network call if the DB row is recent.
+_SQLITE_FRESH_TTL = max(CACHE_TTL * 2, 60)   # seconds
+
+
+# ---------------------------------------------------------------------------
 # Source 1a — yfinance BATCH download  (all symbols in ONE HTTP request)
 # ---------------------------------------------------------------------------
 
@@ -170,9 +210,6 @@ def _yf_batch_download(symbols: list[str], period: str) -> dict[str, pd.DataFram
     Download OHLCV for all symbols in a single yf.download() call.
     Returns a dict {symbol: DataFrame}.  Symbols that come back empty
     are omitted so the caller can fall back individually.
-
-    This replaces 50 serial HTTP requests with 1, reducing wall-clock
-    time from ~25 s to ~2–3 s.
     """
     result: dict[str, pd.DataFrame] = {}
     if not symbols:
@@ -184,9 +221,9 @@ def _yf_batch_download(symbols: list[str], period: str) -> dict[str, pd.DataFram
             tickers=symbols,
             period=period,
             auto_adjust=True,
-            group_by="ticker",   # MultiIndex: (OHLCV, symbol)
+            group_by="ticker",
             progress=False,
-            threads=True,        # yfinance uses thread pool internally
+            threads=True,
             timeout=30,
         )
         elapsed = time.monotonic() - t0
@@ -198,13 +235,10 @@ def _yf_batch_download(symbols: list[str], period: str) -> dict[str, pd.DataFram
 
         for sym in symbols:
             try:
-                # yfinance returns a MultiIndex (field, ticker) when >1 symbol
                 if isinstance(raw.columns, pd.MultiIndex):
-                    # Slice this ticker's columns: raw.xs(sym, axis=1, level=1)
                     try:
                         sym_df = raw.xs(sym, axis=1, level=1).copy()
                     except KeyError:
-                        # Try stripping exchange suffix  (RELIANCE.NS -> RELIANCE)
                         short = sym.replace(".NS", "")
                         try:
                             sym_df = raw.xs(short, axis=1, level=1).copy()
@@ -212,12 +246,12 @@ def _yf_batch_download(symbols: list[str], period: str) -> dict[str, pd.DataFram
                             log.warning("batch: symbol %s not found in result", sym)
                             continue
                 else:
-                    # Single-symbol download (shouldn't happen here but guard)
                     sym_df = raw.copy()
 
                 sym_df = _clean_df(sym_df)
                 if _validate_ohlcv(sym_df):
                     result[sym] = sym_df
+                    price_cache_write(sym, period, sym_df)  # write-through
                 else:
                     log.warning("batch: empty/invalid data for %s after clean", sym)
             except Exception as exc:
@@ -254,6 +288,7 @@ def _yf_history(symbol: str, period: str) -> pd.DataFrame:
             df = _clean_df(df)
             if _validate_ohlcv(df):
                 _yf_last_ok = time.monotonic()
+                price_cache_write(symbol, period, df)  # write-through
                 return df
             log.warning("yfinance single: empty/invalid data for %s", symbol)
             return pd.DataFrame()
@@ -352,6 +387,7 @@ def _nselib_history(symbol: str, period: str) -> pd.DataFrame:
         df = _clean_df(raw)
         if _validate_ohlcv(df):
             log.info("nselib fallback used: symbol=%s rows=%d", symbol, len(df))
+            price_cache_write(symbol, period, df)  # write-through
             return df
     except Exception as exc:
         log.error("nselib fetch failed: symbol=%s period=%s error=%s", symbol, period, exc, exc_info=True)
@@ -359,7 +395,7 @@ def _nselib_history(symbol: str, period: str) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Staleness guard
+# Staleness guard (in-memory, kept for intra-process resilience)
 # ---------------------------------------------------------------------------
 
 _STALE_STORE: dict[str, pd.DataFrame] = {}
@@ -376,29 +412,159 @@ def _warn(msg: str) -> None:
 
 
 def _fetch_with_fallback(symbol: str, period: str) -> pd.DataFrame:
-    """Single-symbol multi-source fetch (used by fetch_ticker and as batch fallback)."""
+    """
+    Full fetch waterfall for a single symbol:
+      0. SQLite (fresh)  →  1. yfinance single  →  2. nselib
+      →  3. SQLite (stale)  →  4. in-memory stale store
+    """
     key = f"{symbol}:{period}"
 
+    # --- Layer 0: SQLite fresh cache ---
+    cached = price_cache_read(symbol, period, max_age_s=_SQLITE_FRESH_TTL)
+    if not cached.empty:
+        log.debug("_fetch_with_fallback: SQLite cache hit for %s/%s", symbol, period)
+        _STALE_STORE[key] = cached   # keep in-memory store warm too
+        return cached
+
+    # --- Layer 1: yfinance single ---
     df = _yf_history(symbol, period)
     if not df.empty:
         _STALE_STORE[key] = df
-        return df
+        return df   # write-through already done inside _yf_history
 
+    # --- Layer 2: nselib ---
     log.warning("yfinance failed for %s/%s — trying nselib", symbol, period)
     df = _nselib_history(symbol, period)
     if not df.empty:
         _STALE_STORE[key] = df
-        _warn(f"🔄 Using NSE backup source for **{symbol}** (Yahoo Finance unavailable)")
-        return df
+        _warn(f"\U0001f504 Using NSE backup source for **{symbol}** (Yahoo Finance unavailable)")
+        return df   # write-through already done inside _nselib_history
 
-    stale = _STALE_STORE.get(key)
-    if stale is not None and not stale.empty:
-        log.warning("Serving stale data for %s", symbol)
-        _warn(f"⚠️ Serving **stale** data for {symbol} — both live sources failed")
-        return stale
+    # --- Layer 3: SQLite stale (any age) ---
+    stale_db = price_cache_read_stale(symbol, period)
+    if not stale_db.empty:
+        log.warning("Serving SQLite stale data for %s", symbol)
+        _warn(f"\u26a0\ufe0f Serving **stale cached** data for {symbol} — all live sources failed")
+        _STALE_STORE[key] = stale_db
+        return stale_db
+
+    # --- Layer 4: in-memory stale ---
+    stale_mem = _STALE_STORE.get(key)
+    if stale_mem is not None and not stale_mem.empty:
+        log.warning("Serving in-memory stale data for %s", symbol)
+        _warn(f"\u26a0\ufe0f Serving **stale** data for {symbol} — both live sources failed")
+        return stale_mem
 
     log.error("No data available for %s/%s from any source", symbol, period)
     return pd.DataFrame()
+
+
+# ---------------------------------------------------------------------------
+# Dynamic beta computation
+# ---------------------------------------------------------------------------
+
+# Minimum number of overlapping daily-return observations to compute beta.
+_BETA_MIN_OBS = 60   # ~3 months of trading days
+
+
+def compute_betas(
+    history: dict[str, pd.DataFrame],
+    lookback_days: int = 252,
+) -> dict[str, float]:
+    """
+    Compute 1-year OLS beta for every equity symbol in *history* against
+    the Nifty 50 index (^NSEI).
+
+    Beta = Cov(r_stock, r_index) / Var(r_index)
+
+    Parameters
+    ----------
+    history        : dict returned by fetch_all_history()
+    lookback_days  : number of most-recent trading days to use (default 252 = 1y)
+
+    Returns
+    -------
+    dict mapping symbol → float beta.  Symbols with insufficient data
+    are omitted; callers should fall back to constants.NIFTY50 beta.
+    """
+    betas: dict[str, float] = {}
+
+    nsei_df = history.get("^NSEI")
+    if nsei_df is None or nsei_df.empty:
+        log.warning("compute_betas: ^NSEI not in history, skipping dynamic beta")
+        return betas
+
+    nsei_close = _to_series(nsei_df["Close"]).dropna().astype(float)
+    nsei_ret   = nsei_close.pct_change().dropna()
+
+    # Restrict to the most-recent window
+    if len(nsei_ret) > lookback_days:
+        nsei_ret = nsei_ret.iloc[-lookback_days:]
+
+    for sym in SYMBOLS:
+        try:
+            sym_df = history.get(sym)
+            if sym_df is None or sym_df.empty:
+                continue
+
+            sym_close = _to_series(sym_df["Close"]).dropna().astype(float)
+            sym_ret   = sym_close.pct_change().dropna()
+
+            # Align on common dates
+            common_idx  = nsei_ret.index.intersection(sym_ret.index)
+            if len(common_idx) < _BETA_MIN_OBS:
+                log.debug(
+                    "compute_betas: %s has only %d common obs (need %d) — skipping",
+                    sym, len(common_idx), _BETA_MIN_OBS,
+                )
+                continue
+
+            r_mkt  = nsei_ret.loc[common_idx].values.astype(float)
+            r_stk  = sym_ret.loc[common_idx].values.astype(float)
+
+            var_mkt = np.var(r_mkt, ddof=1)
+            if var_mkt == 0 or np.isnan(var_mkt):
+                continue
+
+            beta = float(np.cov(r_stk, r_mkt, ddof=1)[0, 1] / var_mkt)
+
+            # Sanity clamp: beta outside [-2, 4] almost certainly means bad data
+            if not (-2.0 <= beta <= 4.0):
+                log.warning("compute_betas: %s beta=%.3f out of range, clamping", sym, beta)
+                beta = float(np.clip(beta, -2.0, 4.0))
+
+            betas[sym] = round(beta, 4)
+        except Exception as exc:
+            log.error("compute_betas: error for %s: %s", sym, exc, exc_info=True)
+
+    log.info(
+        "compute_betas: computed %d/%d betas (lookback=%d days)",
+        len(betas), len(SYMBOLS), lookback_days,
+    )
+    return betas
+
+
+def get_beta(symbol: str) -> float:
+    """
+    Return the best available beta for *symbol*.
+
+    Priority:
+      1. st.session_state["dynamic_betas"]  (live-computed)
+      2. constants.NIFTY50 static beta       (cold-start fallback)
+      3. 1.0                                 (market-neutral default)
+    """
+    try:
+        dynamic = st.session_state.get("dynamic_betas", {})
+        if symbol in dynamic:
+            return dynamic[symbol]
+    except Exception:
+        pass
+
+    # Fallback: static constants
+    for s in NIFTY50:
+        if s["symbol"] == symbol:
+            return s.get("beta", 1.0)
+    return 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -424,7 +590,6 @@ def fetch_indices() -> dict[str, pd.DataFrame]:
     log.info("fetch_indices called")
     symbols = [idx["symbol"] for idx in NSE_INDICES]
     result  = _yf_batch_download(symbols, "5d")
-    # Per-symbol fallback for any that missed the batch
     for idx in NSE_INDICES:
         sym = idx["symbol"]
         if sym not in result:
@@ -442,20 +607,23 @@ def fetch_all_stocks_5d() -> dict[str, pd.DataFrame]:
     Fetch last-5-day daily bars for all 50 Nifty stocks.
 
     OPTIMISED: Uses yf.download() to fetch all 50 symbols in ONE HTTP
-    request (≈2–3 s).  Any symbols missing from the batch result are
-    retried individually with nselib / stale-cache fallback.
+    request (~2-3 s).  Any symbols missing from the batch result are
+    retried individually with nselib / SQLite / stale-cache fallback.
     """
     log.info("fetch_all_stocks_5d called")
     symbols = [s["symbol"] for s in NIFTY50]
 
-    # --- Step 1: batch download (fast) ---
+    # Step 1: batch download (fast)
     result = _yf_batch_download(symbols, "5d")
     log.info("fetch_all_stocks_5d: batch got %d/50 symbols", len(result))
 
-    # --- Step 2: individual fallback for any that failed the batch ---
+    # Step 2: individual fallback for any that failed the batch
     missed = [sym for sym in symbols if sym not in result]
     if missed:
-        log.warning("fetch_all_stocks_5d: %d symbols missed batch, fetching individually: %s", len(missed), missed)
+        log.warning(
+            "fetch_all_stocks_5d: %d symbols missed batch, fetching individually: %s",
+            len(missed), missed,
+        )
         for sym in missed:
             df = _fetch_with_fallback(sym, "5d")
             if not df.empty:
@@ -470,11 +638,16 @@ def fetch_all_stocks_5d() -> dict[str, pd.DataFrame]:
 
 @st.cache_data(ttl=3600)
 def fetch_all_history() -> dict[str, pd.DataFrame]:
-    """Fetch 5-year daily bars for all 50 stocks + macro symbols (Time Machine)."""
+    """
+    Fetch 5-year daily bars for all 50 stocks + macro symbols (Time Machine).
+
+    After assembling the result dict, dynamically computes OLS betas
+    against ^NSEI and stores them in st.session_state["dynamic_betas"]
+    so all other pages pick them up via get_beta().
+    """
     log.info("fetch_all_history called (heavy fetch, TTL=3600s)")
     all_syms = SYMBOLS + ["USDINR=X", "CL=F", "GC=F", "^NSEI"]
 
-    # Batch the equity symbols; fetch macro symbols individually
     equity_syms = [s for s in all_syms if not any(c in s for c in ["=", "=X", "=F", "^"])]
     macro_syms  = [s for s in all_syms if s not in equity_syms]
 
@@ -487,7 +660,7 @@ def fetch_all_history() -> dict[str, pd.DataFrame]:
             if not df.empty:
                 result[sym] = df
 
-    # Macro symbols (USDINR, crude, gold, ^NSEI) fetched individually
+    # Macro symbols fetched individually
     for sym in macro_syms:
         df = _fetch_with_fallback(sym, "5y")
         if not df.empty:
@@ -497,6 +670,21 @@ def fetch_all_history() -> dict[str, pd.DataFrame]:
     if failed:
         log.warning("fetch_all_history: no data for %d symbols: %s", len(failed), failed)
     log.info("fetch_all_history: loaded %d/%d symbols", len(result), len(all_syms))
+
+    # --- Compute dynamic betas and publish to session_state ---
+    try:
+        dynamic_betas = compute_betas(result, lookback_days=252)
+        if dynamic_betas:
+            st.session_state["dynamic_betas"] = dynamic_betas
+            log.info(
+                "fetch_all_history: stored %d dynamic betas in session_state",
+                len(dynamic_betas),
+            )
+        else:
+            log.warning("fetch_all_history: compute_betas returned empty dict — keeping static betas")
+    except Exception as exc:
+        log.error("fetch_all_history: compute_betas failed: %s", exc, exc_info=True)
+
     return result
 
 
@@ -519,6 +707,19 @@ def get_source_status() -> dict[str, str]:
             status["nselib"] = "down"
     else:
         status["nselib"] = "not installed"
+
+    # SQLite cache health
+    try:
+        from utils.db import _db_conn
+        conn = _db_conn()
+        if conn:
+            conn.execute("SELECT COUNT(*) FROM price_cache").fetchone()
+            conn.close()
+            status["sqlite_cache"] = "ok"
+        else:
+            status["sqlite_cache"] = "unavailable"
+    except Exception:
+        status["sqlite_cache"] = "error"
 
     log.info("get_source_status result: %s", status)
     return status
