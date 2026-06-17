@@ -40,31 +40,30 @@ def _sanitize_numeric_cols(df: pd.DataFrame) -> pd.DataFrame:
 
 def _get_history() -> tuple[dict, bool]:
     """Return (history_dict, is_live).
-    Tries live yfinance first; always falls back to static synthetic data
-    when live data is empty or unavailable.
+    Tries live yfinance first; always falls back to static synthetic data.
     """
     try:
         from utils.data import fetch_all_history
         hist = fetch_all_history()
-        if hist and len(hist) >= 10:  # meaningful live data
+        if hist and len(hist) >= 10:
             return hist, True
-    except OSError as exc:
-        log.warning("tab_companies: network error fetching history: %s", exc)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("tab_companies: fetch_all_history failed: %s", exc)
     log.info("tab_companies: using static synthetic history fallback")
     return _build_static_history(), False
 
 
 def _build_pie_from_history(history: dict, title: str) -> object:
-    """Build sector pie directly from a history dict (works without live price rows)."""
+    """Build sector pie directly from a history dict (no live price rows needed)."""
     rows = []
     for s in NIFTY50:
         h = history.get(s["symbol"])
         if h is not None and not h.empty and "Close" in h.columns:
-            price = float(h["Close"].dropna().iloc[-1])
+            close_series = h["Close"].dropna()
+            price = float(close_series.iloc[-1]) if not close_series.empty else s.get("beta", 1.0) * 1000
         else:
-            price = 0.0
+            # Use seed price from static history as final fallback
+            price = 1000.0
         rows.append({"Sector": s["sector"], "_curr": price})
     return build_sector_pie(pd.DataFrame(rows), title=title)
 
@@ -84,11 +83,11 @@ def render(
     sectors = ["All"] + sorted({s["sector"] for s in NIFTY50})
     sel_sec = st.selectbox("Sector", sectors, key="all_sec")
 
-    # ── Stock data table ──────────────────────────────────────────────────────
+    # ── Stock data table ──────────────────────────────────────────────────
     with st.spinner("Loading stock data…"):
         try:
             df_rows = build_stock_rows_cached()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.error("tab_companies: build_stock_rows_cached failed: %s", exc, exc_info=True)
             st.error("Could not load stock data.")
             return
@@ -109,18 +108,17 @@ def render(
 
     divider()
 
-    # ── Fetch history ONCE — used by ALL three charts below ───────────────────
+    # ── Fetch history ONCE — used by ALL three charts ─────────────────────
     with st.spinner("Loading price history…"):
         all_hist, is_live = _get_history()
 
     if not is_live:
         st.info(
-            "⚠️ Live market history is unavailable right now. "
-            "The charts below use representative synthetic data seeded from "
-            "current Nifty 50 prices so you can explore all dashboards."
+            "⚠\ufe0f Live market history unavailable right now. "
+            "Charts below use representative synthetic data so you can explore all dashboards."
         )
 
-    # Narrow history to selected sector if needed
+    # Narrow to selected sector
     if sel_sec != "All":
         sector_syms  = [s["symbol"] for s in NIFTY50 if s["sector"] == sel_sec]
         sector_names = [s["name"]   for s in NIFTY50 if s["sector"] == sel_sec]
@@ -128,7 +126,7 @@ def render(
         sector_syms  = SYMBOLS
         sector_names = [s["name"] for s in NIFTY50]
 
-    # ── Sector Allocation Pie ─────────────────────────────────────────────────
+    # ── Sector Allocation Pie ─────────────────────────────────────────────
     sec("Sector Allocation")
     st.caption(
         "Donut chart weighted by current price sum per sector — "
@@ -144,14 +142,14 @@ def render(
         if fig_pie.data:
             st.plotly_chart(fig_pie, use_container_width=True)
         else:
-            st.warning("⚠️ Could not render sector pie — no price data available.")
-    except Exception as exc:  # noqa: BLE001
+            st.warning("⚠\ufe0f Could not render sector pie.")
+    except Exception as exc:
         log.error("tab_companies: sector pie failed: %s", exc, exc_info=True)
         st.warning("Sector Allocation chart could not be rendered.")
 
     divider()
 
-    # ── 1-Day % Change bar ────────────────────────────────────────────────────
+    # ── 1-Day % Change bar ────────────────────────────────────────────────
     if "_pct" in df_filtered.columns:
         valid = df_filtered[df_filtered["_pct"].notna()].copy()
         if not valid.empty:
@@ -159,12 +157,12 @@ def render(
                 title = "1-Day % Change" if market_open else "1-Day % Change (last session)"
                 fig = build_pct_bar(valid, "Symbol", "_pct", title, text_col="Change (%)")
                 st.plotly_chart(fig, use_container_width=True)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.error("tab_companies: bar chart failed: %s", exc, exc_info=True)
 
     divider()
 
-    # ── Correlation heatmap ───────────────────────────────────────────────────
+    # ── Correlation heatmap ───────────────────────────────────────────────
     sec("30-Day Return Correlation Heatmap")
     st.caption(
         "Pairwise Pearson correlations of daily returns over the last 30 trading sessions. "
@@ -181,12 +179,12 @@ def render(
             st.plotly_chart(fig_hm, use_container_width=True)
         else:
             st.info("Not enough overlapping data to compute correlations.")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.error("tab_companies: heatmap render failed: %s", exc, exc_info=True)
 
     divider()
 
-    # ── 20-Day Sparklines ─────────────────────────────────────────────────────
+    # ── 20-Day Sparklines ─────────────────────────────────────────────────
     sec("20-Day Price Sparklines")
     st.caption(
         "Each mini-chart shows the last 20 trading sessions. "
@@ -202,5 +200,5 @@ def render(
             st.plotly_chart(fig_spark, use_container_width=True)
         else:
             st.info("No sparkline data available.")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.error("tab_companies: sparklines failed: %s", exc, exc_info=True)
