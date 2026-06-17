@@ -11,14 +11,16 @@ Public API
 get_stock_data(symbol, period)        → pd.DataFrame (OHLCV)
 get_last_price(symbol)                → dict {price, change_pct, day_high, day_low}
 get_multiple_stocks(symbols, period)  → dict[str, pd.DataFrame]
+get_nifty50_data(period)              → dict[str, pd.DataFrame]
+fetch_intraday(symbol)                → pd.DataFrame (intraday 1d)
+fetch_all_stocks_5d()                 → dict[str, pd.DataFrame] (5-day history)
+is_nse_open()                         → (bool, str, str)
+get_source_status()                   → dict {yfinance, nselib}
 """
 from __future__ import annotations
 
 import datetime
-import hashlib
-import re
 import time
-from functools import lru_cache
 from typing import Optional
 
 import numpy as np
@@ -173,7 +175,6 @@ def _yf_history(symbol: str, period: str = "1mo") -> pd.DataFrame:
         return pd.DataFrame()
 
     # Safety net for symbols with special chars (e.g. M&M.NS).
-    # yfinance should handle it, but retry with %26 encoding if it fails.
     _yf_sym = symbol
 
     for attempt in range(_YF_MAX_RETRIES):
@@ -186,8 +187,6 @@ def _yf_history(symbol: str, period: str = "1mo") -> pd.DataFrame:
                 return df
             log.warning("yfinance returned invalid df for %s (attempt %d)", _yf_sym, attempt + 1)
         except Exception as exc:
-            # Special case: symbols with & (e.g. M&M.NS) can break URL encoding
-            # in some yfinance builds — retry with percent-encoded form once.
             if "&" in _yf_sym and attempt == 0:
                 safe_sym = _yf_sym.replace("&", "%26")
                 log.warning("yfinance: retrying %s as URL-encoded %s", _yf_sym, safe_sym)
@@ -242,7 +241,7 @@ def _yf_download_bulk(symbols: list[str], period: str = "1mo") -> dict[str, pd.D
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# Public API — core
 # ---------------------------------------------------------------------------
 
 @st.cache_data(ttl=_CACHE_TTL_HIST, show_spinner=False)
@@ -253,17 +252,14 @@ def get_stock_data(symbol: str, period: str = "1mo") -> pd.DataFrame:
     """
     log.info("get_stock_data: symbol=%s period=%s", symbol, period)
 
-    # 1. SQLite cache
     cached = price_cache_read(symbol, period)
     if cached is not None and _validate_ohlcv(cached):
         return cached
 
-    # 2. yfinance
     df = _yf_history(symbol, period)
     if _validate_ohlcv(df):
         return df
 
-    # 3. Static fallback
     log.warning("get_stock_data: all live sources failed for %s, using static data", symbol)
     static = _build_static_hist()
     return static.get(symbol, pd.DataFrame())
@@ -286,7 +282,6 @@ def get_last_price(symbol: str) -> dict:
                     "day_high": round(day_high, 2), "day_low": round(day_low, 2)}
         except Exception as exc:
             log.warning("get_last_price fast_info failed for %s: %s", symbol, exc)
-            # fallback: get last row of daily history
             df = get_stock_data(symbol, "2d")
             if not df.empty:
                 row = df.iloc[-1]
@@ -307,7 +302,6 @@ def get_multiple_stocks(symbols: tuple[str, ...], period: str = "1mo") -> dict[s
     log.info("get_multiple_stocks: %d symbols period=%s", len(symbols), period)
     symbols = list(symbols)
 
-    # Check cache first
     result: dict[str, pd.DataFrame] = {}
     missing: list[str] = []
     for sym in symbols:
@@ -320,7 +314,6 @@ def get_multiple_stocks(symbols: tuple[str, ...], period: str = "1mo") -> dict[s
     if missing:
         bulk = _yf_download_bulk(missing, period)
         result.update(bulk)
-        # Any still missing → individual fetch
         still_missing = [s for s in missing if s not in result]
         for sym in still_missing:
             df = _yf_history(sym, period)
@@ -335,14 +328,125 @@ def get_multiple_stocks(symbols: tuple[str, ...], period: str = "1mo") -> dict[s
     return result
 
 
-# ---------------------------------------------------------------------------
-# Nifty 50 universe helper
-# ---------------------------------------------------------------------------
-
 @st.cache_data(ttl=300, show_spinner=False)
 def get_nifty50_data(period: str = "1mo") -> dict[str, pd.DataFrame]:
     all_syms = tuple(s["symbol"] for s in NIFTY50)
     return get_multiple_stocks(all_syms, period)
+
+
+# ---------------------------------------------------------------------------
+# Public API — app.py helpers (previously missing)
+# ---------------------------------------------------------------------------
+
+def is_nse_open() -> tuple[bool, str, str]:
+    """Return (market_open, status_str, last_close_label).
+
+    NSE trading hours: Mon–Fri 09:15–15:30 IST.
+    Returns False on weekends and outside trading hours.
+    """
+    try:
+        import pytz
+        ist = pytz.timezone("Asia/Kolkata")
+        now = datetime.datetime.now(ist)
+        weekday = now.weekday()  # 0=Mon, 6=Sun
+        open_time  = now.replace(hour=9,  minute=15, second=0, microsecond=0)
+        close_time = now.replace(hour=15, minute=30, second=0, microsecond=0)
+
+        if weekday >= 5:  # Saturday or Sunday
+            day_name = "Saturday" if weekday == 5 else "Sunday"
+            last_close = "Last close: Friday 15:30 IST"
+            return False, f"Weekend — {day_name}", last_close
+
+        if now < open_time:
+            return False, "Pre-market", "Opens 09:15 IST"
+
+        if now > close_time:
+            close_str = now.strftime("%d %b, 15:30 IST")
+            return False, "Market closed", f"Closed at {close_str}"
+
+        return True, "Market open", ""
+
+    except Exception as exc:
+        log.error("is_nse_open failed: %s", exc, exc_info=True)
+        return False, "Status unknown", ""
+
+
+@st.cache_data(ttl=_CACHE_TTL_LIVE, show_spinner=False)
+def fetch_intraday(symbol: str) -> pd.DataFrame:
+    """Fetch intraday (today's 1d) OHLCV for a single symbol.
+
+    Used by calculations.get_last_price to get live price during market hours.
+    Falls back to static history if yfinance returns nothing.
+    """
+    log.debug("fetch_intraday: %s", symbol)
+    df = _yf_history(symbol, period="1d")
+    if _validate_ohlcv(df, min_rows=1):
+        return df
+    # Fallback: return last row of 5d history as a 1-row intraday proxy
+    df5 = _yf_history(symbol, period="5d")
+    if _validate_ohlcv(df5):
+        return df5.iloc[[-1]]
+    return pd.DataFrame()
+
+
+@st.cache_data(ttl=_CACHE_TTL_LIVE, show_spinner=False)
+def fetch_all_stocks_5d() -> dict[str, pd.DataFrame]:
+    """Fetch 5-day OHLCV for all 50 Nifty stocks.
+
+    Used by build_stock_rows in calculations.py for the All Companies,
+    Gainers/Losers and Alerts tabs.
+    Falls back to static history for any symbol that fails.
+    """
+    log.info("fetch_all_stocks_5d: fetching all 50 symbols")
+    all_syms = tuple(s["symbol"] for s in NIFTY50)
+    data = get_multiple_stocks(all_syms, "5d")
+
+    # Fill any remaining gaps with static fallback
+    static = _build_static_hist()
+    for sym in all_syms:
+        if sym not in data or not _validate_ohlcv(data[sym]):
+            if sym in static:
+                data[sym] = static[sym]
+                log.warning("fetch_all_stocks_5d: using static fallback for %s", sym)
+
+    log.info("fetch_all_stocks_5d: returning %d symbols", len(data))
+    return data
+
+
+def get_source_status() -> dict[str, str]:
+    """Return a dict indicating live data source health.
+
+    Used by the sidebar Data Source Status expander in app.py.
+    Returns one of: 'ok', 'degraded', 'down', 'not installed'.
+    """
+    status: dict[str, str] = {}
+
+    # yfinance check
+    yf = _import_yfinance()
+    if yf is None:
+        status["yfinance"] = "not installed"
+    else:
+        try:
+            # Quick probe: fetch fast_info for a single liquid stock
+            info = yf.Ticker("RELIANCE.NS").fast_info
+            price = float(info.last_price or 0)
+            status["yfinance"] = "ok" if price > 0 else "degraded"
+        except Exception as exc:
+            log.warning("get_source_status: yfinance probe failed: %s", exc)
+            status["yfinance"] = "degraded"
+
+    # nselib check
+    try:
+        import nselib  # noqa: F401
+        status["nselib"] = "ok"
+    except ImportError:
+        status["nselib"] = "not installed"
+    except Exception as exc:
+        log.warning("get_source_status: nselib probe failed: %s", exc)
+        status["nselib"] = "degraded"
+
+    log.debug("get_source_status: %s", status)
+    return status
 
 
 # ---------------------------------------------------------------------------
@@ -373,9 +477,10 @@ def _build_static_hist() -> dict[str, pd.DataFrame]:
         "BPCL.NS": 280,       "CIPLA.NS": 1510,      "DIVISLAB.NS": 5250,
         "DRREDDY.NS": 1270,   "EICHERMOT.NS": 4700,  "GRASIM.NS": 2540,
         "HDFCLIFE.NS": 680,   "HEROMOTOCO.NS": 4300, "INDUSINDBK.NS": 960,
-        "LTI.NS": 5200,       "SBILIFE.NS": 1580,    "SHREECEM.NS": 25000,
-        "TATACONSUM.NS": 940, "TORNTPHARM.NS": 3100, "UPL.NS": 500,
-        "VEDL.NS": 460,       "ZOMATO.NS": 265,
+        "BAJAJAUTO.NS": 9500, "SBILIFE.NS": 1580,    "BRITANNIA.NS": 5200,
+        "TATACONSUM.NS": 940, "HINDUNILVR.NS": 2400, "LTF.NS": 180,
+        "SHRIRAMFIN.NS": 680, "BEL.NS": 290,         "ZOMATO.NS": 265,
+        "INDUSINDBK.NS": 960,
     }
 
     result: dict[str, pd.DataFrame] = {}
