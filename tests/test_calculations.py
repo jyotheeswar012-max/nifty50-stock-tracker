@@ -1,54 +1,108 @@
 """Tests for utils/calculations.py."""
-import math
 import pytest
 import pandas as pd
 import numpy as np
-from utils.calculations import (
-    calculate_returns,
-    calculate_volatility,
-    calculate_sharpe_ratio,
-    calculate_max_drawdown,
-)
+from utils.calculations import safe_float, calc_pl, calc_beta_impact, safe_sort
 
 
-@pytest.fixture
-def sample_prices():
-    """A simple ascending price series."""
-    return pd.Series([100.0, 102.0, 101.0, 105.0, 103.0, 108.0])
+# ---------------------------------------------------------------------------
+# safe_float
+# ---------------------------------------------------------------------------
+
+class TestSafeFloat:
+    def test_normal_value(self):
+        assert safe_float(42.5) == pytest.approx(42.5)
+
+    def test_string_number(self):
+        assert safe_float("3.14") == pytest.approx(3.14)
+
+    def test_nan_returns_default(self):
+        assert safe_float(float("nan")) == 0.0
+
+    def test_inf_returns_default(self):
+        assert safe_float(float("inf")) == 0.0
+
+    def test_none_returns_default(self):
+        assert safe_float(None) == 0.0
+
+    def test_invalid_string_returns_default(self):
+        assert safe_float("N/A") == 0.0
+
+    def test_custom_default(self):
+        assert safe_float(None, default=-1.0) == -1.0
 
 
-def test_calculate_returns_length(sample_prices):
-    returns = calculate_returns(sample_prices)
-    # pct_change drops the first NaN row
-    assert len(returns.dropna()) == len(sample_prices) - 1
+# ---------------------------------------------------------------------------
+# calc_pl
+# ---------------------------------------------------------------------------
+
+class TestCalcPl:
+    def test_profit(self):
+        pl, inv, ret = calc_pl(100, 120, 10)
+        assert pl  == pytest.approx(200.0)
+        assert inv == pytest.approx(1000.0)
+        assert ret == pytest.approx(20.0)
+
+    def test_loss(self):
+        pl, inv, ret = calc_pl(200, 150, 5)
+        assert pl  == pytest.approx(-250.0)
+        assert ret == pytest.approx(-25.0)
+
+    def test_breakeven(self):
+        pl, inv, ret = calc_pl(100, 100, 10)
+        assert pl  == pytest.approx(0.0)
+        assert ret == pytest.approx(0.0)
+
+    def test_zero_qty(self):
+        pl, inv, ret = calc_pl(100, 200, 0)
+        assert pl  == pytest.approx(0.0)
+        assert inv == pytest.approx(0.0)
 
 
-def test_calculate_returns_positive_trend(sample_prices):
-    returns = calculate_returns(sample_prices)
-    assert returns.dropna().mean() > 0
+# ---------------------------------------------------------------------------
+# calc_beta_impact
+# ---------------------------------------------------------------------------
+
+class TestCalcBetaImpact:
+    def test_positive_move(self):
+        spct, pchg, nsp, old_val, new_val, gain = calc_beta_impact(5.0, 1000.0, 10, 1.2)
+        assert spct == pytest.approx(6.0)
+        assert pchg == pytest.approx(60.0)
+        assert nsp  == pytest.approx(1060.0)
+        assert gain == pytest.approx(600.0)
+
+    def test_negative_move(self):
+        spct, pchg, nsp, *_ = calc_beta_impact(-3.0, 500.0, 5, 1.0)
+        assert spct == pytest.approx(-3.0)
+        assert pchg == pytest.approx(-15.0)
+        assert nsp  == pytest.approx(485.0)
+
+    def test_zero_nifty(self):
+        spct, pchg, nsp, old_val, new_val, gain = calc_beta_impact(0.0, 200.0, 10, 1.5)
+        assert gain == pytest.approx(0.0)
 
 
-def test_calculate_volatility_non_negative(sample_prices):
-    vol = calculate_volatility(sample_prices)
-    assert vol >= 0
+# ---------------------------------------------------------------------------
+# safe_sort
+# ---------------------------------------------------------------------------
 
+class TestSafeSort:
+    def _df(self):
+        return pd.DataFrame({"val": [30, 10, "N/A", 20], "label": list("abcd")})
 
-def test_calculate_volatility_constant_series():
-    """Zero volatility for a flat price series."""
-    flat = pd.Series([100.0] * 10)
-    assert calculate_volatility(flat) == pytest.approx(0.0, abs=1e-9)
+    def test_ascending(self):
+        df = self._df()
+        result = safe_sort(df, "val", ascending=True)
+        numeric_vals = pd.to_numeric(result["val"], errors="coerce").dropna().tolist()
+        assert numeric_vals == sorted(numeric_vals)
 
+    def test_descending(self):
+        df = self._df()
+        result = safe_sort(df, "val", ascending=False)
+        numeric_vals = pd.to_numeric(result["val"], errors="coerce").dropna().tolist()
+        assert numeric_vals == sorted(numeric_vals, reverse=True)
 
-def test_calculate_sharpe_ratio_type(sample_prices):
-    sr = calculate_sharpe_ratio(sample_prices)
-    assert isinstance(sr, float)
-
-
-def test_calculate_max_drawdown_non_positive(sample_prices):
-    mdd = calculate_max_drawdown(sample_prices)
-    assert mdd <= 0
-
-
-def test_calculate_max_drawdown_flat():
-    flat = pd.Series([50.0] * 5)
-    assert calculate_max_drawdown(flat) == pytest.approx(0.0, abs=1e-9)
+    def test_invalid_col_returns_df(self):
+        df = self._df()
+        result = safe_sort(df, "nonexistent_col")
+        assert len(result) == len(df)
