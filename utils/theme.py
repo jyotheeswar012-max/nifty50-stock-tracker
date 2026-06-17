@@ -1,5 +1,5 @@
 """
-utils/theme.py  -  NSE Tracker v14  -  Full-width Fixed Top Navbar
+utils/theme.py  -  NSE Tracker  -  Full-width Fixed Top Navbar
 """
 import streamlit as st
 
@@ -15,15 +15,13 @@ html, body { background: #f0f2f6 !important; }
 }
 [data-testid="stHeader"] { display: none !important; }
 
-/* ── HIDE ENTIRE LEFT SIDEBAR ── */
+/* ── HIDE SIDEBAR ── */
 [data-testid="stSidebar"],
 [data-testid="stSidebarNav"],
 [data-testid="stSidebarFooter"],
 [data-testid="collapsedControl"],
 section[data-testid="stSidebar"],
 div[data-testid="stSidebarCollapsedControl"] { display: none !important; width: 0 !important; }
-
-/* Make main content fill full width since sidebar is gone */
 [data-testid="stAppViewContainer"] > section:first-child { display: none !important; }
 [data-testid="stMain"] { padding-top: 56px !important; margin-left: 0 !important; }
 .block-container {
@@ -51,52 +49,80 @@ div[data-testid="stSidebarCollapsedControl"] { display: none !important; width: 
 }
 [data-testid="stMarkdownContainer"] span { color: inherit; }
 
-/* TOP NAVBAR */
+/* ──────────────── TOP NAVBAR ──────────────── */
 .nse-topbar {
-  position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important;
+  position: fixed !important;
+  top: 0 !important; left: 0 !important; right: 0 !important;
   width: 100vw !important; z-index: 99999 !important;
   background: linear-gradient(90deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%);
-  height: 52px; display: flex; align-items: center; justify-content: space-between;
-  padding: 0 1.2rem; border-bottom: 2px solid rgba(99,102,241,.6);
-  box-shadow: 0 3px 20px rgba(30,27,75,.45); gap: 0.4rem;
+  height: 52px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  padding: 0 1.4rem;
+  border-bottom: 2px solid rgba(99,102,241,.55);
+  box-shadow: 0 3px 20px rgba(30,27,75,.45);
+  gap: 1rem;
 }
+
+/* LEFT: Brand */
 .nse-topbar-brand {
-  display: flex; align-items: center; gap: 0.4rem;
+  display: flex; align-items: center; gap: 0.45rem;
   font-size: 0.95rem; font-weight: 900; color: #ffffff !important;
-  white-space: nowrap; flex-shrink: 0; letter-spacing: -0.01em;
-  text-decoration: none !important;
+  white-space: nowrap; text-decoration: none !important;
+  letter-spacing: -0.01em; flex-shrink: 0;
 }
+.nse-topbar-brand .logo-icon {
+  width: 28px; height: 28px; flex-shrink: 0;
+  background: rgba(255,255,255,0.15); border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem;
+}
+.nse-topbar-brand .brand-name { color: #ffffff !important; }
 .nse-topbar-brand .sub {
-  font-size: 0.68rem; font-weight: 500; color: #a5b4fc !important;
+  font-size: 0.65rem; font-weight: 600; color: #a5b4fc !important;
   background: rgba(255,255,255,0.12); border-radius: 4px;
-  padding: 1px 5px; letter-spacing: 0.04em;
+  padding: 2px 6px; letter-spacing: 0.05em; white-space: nowrap;
 }
+
+/* CENTER: Nav links */
 .nse-topbar-links {
-  display: flex; align-items: center; gap: 0;
-  flex: 1; justify-content: center; flex-wrap: nowrap; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  gap: 2px; flex-wrap: nowrap; overflow: hidden;
 }
 .nse-topbar-links a {
-  display: inline-flex; align-items: center; gap: 0.22rem;
-  padding: 5px 8px; border-radius: 7px; font-size: 0.75rem; font-weight: 700;
+  display: inline-flex; align-items: center;
+  padding: 5px 10px; border-radius: 7px;
+  font-size: 0.76rem; font-weight: 600;
   color: #c7d2fe !important; text-decoration: none !important;
-  white-space: nowrap; transition: background 0.15s, color 0.15s; flex-shrink: 0;
+  white-space: nowrap; transition: background 0.15s, color 0.15s;
 }
-.nse-topbar-links a:hover { background: rgba(255,255,255,0.16); color: #ffffff !important; }
-.nse-topbar-links a.active { background: rgba(255,255,255,0.22); color: #ffffff !important; }
+.nse-topbar-links a:hover  { background: rgba(255,255,255,0.14); color: #ffffff !important; }
+.nse-topbar-links a.active { background: rgba(255,255,255,0.20); color: #ffffff !important; font-weight: 700; }
 .nav-sep {
-  width: 1px; height: 18px; background: rgba(255,255,255,0.2); margin: 0 3px; flex-shrink: 0;
+  width: 1px; height: 16px;
+  background: rgba(255,255,255,0.18);
+  margin: 0 4px; flex-shrink: 0;
 }
-.nse-topbar-auth { flex-shrink: 0; }
-.nse-topbar-auth a {
-  display: inline-flex; align-items: center; gap: 0.35rem;
-  padding: 5px 11px; border-radius: 7px; font-size: 0.75rem; font-weight: 800;
-  background: rgba(255,255,255,0.15); color: #e0e7ff !important;
-  border: 1.5px solid rgba(255,255,255,0.28); text-decoration: none !important;
-  white-space: nowrap; transition: background 0.15s;
-}
-.nse-topbar-auth a:hover { background: rgba(255,255,255,0.28); color: #ffffff !important; }
 
-/* HERO BANNER */
+/* RIGHT: Status pill */
+.nse-topbar-right {
+  display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;
+}
+.nse-market-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 11px; border-radius: 20px;
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em;
+  white-space: nowrap; border: 1.5px solid rgba(255,255,255,0.2);
+  color: #e0e7ff !important; background: rgba(255,255,255,0.10);
+}
+.nse-market-pill .dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.dot-green { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+.dot-red   { background: #f87171; }
+
+/* ── REST OF UI ── */
 .hero-banner {
   background: linear-gradient(135deg,#4f46e5 0%,#7c3aed 52%,#a21caf 100%);
   border-radius: 16px; padding: 1.4rem 2rem 1.2rem; margin-bottom: 1.4rem;
@@ -201,20 +227,41 @@ def inject():
 
 
 def inject_topbar(user=None):
-    """Full-width fixed top navbar. URLs match Streamlit page filenames."""
-    name = user.get("full_name", user.get("email", "User")) if user else None
+    """Full-width fixed top navbar with 3-column grid: brand | nav | status."""
+    import datetime
+    import pytz
+    try:
+        ist = pytz.timezone("Asia/Kolkata")
+        now = datetime.datetime.now(ist)
+        h, m = now.hour, now.minute
+        # NSE open Mon-Fri 09:15 - 15:30 IST
+        is_open = (
+            now.weekday() < 5
+            and (h > 9 or (h == 9 and m >= 15))
+            and (h < 15 or (h == 15 and m <= 30))
+        )
+        if is_open:
+            dot_cls = "dot-green"
+            mkt_label = "MARKET OPEN"
+        else:
+            dot_cls = "dot-red"
+            mkt_label = "MARKET CLOSED"
+    except Exception:
+        dot_cls = "dot-red"
+        mkt_label = "NSE"
 
-    if name:
-        auth_html = '<div class="nse-topbar-auth"><a href="/Profile" target="_self">User: ' + name + '</a></div>'
-    else:
-        auth_html = '<div class="nse-topbar-auth"><a href="/Login" target="_self">Sign In</a></div>'
-
-    html = """
+    html = f"""
     <div class="nse-topbar">
+
+      <!-- LEFT: Brand -->
       <a class="nse-topbar-brand" href="/" target="_self">
-        NSE Tracker <span class="sub">NIFTY 50</span>
+        <div class="logo-icon">📈</div>
+        <span class="brand-name">NSE Tracker</span>
+        <span class="sub">NIFTY 50</span>
       </a>
-      <div class="nse-topbar-links">
+
+      <!-- CENTER: Nav -->
+      <nav class="nse-topbar-links">
         <a href="/" target="_self">Overview</a>
         <div class="nav-sep"></div>
         <a href="/Scenario_Engine" target="_self">Scenario</a>
@@ -227,8 +274,16 @@ def inject_topbar(user=None):
         <div class="nav-sep"></div>
         <a href="/Alerts" target="_self">Alerts</a>
         <a href="/Watchlist" target="_self">Watchlist</a>
+      </nav>
+
+      <!-- RIGHT: Market status pill -->
+      <div class="nse-topbar-right">
+        <div class="nse-market-pill">
+          <span class="dot {dot_cls}"></span>
+          {mkt_label}
+        </div>
       </div>
-      """ + auth_html + """
+
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
