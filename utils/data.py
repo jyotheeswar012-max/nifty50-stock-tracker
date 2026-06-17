@@ -2,11 +2,10 @@
 
 Fetch priority
 --------------
-1. yfinance  — primary (global CDN, battle-tested, supports OHLCV + intraday)
-2. nselib    — fallback (official NSE India REST API, no auth required)
-3. Stale-cache guard — if both fail and a previous result exists, serve it
-                       with a visible staleness warning surfaced via
-                       st.session_state["data_warnings"].
+1. yfinance batch (yf.download all 50 at once) — primary, fastest
+2. yfinance single (per-symbol fallback for any that failed the batch)
+3. nselib    — fallback (official NSE India REST API, no auth required)
+4. Stale-cache guard — if all sources fail, serve previous result with warning
 
 All @st.cache_data decorators live here so caching is co-located with
 the fetch logic.  app.py imports only the cached public functions.
@@ -35,25 +34,18 @@ log = get_logger(__name__)   # nse_tracker.utils.data
 
 # ---------------------------------------------------------------------------
 # Streamlit import guard
-# When running inside Streamlit (app.py), st.cache_data caches results.
-# When imported by pytest (no Streamlit context), cache_data is a no-op
-# passthrough so the module can be imported and tested without errors.
 # ---------------------------------------------------------------------------
 try:
     import streamlit as st
-    # Probe whether the Streamlit runtime is actually active.
-    # Outside a running app, st.runtime.exists() returns False.
     import streamlit.runtime
     _STREAMLIT_RUNNING = streamlit.runtime.exists()
 except Exception:
     _STREAMLIT_RUNNING = False
 
 if not _STREAMLIT_RUNNING:
-    # Minimal no-op stand-ins used during testing
     class _FakeST:
         @staticmethod
         def cache_data(func=None, *, ttl=None, **_kwargs):
-            """Passthrough decorator — no caching, no Streamlit dependency."""
             if func is not None:
                 return func
             def decorator(f: Callable) -> Callable:
@@ -73,8 +65,6 @@ if not _STREAMLIT_RUNNING:
             _FakeST.session_state._store[key] = value
 
     st = _FakeST()  # type: ignore[assignment]
-    # Patch session_state assignment used by _warn()
-    _orig_set = _FakeST._session_state_set
 
 # ---------------------------------------------------------------------------
 # nselib availability check (optional dependency)
@@ -99,19 +89,15 @@ def is_nse_open() -> tuple[bool, str, str]:
         now = datetime.now(ist)
         if now.weekday() >= 5:
             lbl = "Last Close: Fri " + (now - timedelta(days=now.weekday() - 4)).strftime("%d %b %Y, 3:30 PM")
-            log.debug("Market check: Weekend")
             return False, "Weekend", lbl
         mo = now.replace(hour=9,  minute=15, second=0, microsecond=0)
         mc = now.replace(hour=15, minute=30, second=0, microsecond=0)
         if mo <= now <= mc:
-            log.debug("Market check: Open at %s IST", now.strftime("%H:%M:%S"))
             return True, "Open", ""
         elif now < mo:
             lbl = "Last Close: " + (now - timedelta(days=1)).strftime("%d %b %Y, 3:30 PM IST")
-            log.debug("Market check: Pre-Market")
             return False, "Pre-Market", lbl
         else:
-            log.debug("Market check: Closed")
             return False, "Closed", "Last Close: " + now.strftime("%d %b %Y, 3:30 PM IST")
     except Exception as exc:
         log.error("is_nse_open() failed: %s", exc, exc_info=True)
@@ -150,7 +136,6 @@ def _clean_df(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _clean_intraday_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalise intraday: flatten MultiIndex cols, keep timezone."""
     try:
         if df is None or df.empty:
             return pd.DataFrame()
@@ -162,7 +147,6 @@ def _clean_intraday_df(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _validate_ohlcv(df: pd.DataFrame) -> bool:
-    """Return True if df has the required OHLCV columns and at least one row."""
     return (
         df is not None
         and not df.empty
@@ -171,59 +155,117 @@ def _validate_ohlcv(df: pd.DataFrame) -> bool:
 
 
 def _to_series(col: "pd.Series | pd.DataFrame") -> pd.Series:
-    """Ensure a column extracted from a DataFrame is a 1-D Series.
-
-    nselib occasionally returns duplicate column names after rename, which
-    causes ``df[col_name]`` to return a DataFrame instead of a Series.
-    Calling ``.str`` on a DataFrame raises AttributeError — this helper
-    squeezes any accidental DataFrame down to the first Series.
-    """
+    """Squeeze a possible DataFrame (duplicate col names) to a Series."""
     if isinstance(col, pd.DataFrame):
         return col.iloc[:, 0]
     return col
 
 
 # ---------------------------------------------------------------------------
-# Source 1 — yfinance  (with exponential-backoff retry on rate-limit)
+# Source 1a — yfinance BATCH download  (all symbols in ONE HTTP request)
 # ---------------------------------------------------------------------------
 
-# Tracks the last time a successful yfinance request completed.
-# Used to throttle inter-symbol delays when fetching 50 stocks.
+def _yf_batch_download(symbols: list[str], period: str) -> dict[str, pd.DataFrame]:
+    """
+    Download OHLCV for all symbols in a single yf.download() call.
+    Returns a dict {symbol: DataFrame}.  Symbols that come back empty
+    are omitted so the caller can fall back individually.
+
+    This replaces 50 serial HTTP requests with 1, reducing wall-clock
+    time from ~25 s to ~2–3 s.
+    """
+    result: dict[str, pd.DataFrame] = {}
+    if not symbols:
+        return result
+    try:
+        log.info("yf.download batch: %d symbols period=%s", len(symbols), period)
+        t0 = time.monotonic()
+        raw = yf.download(
+            tickers=symbols,
+            period=period,
+            auto_adjust=True,
+            group_by="ticker",   # MultiIndex: (OHLCV, symbol)
+            progress=False,
+            threads=True,        # yfinance uses thread pool internally
+            timeout=30,
+        )
+        elapsed = time.monotonic() - t0
+        log.info("yf.download batch finished in %.1fs", elapsed)
+
+        if raw.empty:
+            log.warning("yf.download batch returned empty DataFrame")
+            return result
+
+        for sym in symbols:
+            try:
+                # yfinance returns a MultiIndex (field, ticker) when >1 symbol
+                if isinstance(raw.columns, pd.MultiIndex):
+                    # Slice this ticker's columns: raw.xs(sym, axis=1, level=1)
+                    try:
+                        sym_df = raw.xs(sym, axis=1, level=1).copy()
+                    except KeyError:
+                        # Try stripping exchange suffix  (RELIANCE.NS -> RELIANCE)
+                        short = sym.replace(".NS", "")
+                        try:
+                            sym_df = raw.xs(short, axis=1, level=1).copy()
+                        except KeyError:
+                            log.warning("batch: symbol %s not found in result", sym)
+                            continue
+                else:
+                    # Single-symbol download (shouldn't happen here but guard)
+                    sym_df = raw.copy()
+
+                sym_df = _clean_df(sym_df)
+                if _validate_ohlcv(sym_df):
+                    result[sym] = sym_df
+                else:
+                    log.warning("batch: empty/invalid data for %s after clean", sym)
+            except Exception as exc:
+                log.error("batch: error extracting %s: %s", sym, exc, exc_info=True)
+
+        log.info("yf.download batch: extracted %d/%d symbols", len(result), len(symbols))
+    except YFRateLimitError:
+        log.warning("yf.download batch rate-limited — will retry symbols individually")
+    except Exception as exc:
+        log.error("yf.download batch failed: %s", exc, exc_info=True)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Source 1b — yfinance single-symbol (with exponential-backoff retry)
+# ---------------------------------------------------------------------------
+
 _yf_last_ok: float = 0.0
-_YF_MIN_INTERVAL = 0.5   # seconds between successful yfinance fetches
+_YF_MIN_INTERVAL = 0.3   # seconds between individual fallback fetches
 _YF_MAX_RETRIES  = 3
 
 
 def _yf_history(symbol: str, period: str) -> pd.DataFrame:
     global _yf_last_ok
-    # Throttle: ensure at least _YF_MIN_INTERVAL between requests.
     elapsed = time.monotonic() - _yf_last_ok
     if elapsed < _YF_MIN_INTERVAL:
         time.sleep(_YF_MIN_INTERVAL - elapsed)
 
     for attempt in range(_YF_MAX_RETRIES):
         try:
-            log.debug("yfinance fetch: symbol=%s period=%s attempt=%d", symbol, period, attempt + 1)
+            log.debug("yfinance single fetch: symbol=%s period=%s attempt=%d", symbol, period, attempt + 1)
             df = yf.Ticker(symbol).history(period=period, auto_adjust=True)
             df = _clean_df(df)
             if _validate_ohlcv(df):
-                log.debug("yfinance OK: symbol=%s rows=%d", symbol, len(df))
                 _yf_last_ok = time.monotonic()
                 return df
-            log.warning("yfinance returned empty/invalid data: symbol=%s period=%s", symbol, period)
+            log.warning("yfinance single: empty/invalid data for %s", symbol)
             return pd.DataFrame()
         except YFRateLimitError:
-            wait = 2 ** attempt   # 1 s, 2 s, 4 s
-            log.warning(
-                "yfinance rate-limited: symbol=%s attempt=%d/%d — sleeping %ds",
-                symbol, attempt + 1, _YF_MAX_RETRIES, wait,
-            )
+            wait = 2 ** attempt
+            log.warning("yfinance rate-limited: %s attempt=%d — sleeping %ds", symbol, attempt + 1, wait)
             time.sleep(wait)
         except Exception as exc:
-            log.error("yfinance fetch failed: symbol=%s period=%s error=%s", symbol, period, exc, exc_info=True)
+            log.error("yfinance single failed: symbol=%s error=%s", symbol, exc, exc_info=True)
             return pd.DataFrame()
 
-    log.error("yfinance fetch failed: symbol=%s period=%s error=Too Many Requests after %d retries", symbol, period, _YF_MAX_RETRIES)
+    log.error("yfinance single: all retries exhausted for %s", symbol)
     return pd.DataFrame()
 
 
@@ -235,18 +277,15 @@ def _yf_intraday(symbol: str, period: str = "1d", interval: str = "1m") -> pd.Da
 
     for attempt in range(_YF_MAX_RETRIES):
         try:
-            log.debug("yfinance intraday: symbol=%s period=%s interval=%s", symbol, period, interval)
             df = yf.Ticker(symbol).history(period=period, interval=interval, auto_adjust=True)
             df = _clean_intraday_df(df)
             if _validate_ohlcv(df):
-                log.debug("yfinance intraday OK: symbol=%s rows=%d", symbol, len(df))
                 _yf_last_ok = time.monotonic()
                 return df
-            log.warning("yfinance intraday empty: symbol=%s", symbol)
             return pd.DataFrame()
         except YFRateLimitError:
             wait = 2 ** attempt
-            log.warning("yfinance intraday rate-limited: symbol=%s attempt=%d — sleeping %ds", symbol, attempt + 1, wait)
+            log.warning("yfinance intraday rate-limited: %s attempt=%d — sleeping %ds", symbol, attempt + 1, wait)
             time.sleep(wait)
         except Exception as exc:
             log.error("yfinance intraday failed: symbol=%s error=%s", symbol, exc, exc_info=True)
@@ -260,27 +299,18 @@ def _yf_intraday(symbol: str, period: str = "1d", interval: str = "1m") -> pd.Da
 # ---------------------------------------------------------------------------
 
 def _nselib_history(symbol: str, period: str) -> pd.DataFrame:
-    """
-    Attempt to fetch historical OHLCV from nselib.
-    nselib uses 'DD-MM-YYYY' date strings and strips '.NS' suffixes.
-
-    Fix applied: nselib can return duplicate column names after rename,
-    causing df[col] to yield a DataFrame instead of a Series.  Every
-    numeric column is passed through _to_series() before calling .str.
-    """
     if not NSELIB_OK:
         return pd.DataFrame()
     try:
         ticker   = symbol.replace(".NS", "").replace("^", "")
         days_map = {
-            "1d": 2,   "5d": 7,  "1mo": 32, "3mo": 95,
+            "1d": 2, "5d": 7, "1mo": 32, "3mo": 95,
             "6mo": 185, "1y": 366, "2y": 732, "5y": 1827,
         }
         lookback = days_map.get(period, 95)
         end   = datetime.now()
         start = end - timedelta(days=lookback)
         fmt   = "%d-%m-%Y"
-        log.debug("nselib fetch: ticker=%s from=%s to=%s", ticker, start.strftime(fmt), end.strftime(fmt))
 
         raw = _cm.price_volume_and_deliverable_position_data(
             symbol=ticker,
@@ -288,7 +318,6 @@ def _nselib_history(symbol: str, period: str) -> pd.DataFrame:
             to_date=end.strftime(fmt),
         )
         if raw is None or raw.empty:
-            log.warning("nselib returned empty: ticker=%s period=%s", ticker, period)
             return pd.DataFrame()
 
         raw.columns = raw.columns.str.strip()
@@ -302,14 +331,10 @@ def _nselib_history(symbol: str, period: str) -> pd.DataFrame:
         )
         raw = raw.rename(columns=col_map)
         if "Date" not in raw.columns:
-            log.error("nselib: no Date column after rename for ticker=%s; columns=%s", ticker, list(raw.columns))
             return pd.DataFrame()
         raw["Date"] = pd.to_datetime(raw["Date"], dayfirst=True, errors="coerce")
         raw = raw.dropna(subset=["Date"]).set_index("Date").sort_index()
 
-        # BUG FIX: duplicate column names after rename can produce a DataFrame
-        # when you do raw[col], causing AttributeError on .str.  Always squeeze
-        # to a Series via _to_series() before any string/numeric conversion.
         for col in ("Open", "High", "Low", "Close"):
             if col in raw.columns:
                 series = _to_series(raw[col])
@@ -328,21 +353,19 @@ def _nselib_history(symbol: str, period: str) -> pd.DataFrame:
         if _validate_ohlcv(df):
             log.info("nselib fallback used: symbol=%s rows=%d", symbol, len(df))
             return df
-        log.warning("nselib data invalid after cleaning: symbol=%s", symbol)
     except Exception as exc:
         log.error("nselib fetch failed: symbol=%s period=%s error=%s", symbol, period, exc, exc_info=True)
     return pd.DataFrame()
 
 
 # ---------------------------------------------------------------------------
-# Staleness guard helpers
+# Staleness guard
 # ---------------------------------------------------------------------------
 
 _STALE_STORE: dict[str, pd.DataFrame] = {}
 
 
 def _warn(msg: str) -> None:
-    """Queue a warning to be displayed by app.py via session_state."""
     try:
         if _STREAMLIT_RUNNING:
             existing = st.session_state.get("data_warnings", [])
@@ -353,23 +376,14 @@ def _warn(msg: str) -> None:
 
 
 def _fetch_with_fallback(symbol: str, period: str) -> pd.DataFrame:
-    """
-    Core multi-source fetch used by all public cached functions.
-
-    Order:
-      1. yfinance primary  (with exponential-backoff retry on rate-limit)
-      2. nselib fallback   (if yfinance returned empty)
-      3. Stale cache       (if both live sources failed)
-    """
+    """Single-symbol multi-source fetch (used by fetch_ticker and as batch fallback)."""
     key = f"{symbol}:{period}"
 
-    # --- Source 1: yfinance ---
     df = _yf_history(symbol, period)
     if not df.empty:
         _STALE_STORE[key] = df
         return df
 
-    # --- Source 2: nselib ---
     log.warning("yfinance failed for %s/%s — trying nselib", symbol, period)
     df = _nselib_history(symbol, period)
     if not df.empty:
@@ -377,11 +391,9 @@ def _fetch_with_fallback(symbol: str, period: str) -> pd.DataFrame:
         _warn(f"🔄 Using NSE backup source for **{symbol}** (Yahoo Finance unavailable)")
         return df
 
-    # --- Source 3: stale cache ---
-    log.error("Both live sources failed for %s/%s — checking stale cache", symbol, period)
     stale = _STALE_STORE.get(key)
     if stale is not None and not stale.empty:
-        log.warning("Serving stale data for %s (age unknown)", symbol)
+        log.warning("Serving stale data for %s", symbol)
         _warn(f"⚠️ Serving **stale** data for {symbol} — both live sources failed")
         return stale
 
@@ -390,21 +402,19 @@ def _fetch_with_fallback(symbol: str, period: str) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Public cached fetch functions — import these in app.py
-# (cache_data is a no-op when not running inside Streamlit)
+# Public cached fetch functions
 # ---------------------------------------------------------------------------
 
 @st.cache_data(ttl=CACHE_TTL)
 def fetch_ticker(symbol: str, period: str = "3mo") -> pd.DataFrame:
-    """Fetch daily OHLCV for one symbol (yfinance → nselib → stale cache)."""
-    log.info("fetch_ticker called: symbol=%s period=%s", symbol, period)
+    """Fetch daily OHLCV for one symbol."""
+    log.info("fetch_ticker: symbol=%s period=%s", symbol, period)
     return _fetch_with_fallback(symbol, period)
 
 
 @st.cache_data(ttl=CACHE_TTL)
 def fetch_intraday(symbol: str) -> pd.DataFrame:
-    """Fetch today's 1-minute bars (market-hours only, yfinance only)."""
-    log.debug("fetch_intraday called: symbol=%s", symbol)
+    """Fetch today's 1-minute bars (market-hours only)."""
     return _yf_intraday(symbol, period="1d", interval="1m")
 
 
@@ -412,31 +422,48 @@ def fetch_intraday(symbol: str) -> pd.DataFrame:
 def fetch_indices() -> dict[str, pd.DataFrame]:
     """Fetch last-5-day daily bars for all NSE_INDICES."""
     log.info("fetch_indices called")
-    result: dict[str, pd.DataFrame] = {}
+    symbols = [idx["symbol"] for idx in NSE_INDICES]
+    result  = _yf_batch_download(symbols, "5d")
+    # Per-symbol fallback for any that missed the batch
     for idx in NSE_INDICES:
-        df = _fetch_with_fallback(idx["symbol"], "5d")
-        if not df.empty:
-            result[idx["symbol"]] = df
-        else:
-            log.warning("fetch_indices: no data for %s", idx["symbol"])
-    log.info("fetch_indices: loaded %d/%d indices", len(result), len(NSE_INDICES))
+        sym = idx["symbol"]
+        if sym not in result:
+            log.info("fetch_indices: individual fallback for %s", sym)
+            df = _fetch_with_fallback(sym, "5d")
+            if not df.empty:
+                result[sym] = df
+    log.info("fetch_indices: loaded %d/%d", len(result), len(NSE_INDICES))
     return result
 
 
 @st.cache_data(ttl=CACHE_TTL)
 def fetch_all_stocks_5d() -> dict[str, pd.DataFrame]:
-    """Fetch last-5-day daily bars for all 50 Nifty stocks."""
+    """
+    Fetch last-5-day daily bars for all 50 Nifty stocks.
+
+    OPTIMISED: Uses yf.download() to fetch all 50 symbols in ONE HTTP
+    request (≈2–3 s).  Any symbols missing from the batch result are
+    retried individually with nselib / stale-cache fallback.
+    """
     log.info("fetch_all_stocks_5d called")
-    result: dict[str, pd.DataFrame] = {}
-    failed: list[str] = []
-    for s in NIFTY50:
-        df = _fetch_with_fallback(s["symbol"], "5d")
-        if not df.empty:
-            result[s["symbol"]] = df
-        else:
-            failed.append(s["symbol"])
+    symbols = [s["symbol"] for s in NIFTY50]
+
+    # --- Step 1: batch download (fast) ---
+    result = _yf_batch_download(symbols, "5d")
+    log.info("fetch_all_stocks_5d: batch got %d/50 symbols", len(result))
+
+    # --- Step 2: individual fallback for any that failed the batch ---
+    missed = [sym for sym in symbols if sym not in result]
+    if missed:
+        log.warning("fetch_all_stocks_5d: %d symbols missed batch, fetching individually: %s", len(missed), missed)
+        for sym in missed:
+            df = _fetch_with_fallback(sym, "5d")
+            if not df.empty:
+                result[sym] = df
+
+    failed = [sym for sym in symbols if sym not in result]
     if failed:
-        log.warning("fetch_all_stocks_5d: no data for %d symbols: %s", len(failed), failed)
+        log.warning("fetch_all_stocks_5d: final missing %d symbols: %s", len(failed), failed)
     log.info("fetch_all_stocks_5d: loaded %d/50 symbols", len(result))
     return result
 
@@ -445,15 +472,28 @@ def fetch_all_stocks_5d() -> dict[str, pd.DataFrame]:
 def fetch_all_history() -> dict[str, pd.DataFrame]:
     """Fetch 5-year daily bars for all 50 stocks + macro symbols (Time Machine)."""
     log.info("fetch_all_history called (heavy fetch, TTL=3600s)")
-    result: dict[str, pd.DataFrame] = {}
     all_syms = SYMBOLS + ["USDINR=X", "CL=F", "GC=F", "^NSEI"]
-    failed: list[str] = []
-    for sym in all_syms:
+
+    # Batch the equity symbols; fetch macro symbols individually
+    equity_syms = [s for s in all_syms if not any(c in s for c in ["=", "=X", "=F", "^"])]
+    macro_syms  = [s for s in all_syms if s not in equity_syms]
+
+    result = _yf_batch_download(equity_syms, "5y") if equity_syms else {}
+
+    # Individual fallback for missed equities
+    for sym in equity_syms:
+        if sym not in result:
+            df = _fetch_with_fallback(sym, "5y")
+            if not df.empty:
+                result[sym] = df
+
+    # Macro symbols (USDINR, crude, gold, ^NSEI) fetched individually
+    for sym in macro_syms:
         df = _fetch_with_fallback(sym, "5y")
         if not df.empty:
             result[sym] = df
-        else:
-            failed.append(sym)
+
+    failed = [s for s in all_syms if s not in result]
     if failed:
         log.warning("fetch_all_history: no data for %d symbols: %s", len(failed), failed)
     log.info("fetch_all_history: loaded %d/%d symbols", len(result), len(all_syms))
@@ -462,8 +502,6 @@ def fetch_all_history() -> dict[str, pd.DataFrame]:
 
 @st.cache_data(ttl=60)
 def get_source_status() -> dict[str, str]:
-    """Return live status of each data source: 'ok' | 'degraded' | 'down'."""
-    log.info("get_source_status probe running")
     status: dict[str, str] = {}
     try:
         df = _yf_history("^NSEI", "5d")
