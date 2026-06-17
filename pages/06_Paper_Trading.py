@@ -93,7 +93,6 @@ def _snapshot():
 
 name = user["full_name"] if user else "Guest"
 
-# Hero banner - ASCII only, no unicode chars
 badge_class = "badge-live" if user else "badge-hist"
 badge_text = name if user else "Guest"
 hero_html = (
@@ -301,7 +300,36 @@ with tab_chart:
     st.markdown("<p class='sec-label'>Equity Curve</p>", unsafe_allow_html=True)
     eq = st.session_state.pt_equity
     if len(eq) < 2:
-        st.info("Execute at least 2 trades to see the equity curve.")
+        # Show a demo/preview equity curve so the tab is never blank
+        st.info("📊 **Preview:** Execute at least 2 trades to see your live equity curve. A sample curve is shown below.")
+        try:
+            np.random.seed(17)
+            demo_times = [f"09:{30+i:02d}" for i in range(12)]
+            demo_equity = [STARTING_CAPITAL]
+            for _ in range(11):
+                delta = np.random.uniform(-8000, 14000)
+                demo_equity.append(round(demo_equity[-1] + delta, 2))
+            fig_demo = go.Figure()
+            fig_demo.add_trace(go.Scatter(
+                x=demo_times, y=demo_equity,
+                mode="lines+markers", fill="tozeroy", name="Sample Equity",
+                line=dict(color="#94a3b8", width=2, dash="dot"),
+                fillcolor="rgba(148,163,184,0.08)",
+                marker=dict(size=6, color="#94a3b8"),
+            ))
+            fig_demo.add_hline(
+                y=STARTING_CAPITAL, line_dash="dash", line_color="#f59e0b",
+                annotation_text="Start Rs." + format(STARTING_CAPITAL, ",.0f"),
+            )
+            fig_demo.update_layout(
+                **PLT_LAYOUT, height=380,
+                title="Equity Curve (Sample Preview — Start Trading to See Your Data)",
+                xaxis_title="Trade Time", yaxis_title="Equity (Rs.)",
+            )
+            style_fig(fig_demo)
+            st.plotly_chart(fig_demo, use_container_width=True)
+        except Exception as e:
+            st.warning("Preview chart error: " + str(e))
     else:
         try:
             eq_df = pd.DataFrame(eq)
