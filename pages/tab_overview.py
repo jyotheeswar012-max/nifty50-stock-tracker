@@ -4,9 +4,15 @@ import streamlit as st
 
 from utils.logger import get_logger
 from utils.constants import NSE_INDICES, NIFTY50
-from utils.data import fetch_indices, fetch_ticker
+from utils.data import get_stock_data, get_multiple_stocks
 from utils.calculations import safe_float
-from utils.charts import build_pct_bar, build_trend_chart, build_sector_pie
+from utils.charts import build_pct_bar, build_trend_chart
+
+try:
+    from utils.charts import build_sector_pie
+    _HAS_SECTOR_PIE = True
+except ImportError:
+    _HAS_SECTOR_PIE = False
 
 log = get_logger(__name__)
 
@@ -34,22 +40,42 @@ def _sanitize_df(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _fallback_sector_pie(height: int = 400):
+    """Build a simple sector pie using plotly.graph_objects if build_sector_pie missing."""
+    import plotly.graph_objects as go
+    from collections import Counter
+    from utils.constants import PLT_LAYOUT
+
+    counts = Counter(s["sector"] for s in NIFTY50)
+    labels = list(counts.keys())
+    values = list(counts.values())
+    fig = go.Figure(go.Pie(labels=labels, values=values, hole=0.35,
+                           textinfo="label+percent"))
+    layout = dict(PLT_LAYOUT)
+    layout["title"] = "Nifty 50 — Stocks per Sector"
+    layout["height"] = height
+    fig.update_layout(**layout)
+    return fig
+
+
 def render(market_open: bool, market_status: str, last_close_label: str) -> None:
     from utils.app_helpers import hero, sec, divider, closed_banner
     hero("NSE Market Overview", "National Stock Exchange")
     closed_banner(market_open, market_status, last_close_label)
     sec("NSE Indices Snapshot")
 
-    # ── Spinner: fetch all index OHLCV ───────────────────────────────────────
+    # ── Fetch all index OHLCV using get_multiple_stocks ─────────────────────
+    idx_symbols = tuple(i["symbol"] for i in NSE_INDICES)
+
     with st.spinner("Fetching index data…"):
         try:
-            idx_data = fetch_indices()
+            idx_data = get_multiple_stocks(idx_symbols, "1mo")
         except OSError as exc:
-            log.error("fetch_indices network error: %s", exc, exc_info=True)
+            log.error("tab_overview: fetch indices network error: %s", exc, exc_info=True)
             st.error("Network error fetching indices — please retry.")
             return
         except Exception as exc:  # noqa: BLE001
-            log.error("fetch_indices unexpected: %s", exc, exc_info=True)
+            log.error("tab_overview: fetch indices unexpected: %s", exc, exc_info=True)
             st.error("Could not load index data.")
             return
 
@@ -95,25 +121,26 @@ def render(market_open: bool, market_status: str, last_close_label: str) -> None
                                 text_col="Change (%)", height=300)
             fig.update_layout(autosize=True)
             st.plotly_chart(fig, use_container_width=True)
-        except ValueError as exc:
-            log.error("tab_overview: pct bar ValueError: %s", exc, exc_info=True)
         except Exception as exc:  # noqa: BLE001
-            log.error("tab_overview: pct bar unexpected: %s", exc, exc_info=True)
+            log.error("tab_overview: pct bar error: %s", exc, exc_info=True)
 
     divider()
 
     # ── Sector allocation pie ───────────────────────────────────────────────
     sec("Nifty 50 Sector Allocation")
     try:
-        # Build a lightweight df from constants — no network call needed
-        sector_df = pd.DataFrame([{"Sector": s["sector"]} for s in NIFTY50])
-        fig_pie = build_sector_pie(sector_df,
-                                   title="Nifty 50 — Stocks per Sector",
-                                   height=400)
+        if _HAS_SECTOR_PIE:
+            sector_df = pd.DataFrame([{"Sector": s["sector"]} for s in NIFTY50])
+            fig_pie = build_sector_pie(sector_df,
+                                       title="Nifty 50 — Stocks per Sector",
+                                       height=400)
+        else:
+            fig_pie = _fallback_sector_pie(height=400)
         fig_pie.update_layout(autosize=True)
         st.plotly_chart(fig_pie, use_container_width=True)
     except Exception as exc:  # noqa: BLE001
         log.error("tab_overview: sector pie failed: %s", exc, exc_info=True)
+        st.info("Sector chart temporarily unavailable.")
 
     divider()
     sec("Trend Comparison")
@@ -129,7 +156,6 @@ def render(market_open: bool, market_status: str, last_close_label: str) -> None
 
     sym_map = {i["name"]: i for i in NSE_INDICES}
     if sel_idx:
-        # ── Spinner: fetch each selected index history ───────────────────────
         with st.spinner("Loading trend data…"):
             try:
                 series = {}
@@ -137,7 +163,8 @@ def render(market_open: bool, market_status: str, last_close_label: str) -> None
                     meta = sym_map.get(ni)
                     if not meta:
                         continue
-                    h = fetch_ticker(meta["symbol"], p_sel)
+                    # Use get_stock_data (the actual public API)
+                    h = get_stock_data(meta["symbol"], p_sel)
                     if not h.empty and "Close" in h.columns:
                         series[ni] = {"df": h, "color": meta["color"]}
                     else:
@@ -156,9 +183,7 @@ def render(market_open: bool, market_status: str, last_close_label: str) -> None
                 fig = build_trend_chart(series, height=360)
                 fig.update_layout(autosize=True)
                 st.plotly_chart(fig, use_container_width=True)
-            except ValueError as exc:
-                log.error("tab_overview: trend chart ValueError: %s", exc, exc_info=True)
             except Exception as exc:  # noqa: BLE001
-                log.error("tab_overview: trend chart unexpected: %s", exc, exc_info=True)
+                log.error("tab_overview: trend chart error: %s", exc, exc_info=True)
         else:
             st.info("No data available for selected indices.")
