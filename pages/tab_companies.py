@@ -40,8 +40,8 @@ def _sanitize_numeric_cols(df: pd.DataFrame) -> pd.DataFrame:
 
 def _get_history() -> tuple[dict, bool]:
     """Return (history_dict, is_live).
-    Tries live yfinance fetch first; falls back to static synthetic data
-    so that the three charts always have something to render.
+    Tries live yfinance first; falls back to static synthetic data
+    so that charts always have something to render.
     """
     try:
         from utils.data import fetch_all_history
@@ -63,6 +63,7 @@ def render(
     build_stock_rows_cached,
 ) -> None:
     from utils.app_helpers import hero, closed_banner, sec, divider
+
     hero("All 50 Companies",
          "Live prices" if market_open else "Last closing prices")
     closed_banner(market_open, market_status, last_close_label)
@@ -71,7 +72,7 @@ def render(
     sel_sec = st.selectbox("Sector", sectors, key="all_sec")
 
     # ── Stock data table ──────────────────────────────────────────────────────
-    with st.spinner("Loading stock data\u2026"):
+    with st.spinner("Loading stock data…"):
         try:
             df_rows = build_stock_rows_cached()
         except Exception as exc:  # noqa: BLE001
@@ -90,12 +91,11 @@ def render(
     export_buttons(
         display_df,
         filename_stem=f"nifty50_{'all' if sel_sec == 'All' else sel_sec.replace(' ', '_')}",
-        title=f"Nifty 50 Companies \u2014 {sel_sec}",
+        title=f"Nifty 50 Companies — {sel_sec}",
         key_suffix="companies",
     )
 
-    from utils.app_helpers import divider as _div
-    _div()
+    divider()
 
     # ── Sector Allocation Pie ─────────────────────────────────────────────────
     sec("Sector Allocation")
@@ -106,9 +106,9 @@ def render(
     try:
         all_rows = build_stock_rows_cached()
         pie_title = (
-            "Sector Allocation \u2014 Nifty 50"
+            "Sector Allocation — Nifty 50"
             if sel_sec == "All"
-            else f"Sector Allocation \u2014 {sel_sec} highlighted"
+            else f"Sector Allocation — {sel_sec} highlighted"
         )
         fig_pie = build_sector_pie(all_rows, title=pie_title)
         if fig_pie.data:
@@ -121,19 +121,20 @@ def render(
                 h = static_h.get(s["symbol"])
                 price = float(h["Close"].iloc[-1]) if (h is not None and not h.empty) else 0.0
                 rows.append({"Sector": s["sector"], "_curr": price})
-            fig_pie2 = build_sector_pie(pd.DataFrame(rows), title=pie_title + " (representative)")
+            fallback_df = pd.DataFrame(rows)
+            fig_pie2 = build_sector_pie(fallback_df, title=pie_title + " (representative)")
             if fig_pie2.data:
-                st.caption("\u26a0\ufe0f Showing representative data \u2014 live prices unavailable.")
+                st.caption("⚠️ Showing representative data — live prices unavailable.")
                 st.plotly_chart(fig_pie2, use_container_width=True)
             else:
                 st.info("Not enough data to render sector pie.")
     except Exception as exc:  # noqa: BLE001
         log.error("tab_companies: sector pie failed: %s", exc, exc_info=True)
 
-    _div()
+    divider()
 
     # ── 1-Day % Change bar ────────────────────────────────────────────────────
-    valid = df_rows[df_rows["_pct"].notna()].copy()
+    valid = df_rows[df_rows["_pct"].notna()].copy() if "_pct" in df_rows.columns else pd.DataFrame()
     if not valid.empty:
         try:
             title = "1-Day % Change" if market_open else "1-Day % Change (last session)"
@@ -142,15 +143,15 @@ def render(
         except Exception as exc:  # noqa: BLE001
             log.error("tab_companies: bar chart failed: %s", exc, exc_info=True)
 
-    _div()
+    divider()
 
     # ── Fetch history ONCE for both heatmap + sparklines ─────────────────────
-    with st.spinner("Loading 30-day price history\u2026"):
+    with st.spinner("Loading 30-day price history…"):
         all_hist, is_live = _get_history()
 
     if not is_live:
         st.info(
-            "\u26a0\ufe0f Live market history is unavailable right now. "
+            "⚠️ Live market history is unavailable right now. "
             "The charts below use representative synthetic data seeded from "
             "current Nifty 50 prices so you can explore the dashboards."
         )
@@ -170,10 +171,11 @@ def render(
         "Blue\u00a0=\u00a0negative correlation, red\u00a0=\u00a0positive."
     )
     try:
+        hm_height = max(400, min(700, len(sector_syms) * 14 + 120))
         fig_hm = build_correlation_heatmap(
             all_hist, sector_syms, sector_names,
-            title=f"30-Day Correlation \u2014 {sel_sec}",
-            height=max(400, min(700, len(sector_syms) * 14 + 120)),
+            title=f"30-Day Correlation — {sel_sec}",
+            height=hm_height,
         )
         if fig_hm.data:
             st.plotly_chart(fig_hm, use_container_width=True)
@@ -182,7 +184,7 @@ def render(
     except Exception as exc:  # noqa: BLE001
         log.error("tab_companies: heatmap render failed: %s", exc, exc_info=True)
 
-    _div()
+    divider()
 
     # ── 20-Day Sparklines ─────────────────────────────────────────────────────
     sec("20-Day Price Sparklines")
@@ -191,9 +193,10 @@ def render(
         "Green\u00a0=\u00a0net gain, red\u00a0=\u00a0net loss."
     )
     try:
+        spark_height = max(300, (len(sector_syms) // 5 + 1) * 110)
         fig_spark = build_sparkline_table(
             all_hist, sector_syms, sector_names,
-            height=max(300, (len(sector_syms) // 5 + 1) * 110),
+            height=spark_height,
         )
         if fig_spark.data:
             st.plotly_chart(fig_spark, use_container_width=True)

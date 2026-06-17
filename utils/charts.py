@@ -4,6 +4,8 @@ No Streamlit calls here.  Page modules call st.plotly_chart(build_*(...)).
 """
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -150,7 +152,7 @@ def build_sector_pie(df_rows: pd.DataFrame, title: str = "Sector Allocation",
         if "_curr" in df_rows.columns:
             grp = (
                 df_rows.groupby("Sector")["_curr"]
-                .apply(lambda s: s.dropna().sum())
+                .apply(lambda s: pd.to_numeric(s, errors="coerce").dropna().sum())
                 .reset_index()
             )
             grp.columns = ["Sector", "Value"]
@@ -160,6 +162,10 @@ def build_sector_pie(df_rows: pd.DataFrame, title: str = "Sector Allocation",
             values_col, value_label = "Count", "Stock Count"
 
         grp = grp[grp[values_col] > 0].copy()
+
+        if grp.empty:
+            log.warning("build_sector_pie: no sectors with positive value")
+            return go.Figure()
 
         _PALETTE = [
             "#6366f1", "#10b981", "#f59e0b", "#ef4444", "#06b6d4",
@@ -291,7 +297,7 @@ def build_sparkline_table(
             row = idx // COLS + 1
             col = idx % COLS + 1
             close = stock_hist[sym]["Close"].sort_index().tail(lookback)
-            pct_chg = (close.iloc[-1] / close.iloc[0] - 1) * 100 if len(close) >= 2 else 0
+            pct_chg = (close.iloc[-1] / close.iloc[0] - 1) * 100 if len(close) >= 2 else 0.0
             colour  = "#10b981" if pct_chg >= 0 else "#ef4444"
 
             fig.add_trace(
@@ -301,7 +307,7 @@ def build_sparkline_table(
                     mode="lines",
                     line=dict(color=colour, width=1.5),
                     name=lbl,
-                    hovertemplate=f"<b>{lbl}</b><br>Day %{{x}}<br>Rs.%{{y:,.2f}}<extra></extra>",
+                    hovertemplate=f"<b>{lbl}</b><br>Day %{{x}}<br>\u20b9%{{y:,.2f}}<extra></extra>",
                     showlegend=False,
                 ),
                 row=row, col=col,
@@ -313,7 +319,7 @@ def build_sparkline_table(
                 text=f"<b>{lbl}</b> {pct_chg:+.1f}%",
                 xref="paper", yref="paper",
                 x=(col - 0.5) / COLS,
-                y=1 - (row - 1) / ROWS + 0.005,
+                y=1.0 - (row - 1) / ROWS + 0.005,
                 showarrow=False,
                 font=dict(size=9, color=colour),
                 xanchor="center",
@@ -337,50 +343,48 @@ def build_sparkline_table(
 # Static fallback history — always-available synthetic OHLCV data
 # ---------------------------------------------------------------------------
 
-def _build_static_history() -> dict:
+def _build_static_history() -> dict[str, pd.DataFrame]:
     """Generate 35 business days of deterministic synthetic OHLCV for all 50
     Nifty stocks.  Seeded per-symbol via MD5 so values are stable across
     page refreshes.  Called when live yfinance data is unavailable so that
     Sector Pie, Correlation Heatmap and Sparklines always render.
     """
-    import hashlib
-
     _SEED: dict[str, float] = {
-        "RELIANCE.NS": 1480, "HDFCBANK.NS": 1920, "ICICIBANK.NS": 1340,
-        "INFY.NS": 1780, "TCS.NS": 4050, "BHARTIARTL.NS": 1850,
-        "ITC.NS": 480, "KOTAKBANK.NS": 1890, "LT.NS": 3580,
-        "HCLTECH.NS": 1920, "AXISBANK.NS": 1245, "SBIN.NS": 820,
-        "BAJFINANCE.NS": 7200, "WIPRO.NS": 580, "ASIANPAINT.NS": 2380,
-        "MARUTI.NS": 12800, "SUNPHARMA.NS": 1720, "TITAN.NS": 3540,
-        "ULTRACEMCO.NS": 11500, "ONGC.NS": 275, "NTPC.NS": 365,
-        "POWERGRID.NS": 315, "M&M.NS": 3150, "TATAMOTORS.NS": 925,
-        "TATASTEEL.NS": 165, "JSWSTEEL.NS": 980, "HINDALCO.NS": 690,
-        "ADANIENT.NS": 2980, "ADANIPORTS.NS": 1380, "BAJAJFINSV.NS": 1980,
-        "BAJAJAUTO.NS": 9800, "HEROMOTOCO.NS": 4750, "CIPLA.NS": 1540,
-        "DRREDDY.NS": 6450, "DIVISLAB.NS": 5200, "EICHERMOT.NS": 5500,
-        "GRASIM.NS": 2750, "HDFCLIFE.NS": 780, "SBILIFE.NS": 1650,
-        "INDUSINDBK.NS": 980, "TATACONSUM.NS": 1020, "BRITANNIA.NS": 4800,
-        "NESTLEIND.NS": 2250, "HINDUNILVR.NS": 2380, "COALINDIA.NS": 415,
-        "BPCL.NS": 320, "TECHM.NS": 1580, "LTF.NS": 195,
+        "RELIANCE.NS": 1480,   "HDFCBANK.NS": 1920,  "ICICIBANK.NS": 1340,
+        "INFY.NS": 1780,       "TCS.NS": 4050,        "BHARTIARTL.NS": 1850,
+        "ITC.NS": 480,         "KOTAKBANK.NS": 1890,  "LT.NS": 3580,
+        "HCLTECH.NS": 1920,    "AXISBANK.NS": 1245,   "SBIN.NS": 820,
+        "BAJFINANCE.NS": 7200, "WIPRO.NS": 580,       "ASIANPAINT.NS": 2380,
+        "MARUTI.NS": 12800,    "SUNPHARMA.NS": 1720,  "TITAN.NS": 3540,
+        "ULTRACEMCO.NS": 11500, "ONGC.NS": 275,       "NTPC.NS": 365,
+        "POWERGRID.NS": 315,   "M&M.NS": 3150,        "TATAMOTORS.NS": 925,
+        "TATASTEEL.NS": 165,   "JSWSTEEL.NS": 980,    "HINDALCO.NS": 690,
+        "ADANIENT.NS": 2980,   "ADANIPORTS.NS": 1380, "BAJAJFINSV.NS": 1980,
+        "BAJAJAUTO.NS": 9800,  "HEROMOTOCO.NS": 4750, "CIPLA.NS": 1540,
+        "DRREDDY.NS": 6450,    "DIVISLAB.NS": 5200,   "EICHERMOT.NS": 5500,
+        "GRASIM.NS": 2750,     "HDFCLIFE.NS": 780,    "SBILIFE.NS": 1650,
+        "INDUSINDBK.NS": 980,  "TATACONSUM.NS": 1020, "BRITANNIA.NS": 4800,
+        "NESTLEIND.NS": 2250,  "HINDUNILVR.NS": 2380, "COALINDIA.NS": 415,
+        "BPCL.NS": 320,        "TECHM.NS": 1580,      "LTF.NS": 195,
         "SHRIRAMFIN.NS": 3250, "BEL.NS": 285,
     }
     _VOL: dict[str, float] = {
-        "RELIANCE.NS": 0.012, "HDFCBANK.NS": 0.013, "ICICIBANK.NS": 0.015,
-        "INFY.NS": 0.014, "TCS.NS": 0.012, "BHARTIARTL.NS": 0.013,
-        "ITC.NS": 0.010, "KOTAKBANK.NS": 0.013, "LT.NS": 0.014,
-        "HCLTECH.NS": 0.013, "AXISBANK.NS": 0.016, "SBIN.NS": 0.017,
-        "BAJFINANCE.NS": 0.018, "WIPRO.NS": 0.013, "ASIANPAINT.NS": 0.011,
-        "MARUTI.NS": 0.014, "SUNPHARMA.NS": 0.012, "TITAN.NS": 0.014,
-        "ULTRACEMCO.NS": 0.013, "ONGC.NS": 0.015, "NTPC.NS": 0.013,
-        "POWERGRID.NS": 0.012, "M&M.NS": 0.015, "TATAMOTORS.NS": 0.019,
-        "TATASTEEL.NS": 0.020, "JSWSTEEL.NS": 0.019, "HINDALCO.NS": 0.018,
-        "ADANIENT.NS": 0.022, "ADANIPORTS.NS": 0.016, "BAJAJFINSV.NS": 0.016,
+        "RELIANCE.NS": 0.012,  "HDFCBANK.NS": 0.013,  "ICICIBANK.NS": 0.015,
+        "INFY.NS": 0.014,      "TCS.NS": 0.012,        "BHARTIARTL.NS": 0.013,
+        "ITC.NS": 0.010,       "KOTAKBANK.NS": 0.013,  "LT.NS": 0.014,
+        "HCLTECH.NS": 0.013,   "AXISBANK.NS": 0.016,   "SBIN.NS": 0.017,
+        "BAJFINANCE.NS": 0.018, "WIPRO.NS": 0.013,     "ASIANPAINT.NS": 0.011,
+        "MARUTI.NS": 0.014,    "SUNPHARMA.NS": 0.012,  "TITAN.NS": 0.014,
+        "ULTRACEMCO.NS": 0.013, "ONGC.NS": 0.015,      "NTPC.NS": 0.013,
+        "POWERGRID.NS": 0.012, "M&M.NS": 0.015,        "TATAMOTORS.NS": 0.019,
+        "TATASTEEL.NS": 0.020, "JSWSTEEL.NS": 0.019,   "HINDALCO.NS": 0.018,
+        "ADANIENT.NS": 0.022,  "ADANIPORTS.NS": 0.016, "BAJAJFINSV.NS": 0.016,
         "BAJAJAUTO.NS": 0.013, "HEROMOTOCO.NS": 0.013, "CIPLA.NS": 0.012,
-        "DRREDDY.NS": 0.011, "DIVISLAB.NS": 0.012, "EICHERMOT.NS": 0.014,
-        "GRASIM.NS": 0.013, "HDFCLIFE.NS": 0.013, "SBILIFE.NS": 0.013,
+        "DRREDDY.NS": 0.011,   "DIVISLAB.NS": 0.012,   "EICHERMOT.NS": 0.014,
+        "GRASIM.NS": 0.013,    "HDFCLIFE.NS": 0.013,   "SBILIFE.NS": 0.013,
         "INDUSINDBK.NS": 0.019, "TATACONSUM.NS": 0.013, "BRITANNIA.NS": 0.011,
         "NESTLEIND.NS": 0.010, "HINDUNILVR.NS": 0.011, "COALINDIA.NS": 0.014,
-        "BPCL.NS": 0.016, "TECHM.NS": 0.014, "LTF.NS": 0.018,
+        "BPCL.NS": 0.016,      "TECHM.NS": 0.014,      "LTF.NS": 0.018,
         "SHRIRAMFIN.NS": 0.016, "BEL.NS": 0.016,
     }
 
@@ -391,9 +395,9 @@ def _build_static_history() -> dict:
         seed_int = int(hashlib.md5(sym.encode()).hexdigest()[:8], 16) % (2 ** 31)
         rng = np.random.default_rng(seed_int)
         vol = _VOL.get(sym, 0.015)
-        n = len(dates)
+        n   = len(dates)
 
-        rets = rng.normal(0.0002, vol, n)
+        rets   = rng.normal(0.0002, vol, n)
         closes = np.zeros(n)
         closes[-1] = seed_price
         for i in range(n - 2, -1, -1):
