@@ -16,7 +16,7 @@ Dynamic beta computation
 After fetch_all_history() assembles its result dict, compute_betas()
 calculates a 1-year rolling OLS beta for every equity symbol against
 ^NSEI daily returns.  The results are stored in
-  st.session_state["dynamic_betas"]  →  {"RELIANCE.NS": 0.92, ...}
+  st.session_state["dynamic_betas"]  ->  {"RELIANCE.NS": 0.92, ...}
 and consumed by calculations.py / app.py instead of the static
 constants.NIFTY50[i]["beta"] values.  Constants betas remain as
 a cold-start fallback when history data is not yet loaded.
@@ -51,6 +51,7 @@ from utils.db import (
     price_cache_write,
     price_cache_purge_old,
 )
+from utils.rate_limit import yfinance_limiter
 
 log = get_logger(__name__)   # nse_tracker.utils.data
 
@@ -210,10 +211,29 @@ def _yf_batch_download(symbols: list[str], period: str) -> dict[str, pd.DataFram
     Download OHLCV for all symbols in a single yf.download() call.
     Returns a dict {symbol: DataFrame}.  Symbols that come back empty
     are omitted so the caller can fall back individually.
+
+    Guarded by yfinance_limiter: if the process-wide 60-second window is
+    full the batch is skipped and an empty dict is returned so callers
+    fall back gracefully to the SQLite cache.
     """
     result: dict[str, pd.DataFrame] = {}
     if not symbols:
         return result
+
+    # --- Rate-limit guard (process-wide, thread-safe) ---
+    ok, wait = yfinance_limiter.check()
+    if not ok:
+        log.warning(
+            "_yf_batch_download: yfinance_limiter cap hit (wait=%.1fs) "
+            "— skipping batch, callers will use SQLite cache",
+            wait,
+        )
+        _warn(
+            f"\u26a0\ufe0f Yahoo Finance rate cap reached. "
+            f"Serving cached data (retry in {wait:.0f}s)."
+        )
+        return result
+
     try:
         log.info("yf.download batch: %d symbols period=%s", len(symbols), period)
         t0 = time.monotonic()
@@ -276,7 +296,23 @@ _YF_MAX_RETRIES  = 3
 
 
 def _yf_history(symbol: str, period: str) -> pd.DataFrame:
+    """Fetch daily OHLCV for one symbol with exponential-backoff retry.
+
+    Guarded by yfinance_limiter before the first HTTP call.  If the
+    process-wide window is full the function returns an empty DataFrame
+    immediately so _fetch_with_fallback falls through to nselib / SQLite.
+    """
     global _yf_last_ok
+
+    # --- Rate-limit guard ---
+    ok, wait = yfinance_limiter.check()
+    if not ok:
+        log.warning(
+            "_yf_history[%s]: yfinance_limiter cap hit (wait=%.1fs) — returning empty",
+            symbol, wait,
+        )
+        return pd.DataFrame()
+
     elapsed = time.monotonic() - _yf_last_ok
     if elapsed < _YF_MIN_INTERVAL:
         time.sleep(_YF_MIN_INTERVAL - elapsed)
@@ -305,7 +341,22 @@ def _yf_history(symbol: str, period: str) -> pd.DataFrame:
 
 
 def _yf_intraday(symbol: str, period: str = "1d", interval: str = "1m") -> pd.DataFrame:
+    """Fetch today's 1-minute bars.
+
+    Guarded by yfinance_limiter; returns empty DataFrame immediately if
+    the process-wide cap is reached so the caller can surface a warning.
+    """
     global _yf_last_ok
+
+    # --- Rate-limit guard ---
+    ok, wait = yfinance_limiter.check()
+    if not ok:
+        log.warning(
+            "_yf_intraday[%s]: yfinance_limiter cap hit (wait=%.1fs) — returning empty",
+            symbol, wait,
+        )
+        return pd.DataFrame()
+
     elapsed = time.monotonic() - _yf_last_ok
     if elapsed < _YF_MIN_INTERVAL:
         time.sleep(_YF_MIN_INTERVAL - elapsed)
@@ -414,8 +465,8 @@ def _warn(msg: str) -> None:
 def _fetch_with_fallback(symbol: str, period: str) -> pd.DataFrame:
     """
     Full fetch waterfall for a single symbol:
-      0. SQLite (fresh)  →  1. yfinance single  →  2. nselib
-      →  3. SQLite (stale)  →  4. in-memory stale store
+      0. SQLite (fresh)  ->  1. yfinance single  ->  2. nselib
+      ->  3. SQLite (stale)  ->  4. in-memory stale store
     """
     key = f"{symbol}:{period}"
 
@@ -426,7 +477,7 @@ def _fetch_with_fallback(symbol: str, period: str) -> pd.DataFrame:
         _STALE_STORE[key] = cached   # keep in-memory store warm too
         return cached
 
-    # --- Layer 1: yfinance single ---
+    # --- Layer 1: yfinance single (rate-limiter checked inside) ---
     df = _yf_history(symbol, period)
     if not df.empty:
         _STALE_STORE[key] = df
@@ -484,7 +535,7 @@ def compute_betas(
 
     Returns
     -------
-    dict mapping symbol → float beta.  Symbols with insufficient data
+    dict mapping symbol -> float beta.  Symbols with insufficient data
     are omitted; callers should fall back to constants.NIFTY50 beta.
     """
     betas: dict[str, float] = {}
@@ -613,7 +664,7 @@ def fetch_all_stocks_5d() -> dict[str, pd.DataFrame]:
     log.info("fetch_all_stocks_5d called")
     symbols = [s["symbol"] for s in NIFTY50]
 
-    # Step 1: batch download (fast)
+    # Step 1: batch download (fast, rate-limiter checked inside)
     result = _yf_batch_download(symbols, "5d")
     log.info("fetch_all_stocks_5d: batch got %d/50 symbols", len(result))
 
@@ -720,6 +771,10 @@ def get_source_status() -> dict[str, str]:
             status["sqlite_cache"] = "unavailable"
     except Exception:
         status["sqlite_cache"] = "error"
+
+    # Rate-limiter headroom
+    status["yf_rate_limit_used"] = str(yfinance_limiter.current_count)
+    status["yf_rate_limit_max"]  = str(yfinance_limiter.max_calls)
 
     log.info("get_source_status result: %s", status)
     return status

@@ -1,10 +1,18 @@
 """
-utils/notifications.py  —  SMTP email helpers.
+utils/notifications.py  —  SMTP email and Twilio SMS helpers.
+
+Both send_email() and send_sms() are guarded by process-wide sliding-window
+rate limiters (utils.rate_limit) so runaway alert loops cannot exhaust SMTP
+quotas or Twilio free-tier SMS budgets.
 """
 from __future__ import annotations
 import streamlit as st
 
-# _CACHE_BUST = 4   # increment to force .pyc regeneration
+from utils.rate_limit import smtp_limiter, twilio_limiter
+from utils.logger import get_logger
+
+log = get_logger(__name__)
+
 
 def _scrub(text: str) -> str:
     s = str(text)
@@ -36,8 +44,24 @@ def twilio_configured() -> bool:
 
 
 def send_email(to: str, subject: str, body: str) -> tuple[bool, str]:
+    """Send an email alert.
+
+    Returns (True, "") on success, (False, reason) on any failure.
+    Guarded by smtp_limiter: returns (False, 'rate limit') without
+    hitting the SMTP server when the 5-minute window is full.
+    """
     if not smtp_configured():
         return False, "SMTP not configured"
+
+    # --- Rate-limit guard ---
+    ok, wait = smtp_limiter.check()
+    if not ok:
+        log.warning(
+            "send_email: smtp_limiter cap hit (to=%s wait=%.1fs) — suppressed",
+            to, wait,
+        )
+        return False, f"rate limit: too many emails sent, retry in {wait:.0f}s"
+
     try:
         import smtplib
         s         = st.secrets["smtp"]
@@ -65,20 +89,40 @@ def send_email(to: str, subject: str, body: str) -> tuple[bool, str]:
             srv.ehlo()
             srv.login(s["user"], s["password"])
             srv.sendmail(from_addr, [to], raw)
+        log.info("send_email: sent to %s subject=%r", to, subject)
         return True, ""
     except Exception as exc:
+        log.error("send_email failed: to=%s error=%s", to, exc, exc_info=True)
         return False, str(exc)
 
 
 def send_sms(to: str, body: str) -> tuple[bool, str]:
+    """Send an SMS alert via Twilio.
+
+    Returns (True, "") on success, (False, reason) on any failure.
+    Guarded by twilio_limiter: returns (False, 'rate limit') without
+    hitting the Twilio API when the 5-minute window is full.
+    """
     if not twilio_configured():
         return False, "Twilio not configured"
+
+    # --- Rate-limit guard ---
+    ok, wait = twilio_limiter.check()
+    if not ok:
+        log.warning(
+            "send_sms: twilio_limiter cap hit (to=%s wait=%.1fs) — suppressed",
+            to, wait,
+        )
+        return False, f"rate limit: too many SMS sent, retry in {wait:.0f}s"
+
     try:
         from twilio.rest import Client
         t = st.secrets["twilio"]
         Client(t["sid"], t["token"]).messages.create(
             body=_scrub(body), from_=t["from"], to=to
         )
+        log.info("send_sms: sent to %s", to)
         return True, ""
     except Exception as exc:
+        log.error("send_sms failed: to=%s error=%s", to, exc, exc_info=True)
         return False, str(exc)
