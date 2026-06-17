@@ -1,2 +1,2 @@
-# DELETED — moved to tabs/tab_timemachine.py
-raise ImportError("This file should not be imported. Use tabs/tab_timemachine.py instead.")
+# This file is intentionally blank.
+# The real implementation is in tabs/tab_timemachine.py

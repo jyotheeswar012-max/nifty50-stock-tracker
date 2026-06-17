@@ -1,2 +1,2 @@
-# DELETED — moved to tabs/tab_overview.py
-raise ImportError("This file should not be imported. Use tabs/tab_overview.py instead.")
+# This file is intentionally blank.
+# The real implementation is in tabs/tab_overview.py
