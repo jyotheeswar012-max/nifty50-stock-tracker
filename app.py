@@ -100,6 +100,28 @@ def _build_stock_rows_cached():
     return build_stock_rows(fetch_all_stocks_5d(), market_open, fetch_intraday)
 
 
+def _sanitize_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Coerce any string 'NA' placeholders in numeric columns to float NaN.
+
+    When yfinance rate-limits and nselib fallback is used, missing prices
+    may appear as the string 'NA' instead of float('nan'), which causes
+    PyArrow / Streamlit's Arrow serializer to raise ArrowInvalid.
+    """
+    df = df.copy()
+    for col in df.columns:
+        if df[col].dtype == object:
+            # Only coerce columns that look numeric (contain digits or NA)
+            sample = df[col].dropna().astype(str)
+            if sample.empty:
+                continue
+            looks_numeric = sample.str.match(r"^[\-+]?[\d,\.]+$|^NA$").mean() > 0.5
+            if looks_numeric:
+                df[col] = pd.to_numeric(
+                    df[col].replace("NA", float("nan")), errors="coerce"
+                )
+    return df
+
+
 def _hero(title, sub=""):
     st.subheader(title)
     if sub:
@@ -202,7 +224,7 @@ with tabs[0]:
             except Exception as exc:
                 idx_rows.append({"Index": idx["name"], val_lbl: "N/A", "Change (pts)": "N/A", "Change (%)": "N/A", "High": "N/A", "Low": "N/A", "_pct": None})
         idx_df = pd.DataFrame(idx_rows)
-        st.dataframe(idx_df.drop(columns=["_pct"]), use_container_width=True, hide_index=True)
+        st.dataframe(_sanitize_df(idx_df.drop(columns=["_pct"])), width="stretch", hide_index=True)
         valid_idx = idx_df[idx_df["_pct"].notna()].copy()
         if not valid_idx.empty:
             try:
@@ -267,7 +289,7 @@ with tabs[2]:
         sel_sec = st.selectbox("Sector", sectors, key="all_sec")
         df_rows = _build_stock_rows_cached()
         if sel_sec != "All": df_rows = df_rows[df_rows["Sector"] == sel_sec]
-        st.dataframe(df_rows.drop(columns=["_curr", "_pct"], errors="ignore"), use_container_width=True, hide_index=True)
+        st.dataframe(_sanitize_df(df_rows.drop(columns=["_curr", "_pct"], errors="ignore")), width="stretch", hide_index=True)
         valid = df_rows[df_rows["_pct"].notna()].copy()
         if not valid.empty:
             try:
@@ -293,10 +315,10 @@ with tabs[3]:
             cg, cl = st.columns(2)
             with cg:
                 _sec("Top Gainers")
-                st.dataframe(gainers[["Symbol", "Company", price_col, "Change (%)"]], use_container_width=True, hide_index=True)
+                st.dataframe(_sanitize_df(gainers[["Symbol", "Company", price_col, "Change (%)"]]), width="stretch", hide_index=True)
             with cl:
                 _sec("Top Losers")
-                st.dataframe(losers[["Symbol", "Company", price_col, "Change (%)"]], use_container_width=True, hide_index=True)
+                st.dataframe(_sanitize_df(losers[["Symbol", "Company", price_col, "Change (%)"]]), width="stretch", hide_index=True)
             try:
                 combined = pd.concat([gainers, losers]).drop_duplicates(subset="Symbol")
                 st.plotly_chart(build_pct_bar(combined[combined["_pct"].notna()], "Symbol", "_pct", "Gainers vs Losers", text_col="Change (%)"), use_container_width=True)
@@ -382,7 +404,7 @@ with tabs[6]:
                 st.error("No data for this date. Try a nearby trading day.")
             else:
                 st.success("Snapshot for " + str(tm_date))
-                st.dataframe(snap, use_container_width=True)
+                st.dataframe(_sanitize_df(snap), width="stretch")
                 try: st.plotly_chart(build_closing_bar(snap.reset_index(), "Symbol", "Close", "Closing Prices — " + str(tm_date)), use_container_width=True)
                 except Exception: pass
     except Exception as exc:

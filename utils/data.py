@@ -19,12 +19,14 @@ all public functions remain fully testable without a live Streamlit context.
 """
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta
 from typing import Callable
 
 import pandas as pd
 import pytz
 import yfinance as yf
+from yfinance.exceptions import YFRateLimitError
 
 from utils.constants import CACHE_TTL, NIFTY50, NSE_INDICES, SYMBOLS
 from utils.logger import get_logger
@@ -168,35 +170,88 @@ def _validate_ohlcv(df: pd.DataFrame) -> bool:
     )
 
 
+def _to_series(col: "pd.Series | pd.DataFrame") -> pd.Series:
+    """Ensure a column extracted from a DataFrame is a 1-D Series.
+
+    nselib occasionally returns duplicate column names after rename, which
+    causes ``df[col_name]`` to return a DataFrame instead of a Series.
+    Calling ``.str`` on a DataFrame raises AttributeError — this helper
+    squeezes any accidental DataFrame down to the first Series.
+    """
+    if isinstance(col, pd.DataFrame):
+        return col.iloc[:, 0]
+    return col
+
+
 # ---------------------------------------------------------------------------
-# Source 1 — yfinance
+# Source 1 — yfinance  (with exponential-backoff retry on rate-limit)
 # ---------------------------------------------------------------------------
 
+# Tracks the last time a successful yfinance request completed.
+# Used to throttle inter-symbol delays when fetching 50 stocks.
+_yf_last_ok: float = 0.0
+_YF_MIN_INTERVAL = 0.5   # seconds between successful yfinance fetches
+_YF_MAX_RETRIES  = 3
+
+
 def _yf_history(symbol: str, period: str) -> pd.DataFrame:
-    try:
-        log.debug("yfinance fetch: symbol=%s period=%s", symbol, period)
-        df = yf.Ticker(symbol).history(period=period, auto_adjust=True)
-        df = _clean_df(df)
-        if _validate_ohlcv(df):
-            log.debug("yfinance OK: symbol=%s rows=%d", symbol, len(df))
-            return df
-        log.warning("yfinance returned empty/invalid data: symbol=%s period=%s", symbol, period)
-    except Exception as exc:
-        log.error("yfinance fetch failed: symbol=%s period=%s error=%s", symbol, period, exc, exc_info=True)
+    global _yf_last_ok
+    # Throttle: ensure at least _YF_MIN_INTERVAL between requests.
+    elapsed = time.monotonic() - _yf_last_ok
+    if elapsed < _YF_MIN_INTERVAL:
+        time.sleep(_YF_MIN_INTERVAL - elapsed)
+
+    for attempt in range(_YF_MAX_RETRIES):
+        try:
+            log.debug("yfinance fetch: symbol=%s period=%s attempt=%d", symbol, period, attempt + 1)
+            df = yf.Ticker(symbol).history(period=period, auto_adjust=True)
+            df = _clean_df(df)
+            if _validate_ohlcv(df):
+                log.debug("yfinance OK: symbol=%s rows=%d", symbol, len(df))
+                _yf_last_ok = time.monotonic()
+                return df
+            log.warning("yfinance returned empty/invalid data: symbol=%s period=%s", symbol, period)
+            return pd.DataFrame()
+        except YFRateLimitError:
+            wait = 2 ** attempt   # 1 s, 2 s, 4 s
+            log.warning(
+                "yfinance rate-limited: symbol=%s attempt=%d/%d — sleeping %ds",
+                symbol, attempt + 1, _YF_MAX_RETRIES, wait,
+            )
+            time.sleep(wait)
+        except Exception as exc:
+            log.error("yfinance fetch failed: symbol=%s period=%s error=%s", symbol, period, exc, exc_info=True)
+            return pd.DataFrame()
+
+    log.error("yfinance fetch failed: symbol=%s period=%s error=Too Many Requests after %d retries", symbol, period, _YF_MAX_RETRIES)
     return pd.DataFrame()
 
 
 def _yf_intraday(symbol: str, period: str = "1d", interval: str = "1m") -> pd.DataFrame:
-    try:
-        log.debug("yfinance intraday: symbol=%s period=%s interval=%s", symbol, period, interval)
-        df = yf.Ticker(symbol).history(period=period, interval=interval, auto_adjust=True)
-        df = _clean_intraday_df(df)
-        if _validate_ohlcv(df):
-            log.debug("yfinance intraday OK: symbol=%s rows=%d", symbol, len(df))
-            return df
-        log.warning("yfinance intraday empty: symbol=%s", symbol)
-    except Exception as exc:
-        log.error("yfinance intraday failed: symbol=%s error=%s", symbol, exc, exc_info=True)
+    global _yf_last_ok
+    elapsed = time.monotonic() - _yf_last_ok
+    if elapsed < _YF_MIN_INTERVAL:
+        time.sleep(_YF_MIN_INTERVAL - elapsed)
+
+    for attempt in range(_YF_MAX_RETRIES):
+        try:
+            log.debug("yfinance intraday: symbol=%s period=%s interval=%s", symbol, period, interval)
+            df = yf.Ticker(symbol).history(period=period, interval=interval, auto_adjust=True)
+            df = _clean_intraday_df(df)
+            if _validate_ohlcv(df):
+                log.debug("yfinance intraday OK: symbol=%s rows=%d", symbol, len(df))
+                _yf_last_ok = time.monotonic()
+                return df
+            log.warning("yfinance intraday empty: symbol=%s", symbol)
+            return pd.DataFrame()
+        except YFRateLimitError:
+            wait = 2 ** attempt
+            log.warning("yfinance intraday rate-limited: symbol=%s attempt=%d — sleeping %ds", symbol, attempt + 1, wait)
+            time.sleep(wait)
+        except Exception as exc:
+            log.error("yfinance intraday failed: symbol=%s error=%s", symbol, exc, exc_info=True)
+            return pd.DataFrame()
+
     return pd.DataFrame()
 
 
@@ -208,6 +263,10 @@ def _nselib_history(symbol: str, period: str) -> pd.DataFrame:
     """
     Attempt to fetch historical OHLCV from nselib.
     nselib uses 'DD-MM-YYYY' date strings and strips '.NS' suffixes.
+
+    Fix applied: nselib can return duplicate column names after rename,
+    causing df[col] to yield a DataFrame instead of a Series.  Every
+    numeric column is passed through _to_series() before calling .str.
     """
     if not NSELIB_OK:
         return pd.DataFrame()
@@ -247,11 +306,24 @@ def _nselib_history(symbol: str, period: str) -> pd.DataFrame:
             return pd.DataFrame()
         raw["Date"] = pd.to_datetime(raw["Date"], dayfirst=True, errors="coerce")
         raw = raw.dropna(subset=["Date"]).set_index("Date").sort_index()
+
+        # BUG FIX: duplicate column names after rename can produce a DataFrame
+        # when you do raw[col], causing AttributeError on .str.  Always squeeze
+        # to a Series via _to_series() before any string/numeric conversion.
         for col in ("Open", "High", "Low", "Close"):
             if col in raw.columns:
-                raw[col] = pd.to_numeric(raw[col].astype(str).str.replace(",", ""), errors="coerce")
+                series = _to_series(raw[col])
+                raw[col] = pd.to_numeric(
+                    series.astype(str).str.replace(",", "", regex=False),
+                    errors="coerce",
+                )
         if "Volume" in raw.columns:
-            raw["Volume"] = pd.to_numeric(raw["Volume"].astype(str).str.replace(",", ""), errors="coerce").fillna(0)
+            series = _to_series(raw["Volume"])
+            raw["Volume"] = pd.to_numeric(
+                series.astype(str).str.replace(",", "", regex=False),
+                errors="coerce",
+            ).fillna(0)
+
         df = _clean_df(raw)
         if _validate_ohlcv(df):
             log.info("nselib fallback used: symbol=%s rows=%d", symbol, len(df))
@@ -285,9 +357,9 @@ def _fetch_with_fallback(symbol: str, period: str) -> pd.DataFrame:
     Core multi-source fetch used by all public cached functions.
 
     Order:
-      1. yfinance primary
-      2. nselib fallback  (if yfinance returned empty)
-      3. Stale cache      (if both live sources failed)
+      1. yfinance primary  (with exponential-backoff retry on rate-limit)
+      2. nselib fallback   (if yfinance returned empty)
+      3. Stale cache       (if both live sources failed)
     """
     key = f"{symbol}:{period}"
 
