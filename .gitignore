@@ -26,12 +26,56 @@ MANIFEST
 
 # Virtual environments
 .env
+.env.*
+*.env
+env.local
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+
+# -----------------------------------------------------------------------
+# Secrets & credentials  — NEVER commit these
+# -----------------------------------------------------------------------
+.streamlit/secrets.toml          # Streamlit secrets (real values)
+secrets.toml                     # accidental root-level copy
+**/secrets.toml                  # any nested copy
+
+# Firebase service account keys
+serviceAccountKey.json
+firebase-*.json
+*-firebase-adminsdk-*.json
+google-services.json
+
+# Twilio / general API credential files
+twilio*.json
+twilio*.env
+
+# Generic private-key / certificate files
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.cer
+*.crt
+
+# dotenv files (may contain SMTP_PASSWORD, etc.)
+.env.development
+.env.production
+.env.staging
+.env.test
+.env.local
+
+# -----------------------------------------------------------------------
+# SQLite runtime databases (contain cached price data, not secrets,
+# but no value committing generated artefacts)
+# -----------------------------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
 
 # Streamlit
 .streamlit/secrets.toml
