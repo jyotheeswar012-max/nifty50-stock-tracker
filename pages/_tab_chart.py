@@ -1,1 +1,1 @@
-# intentionally blank stub
+# placeholder — not a Streamlit page

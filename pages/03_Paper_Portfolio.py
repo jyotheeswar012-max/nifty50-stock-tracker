@@ -1,1 +1,1 @@
-# DISABLED — see pages/_03_Paper_Portfolio.py
+# placeholder — not a Streamlit page

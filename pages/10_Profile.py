@@ -1,1 +1,1 @@
-# DISABLED — see pages/_10_Profile.py
+# placeholder — not a Streamlit page

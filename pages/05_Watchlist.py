@@ -1,1 +1,1 @@
-# DISABLED — see pages/_05_Watchlist.py
+# placeholder — not a Streamlit page

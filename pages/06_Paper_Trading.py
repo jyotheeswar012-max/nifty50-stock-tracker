@@ -1,1 +1,1 @@
-# DISABLED — see pages/_06_Paper_Trading.py
+# placeholder — not a Streamlit page

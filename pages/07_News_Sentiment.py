@@ -1,1 +1,1 @@
-# DISABLED — see pages/_07_News_Sentiment.py
+# placeholder — not a Streamlit page
