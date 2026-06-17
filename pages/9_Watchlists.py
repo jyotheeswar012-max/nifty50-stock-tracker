@@ -1,153 +1,118 @@
 """
-pages/9_Watchlists.py  —  Persistent watchlist manager.
+pages/9_Watchlists.py  –  Persistent Watchlist Manager v2
 
-Features
---------
-  • Create / rename / delete named watchlists
-  • Add / remove symbols from any Nifty 50 list
-  • Drag-sort via up/down buttons (SQLite positions updated atomically)
+Features:
+  • Multiple named watchlists per user
+  • Add / remove symbols
+  • Create / delete lists
+  • Live mini-stats (last price, day change) for each symbol
   • Export watchlist as CSV
-  • Per-user namespacing via Streamlit session_state user_id
-    (falls back to "guest" when auth is not active)
+  • Storage: SQLite → JSON → session_state (auto-selected)
 """
-from __future__ import annotations
-
 import streamlit as st
+import pandas as pd
 
-from utils.constants import NIFTY50, SYMBOLS
 from utils.watchlist import (
-    add_symbol,
-    create_watchlist,
-    delete_watchlist,
-    export_csv,
-    get_symbols,
-    list_watchlists,
-    remove_symbol,
-    rename_watchlist,
-    reorder_symbols,
+    get_all_watchlists, load_watchlist, add_symbol, remove_symbol,
+    create_named_list, delete_named_list,
 )
+from utils.data import get_last_price, get_stock_data
+from utils.constants import NIFTY50_SYMBOLS
+from utils.auth_ui import require_login
 
-st.set_page_config(page_title="Watchlists", page_icon="❤️", layout="wide")
-st.title("❤️ Watchlists")
-st.caption("Create named watchlists, add/remove symbols, and export them as CSV.")
+require_login()
 
-# ---------------------------------------------------------------------------
-# Resolve user id
-# ---------------------------------------------------------------------------
-user_id: str = st.session_state.get("user_id") or "guest"
+st.set_page_config(page_title="Watchlists", page_icon="👁️", layout="wide")
+st.title("👁️ Watchlists")
+st.caption("Your watchlists are persisted to disk (SQLite) and survive page refreshes and container restarts.")
 
-# ---------------------------------------------------------------------------
-# Watchlist selector / creator
-# ---------------------------------------------------------------------------
-watchlists = list_watchlists(user_id)
+# ── Determine user ID (Firebase UID or fallback) ─────────────────────────────
+user = st.session_state.get("user", {})
+uid = user.get("uid", "default") if user else "default"
 
-col_sel, col_new = st.columns([3, 2])
+# ── Sidebar: list management ──────────────────────────────────────────────────
+with st.sidebar:
+    st.header("📋 Your Lists")
+    all_lists = get_all_watchlists(uid)
+    list_names = list(all_lists.keys()) or ["Default"]
 
-with col_new:
-    with st.form("new_wl_form", clear_on_submit=True):
-        new_name = st.text_input("New watchlist name", placeholder="e.g. My Pharma Picks")
-        if st.form_submit_button("➕ Create") and new_name.strip():
-            try:
-                create_watchlist(user_id, new_name.strip())
-                st.success(f"Created \u2018{new_name.strip()}\u2019")
-                st.rerun()
-            except Exception as exc:
-                st.error(str(exc))
+    selected_list = st.selectbox("Active Watchlist", list_names)
 
-if not watchlists:
-    st.info("👉 No watchlists yet. Create one using the form on the right.")
-    st.stop()
-
-wl_names = [w["name"] for w in watchlists]
-wl_ids   = {w["name"]: w["id"] for w in watchlists}
-
-with col_sel:
-    chosen_name = st.selectbox("📝 Select watchlist", wl_names)
-
-chosen_id = wl_ids[chosen_name]
-
-# ---------------------------------------------------------------------------
-# Rename / delete
-# ---------------------------------------------------------------------------
-with st.expander("⚙️ Manage watchlist", expanded=False):
-    c1, c2 = st.columns(2)
-    with c1:
-        with st.form("rename_form", clear_on_submit=True):
-            new_nm = st.text_input("Rename to", value=chosen_name)
-            if st.form_submit_button("✏️ Rename") and new_nm.strip() and new_nm.strip() != chosen_name:
-                try:
-                    rename_watchlist(chosen_id, new_nm.strip())
-                    st.success("Renamed.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(str(exc))
-    with c2:
-        if st.button("🗑️ Delete watchlist", type="secondary"):
-            if st.session_state.get("_confirm_delete") == chosen_id:
-                delete_watchlist(chosen_id)
-                st.success("Deleted.")
-                st.session_state.pop("_confirm_delete", None)
-                st.rerun()
-            else:
-                st.session_state["_confirm_delete"] = chosen_id
-                st.warning("Click again to confirm deletion.")
-
-# ---------------------------------------------------------------------------
-# Symbol list
-# ---------------------------------------------------------------------------
-st.divider()
-st.subheader(f"📊 {chosen_name}")
-
-current_syms = get_symbols(chosen_id)
-
-if not current_syms:
-    st.info("This watchlist is empty. Add symbols below.")
-else:
-    for i, sym in enumerate(current_syms):
-        r1, r2, r3, r4 = st.columns([4, 1, 1, 1])
-        r1.write(f"**{sym}**")
-        if r2.button("↑", key=f"up_{sym}", disabled=i == 0):
-            ordered = current_syms.copy()
-            ordered[i], ordered[i - 1] = ordered[i - 1], ordered[i]
-            reorder_symbols(chosen_id, ordered)
-            st.rerun()
-        if r3.button("↓", key=f"dn_{sym}", disabled=i == len(current_syms) - 1):
-            ordered = current_syms.copy()
-            ordered[i], ordered[i + 1] = ordered[i + 1], ordered[i]
-            reorder_symbols(chosen_id, ordered)
-            st.rerun()
-        if r4.button("✕", key=f"rm_{sym}"):
-            remove_symbol(chosen_id, sym)
-            st.rerun()
-
-# ---------------------------------------------------------------------------
-# Add symbols
-# ---------------------------------------------------------------------------
-st.divider()
-all_symbols = SYMBOLS
-remaining   = [s for s in all_symbols if s not in current_syms]
-
-with st.form("add_sym_form", clear_on_submit=True):
-    to_add = st.multiselect(
-        "➕ Add symbols",
-        options=remaining,
-        placeholder="Search for a symbol…",
-    )
-    if st.form_submit_button("Add selected") and to_add:
-        for sym in to_add:
-            add_symbol(chosen_id, sym)
-        st.success(f"Added {len(to_add)} symbol(s).")
+    st.divider()
+    st.subheader("Create New List")
+    new_list_name = st.text_input("List Name", placeholder="e.g. IT Sector")
+    if st.button("➕ Create", use_container_width=True) and new_list_name.strip():
+        create_named_list(new_list_name.strip(), uid)
         st.rerun()
 
-# ---------------------------------------------------------------------------
-# CSV export
-# ---------------------------------------------------------------------------
-if current_syms:
+    if selected_list != "Default":
+        if st.button(f"🗑️ Delete '{selected_list}'",
+                     use_container_width=True, type="secondary"):
+            delete_named_list(selected_list, uid)
+            st.rerun()
+
     st.divider()
-    csv_text = export_csv(chosen_id)
+    st.subheader("Add Symbol")
+    new_sym = st.selectbox("From Nifty 50", ["— select —"] + NIFTY50_SYMBOLS, key="add_nifty")
+    if st.button("Add from Nifty 50") and new_sym != "— select —":
+        add_symbol(new_sym, uid, selected_list)
+        st.rerun()
+
+    custom_sym = st.text_input("Custom Symbol (e.g. INFY.NS)").upper().strip()
+    if st.button("Add Custom") and custom_sym:
+        add_symbol(custom_sym, uid, selected_list)
+        st.rerun()
+
+# ── Main panel ────────────────────────────────────────────────────────────────
+watchlist = load_watchlist(uid, selected_list)
+
+if not watchlist:
+    st.info(f"**'{selected_list}'** is empty. Add symbols using the sidebar.")
+else:
+    st.subheader(f"{selected_list}  ({len(watchlist)} symbols)")
+
+    # Load live data for all symbols
+    rows = []
+    with st.spinner("Fetching latest prices..."):
+        for sym in watchlist:
+            try:
+                price_info = get_last_price(sym)
+                rows.append({
+                    "Symbol": sym,
+                    "Price (₹)": price_info.get("price", "N/A"),
+                    "Change (%)": price_info.get("change_pct", "N/A"),
+                    "Day High": price_info.get("day_high", "N/A"),
+                    "Day Low": price_info.get("day_low", "N/A"),
+                })
+            except Exception:
+                rows.append({"Symbol": sym, "Price (₹)": "N/A",
+                             "Change (%)": "N/A", "Day High": "N/A", "Day Low": "N/A"})
+
+    df = pd.DataFrame(rows)
+
+    # Colour-code change column
+    def colour_change(val):
+        try:
+            v = float(val)
+            return "color: #4CAF50" if v > 0 else ("color: #F44336" if v < 0 else "")
+        except Exception:
+            return ""
+
+    styled = df.style.applymap(colour_change, subset=["Change (%)"])
+    st.dataframe(styled, use_container_width=True, height=400)
+
+    # Per-symbol remove buttons
+    st.subheader("Remove Symbols")
+    cols = st.columns(min(len(watchlist), 5))
+    for i, sym in enumerate(watchlist):
+        if cols[i % 5].button(f"✕ {sym}", key=f"rm_{sym}_{selected_list}"):
+            remove_symbol(sym, uid, selected_list)
+            st.rerun()
+
+    # Export
+    csv = df.to_csv(index=False).encode()
     st.download_button(
-        "⬇️ Export watchlist CSV",
-        data=csv_text.encode(),
-        file_name=f"watchlist_{chosen_name}.csv",
+        "⬇ Export as CSV", csv,
+        file_name=f"watchlist_{selected_list}.csv",
         mime="text/csv",
     )

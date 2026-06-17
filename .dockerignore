@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git/
+.gitignore
+.env
+*.log
+logs/
+data/
+.streamlit/secrets.toml
+tests/
+docs/
+*.md
+.devcontainer/
+.github/

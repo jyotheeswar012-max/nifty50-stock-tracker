@@ -1,241 +1,238 @@
 """
-utils/watchlist.py  —  SQLite-backed user watchlist persistence.
+utils/watchlist.py  –  Persistent watchlist storage v2
 
-Schema
-------
-  watchlists   (id INTEGER PK, user_id TEXT, name TEXT, created_at REAL,
-                UNIQUE(user_id, name))
-  watchlist_items (id INTEGER PK, watchlist_id INTEGER FK, symbol TEXT,
-                   position INTEGER, added_at REAL,
-                   UNIQUE(watchlist_id, symbol))
+Storage backends (auto-selected in priority order):
+  1. SQLite  (./data/watchlists.db)  – best for self-hosted / Docker
+  2. JSON file  (./data/watchlist_{uid}.json)  – lightweight fallback
+  3. st.session_state  – last resort for read-only filesystems (Streamlit Cloud)
 
-All writes are transactional.  Positions are dense integers starting at 0;
-reorder() rebuilds them atomically.
-
-Public API
-----------
-  list_watchlists(user_id)              -> list[dict]
-  create_watchlist(user_id, name)       -> int  (new watchlist id)
-  rename_watchlist(wl_id, new_name)     -> None
-  delete_watchlist(wl_id)               -> None
-
-  get_symbols(wl_id)                    -> list[str]
-  add_symbol(wl_id, symbol)             -> None
-  remove_symbol(wl_id, symbol)          -> None
-  reorder_symbols(wl_id, ordered_syms)  -> None
-
-  export_csv(wl_id)                     -> str  (CSV text)
+All public functions are backend-agnostic:
+  load_watchlist(user_id)       -> list[str]
+  save_watchlist(symbols, uid)  -> None
+  add_symbol(symbol, uid)       -> list[str]
+  remove_symbol(symbol, uid)    -> list[str]
+  get_all_watchlists(uid)       -> dict[str, list[str]]  (named lists)
+  create_named_list(name, uid)  -> None
+  delete_named_list(name, uid)  -> None
 """
 from __future__ import annotations
 
-import csv
-import io
-import time
-from typing import Any
+import json
+import os
+import sqlite3
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Optional
 
-from utils.logger import get_logger
+try:
+    import streamlit as st
+    _HAS_ST = True
+except ImportError:
+    _HAS_ST = False
 
-log = get_logger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# DB bootstrap
-# ---------------------------------------------------------------------------
-
-def _conn():
-    """Return a connection to the shared SQLite database."""
-    from utils.db import _db_conn
-    return _db_conn()
-
-
-def _ensure_schema() -> None:
-    """Create tables if they don't exist (idempotent)."""
-    conn = _conn()
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS watchlists (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id     TEXT    NOT NULL,
-            name        TEXT    NOT NULL,
-            created_at  REAL    NOT NULL DEFAULT (unixepoch()),
-            UNIQUE(user_id, name)
-        );
-        CREATE TABLE IF NOT EXISTS watchlist_items (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            watchlist_id INTEGER NOT NULL REFERENCES watchlists(id) ON DELETE CASCADE,
-            symbol       TEXT    NOT NULL,
-            position     INTEGER NOT NULL DEFAULT 0,
-            added_at     REAL    NOT NULL DEFAULT (unixepoch()),
-            UNIQUE(watchlist_id, symbol)
-        );
-        CREATE INDEX IF NOT EXISTS idx_wl_user   ON watchlists(user_id);
-        CREATE INDEX IF NOT EXISTS idx_wli_wl    ON watchlist_items(watchlist_id);
-    """)
-    conn.commit()
-    conn.close()
+_DATA_DIR = Path(os.environ.get("DATA_DIR", "./data"))
+_DATA_DIR.mkdir(parents=True, exist_ok=True)
+_DB_PATH = _DATA_DIR / "watchlists.db"
+_DEFAULT_LIST = "Default"
 
 
-_ensure_schema()
-
-
-# ---------------------------------------------------------------------------
-# Watchlist CRUD
-# ---------------------------------------------------------------------------
-
-def list_watchlists(user_id: str) -> list[dict[str, Any]]:
-    """Return all watchlists owned by *user_id*, ordered by creation time."""
-    conn = _conn()
-    rows = conn.execute(
-        "SELECT id, name, created_at FROM watchlists WHERE user_id=? ORDER BY created_at",
-        (user_id,),
-    ).fetchall()
-    conn.close()
-    return [{"id": r[0], "name": r[1], "created_at": r[2]} for r in rows]
-
-
-def create_watchlist(user_id: str, name: str) -> int:
-    """Create a new watchlist.  Returns the new watchlist id."""
-    name = name.strip()
-    if not name:
-        raise ValueError("Watchlist name cannot be empty")
-    conn = _conn()
+# ─────────────────────────────────────────────────────────────────────────────
+# SQLite helpers
+# ─────────────────────────────────────────────────────────────────────────────
+@contextmanager
+def _db():
+    conn = sqlite3.connect(_DB_PATH, timeout=5)
+    conn.row_factory = sqlite3.Row
     try:
-        cur = conn.execute(
-            "INSERT INTO watchlists (user_id, name, created_at) VALUES (?,?,?)",
-            (user_id, name, time.time()),
-        )
+        yield conn
         conn.commit()
-        new_id = cur.lastrowid
-        log.info("create_watchlist: user=%s name=%r id=%d", user_id, name, new_id)
-        return new_id
-    except Exception as exc:
-        conn.rollback()
-        raise
     finally:
         conn.close()
 
 
-def rename_watchlist(wl_id: int, new_name: str) -> None:
-    """Rename watchlist *wl_id* to *new_name*."""
-    new_name = new_name.strip()
-    if not new_name:
-        raise ValueError("Watchlist name cannot be empty")
-    conn = _conn()
+def _init_db() -> None:
+    with _db() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS watchlists (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id   TEXT    NOT NULL,
+                list_name TEXT    NOT NULL DEFAULT 'Default',
+                symbol    TEXT    NOT NULL,
+                added_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, list_name, symbol)
+            );
+            CREATE INDEX IF NOT EXISTS idx_user ON watchlists(user_id);
+        """)
+
+
+def _db_available() -> bool:
     try:
-        conn.execute("UPDATE watchlists SET name=? WHERE id=?", (new_name, wl_id))
-        conn.commit()
-        log.info("rename_watchlist: id=%d new_name=%r", wl_id, new_name)
-    finally:
-        conn.close()
+        _init_db()
+        return True
+    except Exception:
+        return False
 
 
-def delete_watchlist(wl_id: int) -> None:
-    """Delete watchlist and all its items (CASCADE)."""
-    conn = _conn()
+# ─────────────────────────────────────────────────────────────────────────────
+# JSON file helpers (fallback)
+# ─────────────────────────────────────────────────────────────────────────────
+def _json_path(user_id: str) -> Path:
+    safe = "".join(c for c in user_id if c.isalnum() or c in "-_")
+    return _DATA_DIR / f"watchlist_{safe}.json"
+
+
+def _json_load(user_id: str) -> dict[str, list[str]]:
+    p = _json_path(user_id)
+    if p.exists():
+        try:
+            return json.loads(p.read_text())
+        except Exception:
+            pass
+    return {_DEFAULT_LIST: []}
+
+
+def _json_save(data: dict[str, list[str]], user_id: str) -> None:
     try:
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("DELETE FROM watchlists WHERE id=?", (wl_id,))
-        conn.commit()
-        log.info("delete_watchlist: id=%d", wl_id)
-    finally:
-        conn.close()
+        _json_path(user_id).write_text(json.dumps(data, indent=2))
+    except OSError:
+        pass
 
 
-# ---------------------------------------------------------------------------
-# Symbol CRUD
-# ---------------------------------------------------------------------------
-
-def get_symbols(wl_id: int) -> list[str]:
-    """Return ordered symbol list for watchlist *wl_id*."""
-    conn = _conn()
-    rows = conn.execute(
-        "SELECT symbol FROM watchlist_items WHERE watchlist_id=? ORDER BY position, added_at",
-        (wl_id,),
-    ).fetchall()
-    conn.close()
-    return [r[0] for r in rows]
+# ─────────────────────────────────────────────────────────────────────────────
+# Session-state helpers (last resort)
+# ─────────────────────────────────────────────────────────────────────────────
+def _ss_key(user_id: str) -> str:
+    return f"__watchlist_{user_id}"
 
 
-def add_symbol(wl_id: int, symbol: str) -> None:
-    """Append *symbol* to watchlist *wl_id* (no-op if already present)."""
-    symbol = symbol.strip().upper()
-    conn = _conn()
-    try:
-        max_pos = conn.execute(
-            "SELECT COALESCE(MAX(position), -1) FROM watchlist_items WHERE watchlist_id=?",
-            (wl_id,),
-        ).fetchone()[0]
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO watchlist_items (watchlist_id, symbol, position, added_at)
-            VALUES (?,?,?,?)
-            """,
-            (wl_id, symbol, max_pos + 1, time.time()),
-        )
-        conn.commit()
-        log.debug("add_symbol: wl_id=%d symbol=%s", wl_id, symbol)
-    finally:
-        conn.close()
+def _ss_load(user_id: str) -> dict[str, list[str]]:
+    if _HAS_ST:
+        return st.session_state.get(_ss_key(user_id), {_DEFAULT_LIST: []})
+    return {_DEFAULT_LIST: []}
 
 
-def remove_symbol(wl_id: int, symbol: str) -> None:
-    """Remove *symbol* from watchlist *wl_id*."""
-    symbol = symbol.strip().upper()
-    conn = _conn()
-    try:
-        conn.execute(
-            "DELETE FROM watchlist_items WHERE watchlist_id=? AND symbol=?",
-            (wl_id, symbol),
-        )
-        conn.commit()
-        log.debug("remove_symbol: wl_id=%d symbol=%s", wl_id, symbol)
-    finally:
-        conn.close()
+def _ss_save(data: dict[str, list[str]], user_id: str) -> None:
+    if _HAS_ST:
+        st.session_state[_ss_key(user_id)] = data
 
 
-def reorder_symbols(wl_id: int, ordered_syms: list[str]) -> None:
-    """
-    Reassign dense positions [0, 1, 2, …] to *ordered_syms* atomically.
-    Symbols not present in *ordered_syms* are left at the end.
-    """
-    conn = _conn()
-    try:
-        existing = [r[0] for r in conn.execute(
-            "SELECT symbol FROM watchlist_items WHERE watchlist_id=? ORDER BY position",
-            (wl_id,),
-        ).fetchall()]
-        # Build full ordered list: requested order first, then any stragglers
-        ordered = list(ordered_syms) + [s for s in existing if s not in ordered_syms]
-        for pos, sym in enumerate(ordered):
+# ─────────────────────────────────────────────────────────────────────────────
+# Unified public API
+# ─────────────────────────────────────────────────────────────────────────────
+def _use_db() -> bool:
+    return _db_available()
+
+
+def get_all_watchlists(user_id: str = "default") -> dict[str, list[str]]:
+    """Returns {list_name: [symbol, ...]} for all named lists of this user."""
+    if _use_db():
+        with _db() as conn:
+            rows = conn.execute(
+                "SELECT list_name, symbol FROM watchlists WHERE user_id=? ORDER BY list_name, added_at",
+                (user_id,),
+            ).fetchall()
+        result: dict[str, list[str]] = {}
+        for row in rows:
+            result.setdefault(row["list_name"], []).append(row["symbol"])
+        return result or {_DEFAULT_LIST: []}
+
+    data = _json_load(user_id)
+    if data:
+        return data
+    return _ss_load(user_id)
+
+
+def load_watchlist(user_id: str = "default", list_name: str = _DEFAULT_LIST) -> list[str]:
+    """Returns symbols in the specified named list."""
+    return get_all_watchlists(user_id).get(list_name, [])
+
+
+def save_watchlist(
+    symbols: list[str],
+    user_id: str = "default",
+    list_name: str = _DEFAULT_LIST,
+) -> None:
+    """Replaces all symbols in the specified named list."""
+    symbols = sorted(set(s.upper().strip() for s in symbols if s.strip()))
+    if _use_db():
+        with _db() as conn:
             conn.execute(
-                "UPDATE watchlist_items SET position=? WHERE watchlist_id=? AND symbol=?",
-                (pos, wl_id, sym),
+                "DELETE FROM watchlists WHERE user_id=? AND list_name=?",
+                (user_id, list_name),
             )
-        conn.commit()
-    finally:
-        conn.close()
+            conn.executemany(
+                "INSERT OR IGNORE INTO watchlists (user_id, list_name, symbol) VALUES (?,?,?)",
+                [(user_id, list_name, s) for s in symbols],
+            )
+        return
+
+    data = _json_load(user_id)
+    data[list_name] = symbols
+    _json_save(data, user_id)
+    ss = _ss_load(user_id)
+    ss[list_name] = symbols
+    _ss_save(ss, user_id)
 
 
-# ---------------------------------------------------------------------------
-# CSV export
-# ---------------------------------------------------------------------------
+def add_symbol(
+    symbol: str,
+    user_id: str = "default",
+    list_name: str = _DEFAULT_LIST,
+) -> list[str]:
+    """Adds a symbol; returns updated list."""
+    symbol = symbol.upper().strip()
+    if _use_db():
+        with _db() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO watchlists (user_id, list_name, symbol) VALUES (?,?,?)",
+                (user_id, list_name, symbol),
+            )
+        return load_watchlist(user_id, list_name)
 
-def export_csv(wl_id: int) -> str:
-    """Return a CSV string of all symbols in watchlist *wl_id*."""
-    conn = _conn()
-    rows = conn.execute(
-        """
-        SELECT w.name, i.symbol, i.position, datetime(i.added_at, 'unixepoch') as added_at
-        FROM watchlist_items i
-        JOIN watchlists w ON w.id = i.watchlist_id
-        WHERE i.watchlist_id=?
-        ORDER BY i.position
-        """,
-        (wl_id,),
-    ).fetchall()
-    conn.close()
+    wl = load_watchlist(user_id, list_name)
+    if symbol not in wl:
+        wl.append(symbol)
+        save_watchlist(wl, user_id, list_name)
+    return wl
 
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(["watchlist", "symbol", "position", "added_at"])
-    writer.writerows(rows)
-    return buf.getvalue()
+
+def remove_symbol(
+    symbol: str,
+    user_id: str = "default",
+    list_name: str = _DEFAULT_LIST,
+) -> list[str]:
+    """Removes a symbol; returns updated list."""
+    symbol = symbol.upper().strip()
+    if _use_db():
+        with _db() as conn:
+            conn.execute(
+                "DELETE FROM watchlists WHERE user_id=? AND list_name=? AND symbol=?",
+                (user_id, list_name, symbol),
+            )
+        return load_watchlist(user_id, list_name)
+
+    wl = [s for s in load_watchlist(user_id, list_name) if s != symbol]
+    save_watchlist(wl, user_id, list_name)
+    return wl
+
+
+def create_named_list(list_name: str, user_id: str = "default") -> None:
+    """Creates an empty named watchlist (no-op if already exists)."""
+    if not load_watchlist(user_id, list_name):
+        save_watchlist([], user_id, list_name)
+
+
+def delete_named_list(list_name: str, user_id: str = "default") -> None:
+    """Deletes a named watchlist entirely."""
+    if list_name == _DEFAULT_LIST:
+        return   # protect default list
+    if _use_db():
+        with _db() as conn:
+            conn.execute(
+                "DELETE FROM watchlists WHERE user_id=? AND list_name=?",
+                (user_id, list_name),
+            )
+        return
+    data = _json_load(user_id)
+    data.pop(list_name, None)
+    _json_save(data, user_id)

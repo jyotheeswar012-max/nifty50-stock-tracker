@@ -1,61 +1,57 @@
-# ---------------------------------------------------------------------------
-# Nifty 50 Stock Tracker  —  docker-compose stack
-# ---------------------------------------------------------------------------
-# Usage
-# -----
-#   cp .streamlit/secrets.toml.example .streamlit/secrets.toml   # fill creds
-#   docker compose up --build
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Nifty50 Stock Tracker — Docker Compose
 #
-# The app will be available at http://localhost:8501
+# Quick start:
+#   docker compose up -d --build
 #
-# Secrets
-# -------
-#   .streamlit/secrets.toml is bind-mounted read-only so credentials never
-#   land inside the image layer.  Fill in SMTP / Twilio / Firebase values
-#   before starting the stack.
+# Stop:
+#   docker compose down
 #
-# Data persistence
-# ----------------
-#   SQLite (price cache, model cache, watchlists) lives in the named volume
-#   nifty50_data which survives container restarts and image rebuilds.
-# ---------------------------------------------------------------------------
+# View logs:
+#   docker compose logs -f
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
-  app:
+  tracker:
     build:
       context: .
       dockerfile: Dockerfile
-    image: nifty50-tracker:latest
+      target: runtime
+    image: nifty50-stock-tracker:latest
     container_name: nifty50-tracker
-    restart: unless-stopped
     ports:
       - "${HOST_PORT:-8501}:8501"
     volumes:
-      # Named volume for persistent SQLite data
-      - nifty50_data:/app/data
-      # Secrets bind-mount (read-only; never baked into the image)
-      - ./.streamlit/secrets.toml:/app/.streamlit/secrets.toml:ro
+      - app_data:/data          # watchlist SQLite + ML model cache
     environment:
-      # Override any ENV from Dockerfile here or via a .env file
-      STREAMLIT_SERVER_MAX_UPLOAD_SIZE: "50"
-      # Uncomment to forward host timezone
-      # TZ: "Asia/Kolkata"
+      - DATA_DIR=/data
+      - TZ=Asia/Kolkata
+      # Optional: override Streamlit secrets via env vars
+      # - FIREBASE_API_KEY=${FIREBASE_API_KEY}
+      # - SUPABASE_URL=${SUPABASE_URL}
+      # - SUPABASE_KEY=${SUPABASE_KEY}
+    restart: unless-stopped
+    mem_limit: 1500m
+    cpus: "1.5"
     healthcheck:
-      test:
-        [
-          "CMD", "python", "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"
-        ]
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 25s
     logging:
-      driver: json-file
+      driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
 
 volumes:
-  nifty50_data:
+  app_data:
     driver: local
+    # To use a bind-mount instead (data visible on host):
+    # driver_opts:
+    #   type: none
+    #   o: bind
+    #   device: ./local_data
