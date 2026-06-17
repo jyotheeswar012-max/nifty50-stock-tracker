@@ -435,29 +435,46 @@ with tabs[7]:
         _sec("➕ Add New Alert")
         st.caption(f"Alert emails will be sent to **{user_email}** when the price target is hit.")
 
+        # Show success banner from previous form submission (outside any form)
+        if st.session_state.get("_alert_added_msg"):
+            st.success(st.session_state.pop("_alert_added_msg"))
+
         r2c1, r2c2 = st.columns([2, 1])
         with r2c1:
             al_stock_name = st.selectbox("Stock", [s["name"] for s in NIFTY50], key="al_stock")
         with r2c2:
             al_direction = st.selectbox("Alert when price", ["rises above ↑", "drops below ↓"], key="al_dir")
 
-        # Fetch live price outside form (safe on every rerun)
+        # Fetch live price outside form and pin to session_state so it stays
+        # stable across the rerun that happens after form submission.
         al_sym = next(s["symbol"] for s in NIFTY50 if s["name"] == al_stock_name)
-        try:
-            live_data = fetch_ticker(al_sym, "5d")
-            live_px = safe_float(live_data["Close"].iloc[-1]) if not live_data.empty and "Close" in live_data.columns else 100.0
-        except Exception:
-            live_px = 100.0
+        _px_key = f"_al_live_px_{al_sym}"
+        if _px_key not in st.session_state:
+            try:
+                live_data = fetch_ticker(al_sym, "5d")
+                _fetched = safe_float(live_data["Close"].iloc[-1]) if not live_data.empty and "Close" in live_data.columns else 100.0
+            except Exception:
+                _fetched = 100.0
+            st.session_state[_px_key] = round(_fetched, 2)
+        live_px = st.session_state[_px_key]
 
         st.caption(f"📊 Current price of **{al_stock_name}**: **Rs.{live_px:,.2f}**")
 
         with st.form("add_alert_form", clear_on_submit=True):
-            al_thresh = st.number_input("Target Price (Rs.)", min_value=0.01, value=round(live_px, 2), step=1.0)
+            al_thresh = st.number_input("Target Price (Rs.)", min_value=0.01, value=live_px, step=1.0)
             submitted = st.form_submit_button("🔔 Set Alert", type="primary", use_container_width=True)
             if submitted:
                 direction = "above" if "above" in al_direction else "below"
-                add_alert(stock=al_stock_name, symbol=al_sym, direction=direction, threshold=al_thresh, email=user_email, phone="")
-                st.success(f"✅ Alert set: {al_stock_name} {'>' if direction == 'above' else '<'} Rs.{al_thresh:,.2f} — will email {user_email}")
+                add_alert(stock=al_stock_name, symbol=al_sym, direction=direction,
+                          threshold=al_thresh, email=user_email, phone="")
+                # Store success message in session_state — render it OUTSIDE form on next rerun
+                st.session_state["_alert_added_msg"] = (
+                    f"✅ Alert set: {al_stock_name} "
+                    f"{'>' if direction == 'above' else '<'} Rs.{al_thresh:,.2f} — will email {user_email}"
+                )
+                # Evict pinned price so it re-fetches fresh on next stock selection
+                st.session_state.pop(_px_key, None)
+                st.rerun()
 
         _divider()
 
