@@ -33,7 +33,6 @@ def _style(fig: go.Figure) -> go.Figure:
 
 def build_price_chart(df, name, period, chart_type="Line",
                       y_title="Price (Rs.)", height=440):
-    """Universal OHLCV price chart."""
     log.debug("build_price_chart: name=%s period=%s type=%s rows=%d",
               name, period, chart_type, len(df))
     try:
@@ -70,7 +69,6 @@ def build_price_chart(df, name, period, chart_type="Line",
 # ---------------------------------------------------------------------------
 
 def build_pct_bar(df, x_col, y_col, title, text_col=None, height=360):
-    """Coloured diverging bar chart for % change columns."""
     log.debug("build_pct_bar: title=%s rows=%d", title, len(df))
     try:
         fig = px.bar(
@@ -90,7 +88,6 @@ def build_pct_bar(df, x_col, y_col, title, text_col=None, height=360):
 
 
 def build_closing_bar(df, x_col, y_col, title, height=360):
-    """Simple continuous-colour bar for absolute price columns."""
     log.debug("build_closing_bar: title=%s rows=%d", title, len(df))
     try:
         fig = px.bar(
@@ -111,7 +108,6 @@ def build_closing_bar(df, x_col, y_col, title, height=360):
 
 def build_trend_chart(series_dict, title="Normalised Performance (base=100)",
                       height=360):
-    """Plot multiple normalised price series on one figure."""
     log.debug("build_trend_chart: series=%s", list(series_dict.keys()))
     try:
         fig = go.Figure()
@@ -143,15 +139,12 @@ def build_trend_chart(series_dict, title="Normalised Performance (base=100)",
 
 def build_sector_pie(df_rows: pd.DataFrame, title: str = "Sector Allocation",
                      height: int = 420) -> go.Figure:
-    """Donut chart — weighted by current price sum per sector."""
     log.debug("build_sector_pie: rows=%d cols=%s", len(df_rows), list(df_rows.columns))
     try:
         if "Sector" not in df_rows.columns:
             raise ValueError("'Sector' column missing from df_rows")
 
         if "_curr" in df_rows.columns:
-            # Explicit numeric cast on a plain copy — avoids pandas MultiIndex
-            # column bug that occurs with groupby().apply() in newer pandas.
             tmp = df_rows[["Sector", "_curr"]].copy()
             tmp["_curr"] = pd.to_numeric(tmp["_curr"], errors="coerce")
             tmp = tmp.dropna(subset=["_curr"])
@@ -164,9 +157,7 @@ def build_sector_pie(df_rows: pd.DataFrame, title: str = "Sector Allocation",
             values_col, value_label = "Count", "Stock Count"
 
         grp = grp[grp[values_col] > 0].copy()
-
         if grp.empty:
-            log.warning("build_sector_pie: no sectors with positive value after filter")
             return go.Figure()
 
         _PALETTE = [
@@ -174,7 +165,6 @@ def build_sector_pie(df_rows: pd.DataFrame, title: str = "Sector Allocation",
             "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#84cc16",
             "#0ea5e9", "#a78bfa",
         ]
-
         fig = go.Figure(go.Pie(
             labels=grp["Sector"],
             values=grp[values_col],
@@ -184,9 +174,7 @@ def build_sector_pie(df_rows: pd.DataFrame, title: str = "Sector Allocation",
             marker=dict(colors=_PALETTE[:len(grp)], line=dict(color="#ffffff", width=2)),
         ))
         fig.update_layout(
-            **PLT_LAYOUT,
-            title=title,
-            height=height,
+            **PLT_LAYOUT, title=title, height=height,
             legend=dict(orientation="v", x=1.02, y=0.5),
             margin=dict(t=60, b=20, l=20, r=160),
         )
@@ -207,8 +195,16 @@ def build_correlation_heatmap(
     title: str = "30-Day Return Correlation",
     height: int = 580,
 ) -> go.Figure:
-    """Heatmap of pairwise Pearson correlations of daily returns."""
-    log.debug("build_correlation_heatmap: %d symbols", len(symbols))
+    """Heatmap of pairwise Pearson correlations of daily returns.
+
+    Robustness fixes
+    ----------------
+    1. Force all close series to float64 before building the DataFrame.
+    2. Fill NaN in the correlation matrix with 0.0 so Plotly never gets NaN
+       in the z-array (which causes an empty/invisible heatmap).
+    3. Drop columns/rows that are still all-NaN after forward-fill.
+    """
+    log.debug("build_correlation_heatmap: %d symbols requested", len(symbols))
     try:
         if labels is None:
             labels = [s.replace(".NS", "") for s in symbols]
@@ -216,41 +212,69 @@ def build_correlation_heatmap(
         closes: dict[str, pd.Series] = {}
         for sym, lbl in zip(symbols, labels):
             h = all_hist.get(sym)
-            if h is not None and not h.empty and "Close" in h.columns:
-                closes[lbl] = h["Close"].sort_index()
+            if h is None or h.empty:
+                continue
+            # Normalise column name
+            col = None
+            for candidate in ("Close", "Adj Close", "AdjClose"):
+                if candidate in h.columns:
+                    col = candidate
+                    break
+            if col is None:
+                continue
+            s = pd.to_numeric(h[col], errors="coerce").dropna()
+            if len(s) < 5:
+                continue
+            closes[lbl] = s.sort_index().astype(float)
+
+        log.debug("build_correlation_heatmap: %d valid series", len(closes))
 
         if len(closes) < 2:
-            log.warning("build_correlation_heatmap: fewer than 2 valid series")
+            log.warning("build_correlation_heatmap: not enough valid series (%d)", len(closes))
             return go.Figure()
 
-        price_df = pd.DataFrame(closes).dropna(how="all")
-        returns  = price_df.pct_change().dropna(how="all").tail(30)
-        corr     = returns.corr()
+        price_df = pd.DataFrame(closes)
+        # Forward-fill sparse gaps then drop rows still all-NaN
+        price_df = price_df.ffill().dropna(how="all")
 
-        z    = corr.values
+        returns = price_df.pct_change().replace([np.inf, -np.inf], np.nan)
+        returns = returns.dropna(how="all").tail(30)
+
+        if returns.shape[0] < 2:
+            log.warning("build_correlation_heatmap: too few return rows after cleaning")
+            return go.Figure()
+
+        corr = returns.corr(min_periods=2)
+
+        # KEY FIX: replace NaN with 0 so Plotly renders every cell
+        z_raw = corr.values.astype(float)
+        z = np.nan_to_num(z_raw, nan=0.0, posinf=1.0, neginf=-1.0)
+
+        cols = corr.columns.tolist()
+        rows = corr.index.tolist()
         text = [[f"{v:.2f}" for v in row] for row in z]
 
         fig = go.Figure(go.Heatmap(
             z=z,
-            x=corr.columns.tolist(),
-            y=corr.index.tolist(),
+            x=cols,
+            y=rows,
             text=text,
             texttemplate="%{text}",
-            textfont=dict(size=10),
+            textfont=dict(size=9),
             colorscale="RdBu",
-            zmid=0,
-            zmin=-1, zmax=1,
-            hovertemplate="%{y} \u2194 %{x}: <b>%{z:.3f}</b><extra></extra>",
+            zmid=0, zmin=-1, zmax=1,
+            hovertemplate="%{y} ↔ %{x}: <b>%{z:.3f}</b><extra></extra>",
             colorbar=dict(title="r", thickness=12, len=0.8),
         ))
         fig.update_layout(
             **PLT_LAYOUT,
             title=title,
             height=height,
-            xaxis=dict(tickangle=-45, tickfont=dict(size=10)),
-            yaxis=dict(tickfont=dict(size=10)),
+            xaxis=dict(tickangle=-45, tickfont=dict(size=9)),
+            yaxis=dict(tickfont=dict(size=9)),
             margin=dict(t=60, b=120, l=80, r=60),
         )
+        log.debug("build_correlation_heatmap: success (%dx%d)", len(rows), len(cols))
         return fig
     except Exception as exc:
         log.error("build_correlation_heatmap failed: %s", exc, exc_info=True)
@@ -268,22 +292,37 @@ def build_sparkline_table(
     lookback: int = 20,
     height: int = 560,
 ) -> go.Figure:
-    """Small multiples: one sparkline per Nifty50 stock in a 5-column grid."""
+    """Small multiples — one sparkline per stock.
+
+    Robustness fixes
+    ----------------
+    1. Force close values to float64 ndarray so Plotly never receives an
+       object-dtype array (which renders as an empty trace).
+    2. Guard against division-by-zero when computing pct_chg.
+    """
     log.debug("build_sparkline_table: %d symbols lookback=%d", len(symbols), lookback)
     try:
         if labels is None:
             labels = [s.replace(".NS", "") for s in symbols]
 
-        valid_pairs = [
-            (sym, lbl)
-            for sym, lbl in zip(symbols, labels)
-            if stock_hist.get(sym) is not None
-            and not stock_hist[sym].empty
-            and "Close" in stock_hist[sym].columns
-        ]
+        valid_pairs: list[tuple[str, str]] = []
+        for sym, lbl in zip(symbols, labels):
+            h = stock_hist.get(sym)
+            if h is None or h.empty:
+                continue
+            col = None
+            for candidate in ("Close", "Adj Close", "AdjClose"):
+                if candidate in h.columns:
+                    col = candidate
+                    break
+            if col is None:
+                continue
+            valid_pairs.append((sym, lbl))
+
+        log.debug("build_sparkline_table: %d valid pairs", len(valid_pairs))
 
         if not valid_pairs:
-            log.warning("build_sparkline_table: no valid series")
+            log.warning("build_sparkline_table: no valid series found")
             return go.Figure()
 
         COLS = 5
@@ -298,14 +337,28 @@ def build_sparkline_table(
         for idx, (sym, lbl) in enumerate(valid_pairs):
             row = idx // COLS + 1
             col = idx % COLS + 1
-            close = stock_hist[sym]["Close"].sort_index().tail(lookback)
-            pct_chg = (close.iloc[-1] / close.iloc[0] - 1) * 100 if len(close) >= 2 else 0.0
-            colour  = "#10b981" if pct_chg >= 0 else "#ef4444"
+
+            h = stock_hist[sym]
+            close_col = "Close" if "Close" in h.columns else \
+                        "Adj Close" if "Adj Close" in h.columns else "AdjClose"
+
+            # Force float64 ndarray — critical for Plotly to render
+            raw = pd.to_numeric(h[close_col], errors="coerce")\
+                    .dropna().sort_index().tail(lookback)
+            y_vals = raw.values.astype(np.float64)
+            x_vals = list(range(len(y_vals)))
+
+            if len(y_vals) < 2:
+                continue
+
+            first, last = float(y_vals[0]), float(y_vals[-1])
+            pct_chg = ((last - first) / first * 100) if first != 0 else 0.0
+            colour = "#10b981" if pct_chg >= 0 else "#ef4444"
 
             fig.add_trace(
                 go.Scatter(
-                    x=list(range(len(close))),
-                    y=close.values,
+                    x=x_vals,
+                    y=y_vals.tolist(),   # plain Python list — safest for Plotly
                     mode="lines",
                     line=dict(color=colour, width=1.5),
                     name=lbl,
@@ -316,7 +369,6 @@ def build_sparkline_table(
             )
             fig.update_xaxes(showticklabels=False, row=row, col=col)
             fig.update_yaxes(showticklabels=False, row=row, col=col)
-
             fig.add_annotation(
                 text=f"<b>{lbl}</b> {pct_chg:+.1f}%",
                 xref="paper", yref="paper",
@@ -335,6 +387,7 @@ def build_sparkline_table(
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
         )
+        log.debug("build_sparkline_table: success (%d pairs)", len(valid_pairs))
         return fig
     except Exception as exc:
         log.error("build_sparkline_table failed: %s", exc, exc_info=True)
@@ -342,14 +395,13 @@ def build_sparkline_table(
 
 
 # ---------------------------------------------------------------------------
-# Static fallback history — always-available synthetic OHLCV data
+# Static fallback history
 # ---------------------------------------------------------------------------
 
 def _build_static_history() -> dict[str, pd.DataFrame]:
-    """Generate 35 business days of deterministic synthetic OHLCV for all 50
-    Nifty stocks.  Seeded per-symbol via MD5 so values are stable across
-    page refreshes.  Called when live yfinance data is unavailable so that
-    Sector Pie, Correlation Heatmap and Sparklines always render.
+    """Deterministic synthetic OHLCV for all 50 Nifty stocks.
+    Seeded per-symbol via MD5 — stable across restarts.
+    Always returns 35 rows of clean float64 data.
     """
     _SEED: dict[str, float] = {
         "RELIANCE.NS": 1480,   "HDFCBANK.NS": 1920,  "ICICIBANK.NS": 1340,
@@ -400,16 +452,16 @@ def _build_static_history() -> dict[str, pd.DataFrame]:
         n   = len(dates)
 
         rets   = rng.normal(0.0002, vol, n)
-        closes = np.zeros(n)
-        closes[-1] = seed_price
+        closes = np.zeros(n, dtype=np.float64)
+        closes[-1] = float(seed_price)
         for i in range(n - 2, -1, -1):
             closes[i] = closes[i + 1] / (1.0 + rets[i + 1])
 
         spread = closes * vol * 0.8
-        opens  = closes + rng.uniform(-spread * 0.5, spread * 0.5)
-        highs  = np.maximum(opens, closes) + np.abs(rng.normal(0, spread * 0.5))
-        lows   = np.minimum(opens, closes) - np.abs(rng.normal(0, spread * 0.5))
-        volume = rng.integers(500_000, 5_000_000, n).astype(float)
+        opens  = (closes + rng.uniform(-spread * 0.5, spread * 0.5)).astype(np.float64)
+        highs  = (np.maximum(opens, closes) + np.abs(rng.normal(0, spread * 0.5))).astype(np.float64)
+        lows   = (np.minimum(opens, closes) - np.abs(rng.normal(0, spread * 0.5))).astype(np.float64)
+        volume = rng.integers(500_000, 5_000_000, n).astype(np.float64)
 
         result[sym] = pd.DataFrame(
             {"Open": opens, "High": highs, "Low": lows,
