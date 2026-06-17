@@ -38,24 +38,40 @@ def _sanitize_numeric_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _is_usable_hist(hist: dict) -> bool:
+    """Return True only if hist has >=10 symbols with non-empty Close columns."""
+    if not isinstance(hist, dict):
+        return False
+    usable = 0
+    for df in hist.values():
+        if df is not None and not df.empty and "Close" in df.columns:
+            closes = df["Close"].dropna()
+            if len(closes) >= 5:
+                usable += 1
+    log.info("tab_companies: _is_usable_hist -> %d usable symbols", usable)
+    return usable >= 10
+
+
 def _get_history() -> tuple[dict, bool]:
     """Return (history_dict, is_live).
-    Tries live yfinance first; ALWAYS falls back to static synthetic data.
-    Static data is guaranteed non-empty so charts always render.
+    Validates live data has actual Close columns; always falls back to
+    deterministic static data so charts are guaranteed to render.
     """
     # --- Try live ---
     try:
         from utils.data import fetch_all_history
         hist = fetch_all_history()
-        if isinstance(hist, dict) and len(hist) >= 10:
-            log.info("tab_companies: using live history (%d symbols)", len(hist))
+        if _is_usable_hist(hist):
+            log.info("tab_companies: using validated live history")
             return hist, True
+        else:
+            log.warning("tab_companies: live history failed validation — using static")
     except Exception as exc:
         log.warning("tab_companies: live fetch failed: %s", exc)
 
-    # --- Guaranteed fallback ---
-    log.info("tab_companies: using static synthetic history")
+    # --- Guaranteed static fallback ---
     static = _build_static_history()
+    log.info("tab_companies: static history has %d symbols", len(static))
     return static, False
 
 
@@ -73,6 +89,60 @@ def _build_pie_from_history(history: dict, title: str) -> object:
     return build_sector_pie(pd.DataFrame(rows), title=title)
 
 
+def _render_dashboard_metrics(all_hist: dict, df_rows: pd.DataFrame) -> None:
+    """Mini dashboard row: top gainer, top loser, most volatile, avg return."""
+    try:
+        import numpy as np
+        gains, losses, vols = [], [], []
+        for s in NIFTY50:
+            sym = s["symbol"]
+            h = all_hist.get(sym)
+            if h is None or h.empty or "Close" not in h.columns:
+                continue
+            closes = h["Close"].dropna()
+            if len(closes) < 2:
+                continue
+            ret_pct = (closes.iloc[-1] / closes.iloc[0] - 1) * 100
+            daily_std = closes.pct_change().dropna().std() * 100
+            name = s["name"]
+            gains.append((ret_pct, name, sym))
+            losses.append((ret_pct, name, sym))
+            vols.append((daily_std, name, sym))
+
+        if not gains:
+            return
+
+        gains.sort(reverse=True)
+        losses.sort()
+        vols.sort(reverse=True)
+        avg_ret = sum(g[0] for g in gains) / len(gains)
+
+        st.markdown("### 📊 Quick Dashboard")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric(
+            "🚀 Top Gainer (30D)",
+            gains[0][1],
+            f"{gains[0][0]:+.1f}%",
+        )
+        c2.metric(
+            "📉 Top Loser (30D)",
+            losses[0][1],
+            f"{losses[0][0]:+.1f}%",
+        )
+        c3.metric(
+            "⚡ Most Volatile",
+            vols[0][1],
+            f"σ {vols[0][0]:.2f}%/day",
+        )
+        c4.metric(
+            "📈 Avg 30D Return",
+            "Nifty 50",
+            f"{avg_ret:+.1f}%",
+        )
+    except Exception as exc:
+        log.warning("tab_companies: dashboard metrics failed: %s", exc)
+
+
 def render(
     market_open: bool,
     market_status: str,
@@ -84,6 +154,26 @@ def render(
     hero("All 50 Companies",
          "Live prices" if market_open else "Last closing prices")
     closed_banner(market_open, market_status, last_close_label)
+
+    # ── Fetch history EARLY — used by dashboard + all charts ──────────────
+    with st.spinner("Loading price history…"):
+        all_hist, is_live = _get_history()
+
+    # Double-safety: if still empty for any reason, force static
+    if not all_hist:
+        log.error("tab_companies: all_hist empty after _get_history — forcing static")
+        all_hist = _build_static_history()
+        is_live = False
+
+    if not is_live:
+        st.info(
+            "⚠️ Live market history unavailable. "
+            "Charts below use representative synthetic data."
+        )
+
+    # ── Mini Dashboard ────────────────────────────────────────────────────
+    _render_dashboard_metrics(all_hist, pd.DataFrame())
+    divider()
 
     sectors = ["All"] + sorted({s["sector"] for s in NIFTY50})
     sel_sec = st.selectbox("Sector", sectors, key="all_sec")
@@ -112,24 +202,6 @@ def render(
     )
 
     divider()
-
-    # ── Fetch history ONCE — used by ALL three charts ─────────────────────
-    with st.spinner("Loading price history…"):
-        all_hist, is_live = _get_history()
-
-    # Defensive: if somehow still empty, force static
-    if not all_hist:
-        log.error("tab_companies: _get_history returned empty dict — forcing static")
-        all_hist = _build_static_history()
-        is_live = False
-
-    if not is_live:
-        st.info(
-            "⚠️ Live market history unavailable. "
-            "Charts below use representative synthetic data."
-        )
-
-    log.info("tab_companies: all_hist has %d symbols", len(all_hist))
 
     # Narrow to selected sector
     if sel_sec != "All":
@@ -175,15 +247,16 @@ def render(
 
     divider()
 
-    # ── Correlation heatmap ───────────────────────────────────────────────
+    # ── Correlation Heatmap ───────────────────────────────────────────────
     sec("30-Day Return Correlation Heatmap")
     st.caption(
         "Pairwise Pearson correlations of daily returns over the last 30 trading sessions. "
         "Blue\u00a0=\u00a0negative, red\u00a0=\u00a0positive."
     )
-    # Log which symbols from the sector are actually in all_hist
-    present = [s for s in sector_syms if s in all_hist]
-    log.info("tab_companies: heatmap — %d/%d sector symbols in history", len(present), len(sector_syms))
+    present = [s for s in sector_syms if s in all_hist
+               and "Close" in all_hist[s].columns
+               and len(all_hist[s]["Close"].dropna()) >= 5]
+    log.info("tab_companies: heatmap — %d/%d symbols usable", len(present), len(sector_syms))
     try:
         hm_height = max(400, min(700, len(sector_syms) * 14 + 120))
         fig_hm = build_correlation_heatmap(
