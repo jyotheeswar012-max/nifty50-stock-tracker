@@ -48,36 +48,32 @@ def twilio_configured() -> bool:
 def send_email(to: str, subject: str, body: str) -> tuple[bool, str]:
     """Send a plain-text email via Gmail SMTP (or any STARTTLS host).
 
-    Uses UTF-8 throughout so non-ASCII characters (₹, emoji, etc.)
-    never trigger the 'ascii codec can't encode' error.
+    Uses smtp.send_message() which handles UTF-8 encoding internally,
+    so ₹, emoji, and other non-ASCII characters are transmitted correctly.
     """
     if not smtp_configured():
         return False, "SMTP not configured — add [smtp] to secrets.toml"
     try:
         import smtplib
-        from email.headerregistry import Address
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.text import MIMEText
-        from email.header import Header
+        from email.message import EmailMessage
 
         s        = st.secrets["smtp"]
-        from_hdr = s.get("from", s["user"])
         port     = int(s.get("port", 587))
+        from_hdr = s.get("from", s["user"])
 
-        msg          = MIMEMultipart()
-        msg["From"]  = from_hdr
-        msg["To"]    = to
-        # Encode subject as UTF-8 quoted-printable so ₹ / emoji survive
-        msg["Subject"] = Header(subject, charset="utf-8")
-        # _charset="utf-8" ensures the body is encoded as UTF-8, not ASCII
-        msg.attach(MIMEText(body, "plain", _charset="utf-8"))
+        msg = EmailMessage()
+        msg["From"]    = from_hdr
+        msg["To"]      = to
+        msg["Subject"] = subject          # EmailMessage handles UTF-8 natively
+        msg.set_content(body, charset="utf-8")
 
         with smtplib.SMTP(s["host"], port, timeout=12) as srv:
             srv.ehlo()
             srv.starttls()
             srv.login(s["user"], s["password"])
-            # as_bytes() uses the charset declared in each MIME part (UTF-8)
-            srv.sendmail(s["user"], to, msg.as_bytes().decode("utf-8", errors="replace"))
+            # send_message() serialises as bytes internally — no ASCII codec involved
+            srv.send_message(msg)
+
         return True, ""
     except Exception as exc:
         return False, str(exc)
