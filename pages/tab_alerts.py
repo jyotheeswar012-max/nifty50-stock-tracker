@@ -1,3 +1,3 @@
-# This file is intentionally blank.
-# The real implementation is in tabs/tab_alerts.py
-# It is kept here as an empty stub so git does not re-add it.
+# This file intentionally left blank.
+# Real implementation is in pages/_tab_alerts.py (underscore prefix hides from Streamlit page registry).
+# DO NOT add any streamlit code here.
