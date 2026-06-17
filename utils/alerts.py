@@ -19,6 +19,24 @@ _KEY = "_alerts_by_user"
 _LOG = "_alert_log"
 
 
+def _fmt(value: float) -> str:
+    """Format a price as a plain ASCII string with comma thousands separator.
+
+    Python's f"{x:,.2f}" can emit a non-breaking space (\xa0) as the
+    thousands separator when the process locale uses it (common on some
+    Linux/cloud environments).  Building the string manually guarantees
+    only ASCII characters, which keeps SMTP transport happy.
+    """
+    # Round to 2 dp, then split on decimal point
+    integer_part, decimal_part = f"{value:.2f}".split(".")
+    # Insert commas every 3 digits from the right (Indian-style not needed;
+    # standard international format is fine for email)
+    chars = list(integer_part)
+    for i in range(len(chars) - 3, 0, -3):
+        chars.insert(i, ",")
+    return "".join(chars) + "." + decimal_part
+
+
 # ---------------------------------------------------------------------------
 # Storage helpers
 # ---------------------------------------------------------------------------
@@ -92,19 +110,24 @@ def fire_alerts(live_prices: dict[str, float], user_email: str) -> int:
         fired += 1
 
         direction_word = "crossed above" if alert["direction"] == "above" else "dropped below"
-        subject = f"🔔 Nifty50 Alert: {alert['stock']} {direction_word} ₹{alert['threshold']:,.2f}"
+
+        # Use _fmt() to guarantee ASCII-only price strings (no \xa0 thousands sep)
+        threshold_str = _fmt(alert["threshold"])
+        price_str     = _fmt(price)
+
+        subject = f"Nifty50 Alert: {alert['stock']} {direction_word} Rs.{threshold_str}"
         body = (
             f"Your price alert has been triggered!\n\n"
             f"Stock     : {alert['stock']} ({alert['symbol']})\n"
-            f"Condition : Price {direction_word} ₹{alert['threshold']:,.2f}\n"
-            f"Current   : ₹{price:,.2f}\n"
+            f"Condition : Price {direction_word} Rs.{threshold_str}\n"
+            f"Current   : Rs.{price_str}\n"
             f"Time      : {datetime.now(IST).strftime('%d %b %Y %I:%M:%S %p IST')}\n\n"
-            f"— NSE & Nifty 50 Tracker"
+            f"-- NSE & Nifty 50 Tracker"
         )
 
-        log_parts = [f"Alert #{alert['id']} fired — {alert['stock']} @ ₹{price:,.2f}"]
+        log_parts = [f"Alert #{alert['id']} fired -- {alert['stock']} @ Rs.{price_str}"]
         ok, err = send_email(alert["email"], subject, body)
-        log_parts.append(f"Email {'✅' if ok else '❌ ' + err}")
+        log_parts.append(f"Email {'OK' if ok else 'FAILED: ' + err}")
         _append_log(user_email, " | ".join(log_parts))
 
     return fired
