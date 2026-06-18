@@ -1,8 +1,4 @@
-"""NSE & Nifty 50 Tracker — Streamlit entry point.
-
-app.py is intentionally thin: startup, sidebar, status banner, tab wiring.
-All tab logic lives in pages/tab_*.py.
-"""
+"""NSE & Nifty 50 Tracker — Streamlit entry point."""
 import time
 import warnings
 from datetime import datetime
@@ -24,7 +20,6 @@ from utils.logger import get_logger, read_recent_logs, log_file_path
 log = get_logger(__name__)
 log.info("app.py startup")
 
-# Inject responsive CSS before any content renders
 from utils.mobile_css import inject_mobile_css
 inject_mobile_css()
 
@@ -34,7 +29,7 @@ try:
     inject_topbar()
 except ImportError as exc:
     log.warning("theme module unavailable: %s", exc)
-except Exception as exc:  # noqa: BLE001
+except Exception as exc:
     log.error("theme injection failed: %s", exc, exc_info=True)
 
 from utils.constants import REFRESH_MS, CACHE_TTL
@@ -59,24 +54,20 @@ def _show_data_warnings() -> None:
         st.warning(w)
 
 
-# ── Sidebar ─────────────────────────────────────────────────────────────────
+# ── Sidebar — source status is cached 10 min, never blocks page load ─────────
 with st.sidebar:
-    st.markdown("### \u2699\ufe0f System")
-    with st.expander("\U0001f50c Data Source Status", expanded=False):
+    st.markdown("### ⚙️ System")
+    with st.expander("🔌 Data Source Status", expanded=False):
+        # get_source_status() is cached 10 min — safe to call here
         try:
             src = get_source_status()
-            icons = {
-                "ok": "\U0001f7e2",
-                "degraded": "\U0001f7e1",
-                "down": "\U0001f534",
-                "not installed": "\u26ab",
-            }
+            icons = {"ok": "🟢", "degraded": "🟡", "down": "🔴", "not installed": "⚫"}
             st.markdown(f"{icons.get(src.get('yfinance','?'),'?')} **Yahoo Finance**: `{src.get('yfinance','?')}`")
             st.markdown(f"{icons.get(src.get('nselib','?'),'?')} **NSE (nselib)**: `{src.get('nselib','?')}`")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.error("sidebar: get_source_status failed: %s", exc, exc_info=True)
             st.caption("Status unavailable")
-    with st.expander("\U0001f4cb Live Logs", expanded=False):
+    with st.expander("📋 Live Logs", expanded=False):
         try:
             n_lines = st.slider("Lines", 20, 200, 50, step=10, key="log_lines")
             level_filter = st.selectbox(
@@ -94,12 +85,12 @@ with st.sidebar:
         except (OSError, ValueError) as exc:
             log.error("sidebar: log viewer failed: %s", exc, exc_info=True)
             st.caption("Log viewer unavailable")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.error("sidebar: log viewer unexpected: %s", exc, exc_info=True)
             st.caption("Log viewer unavailable")
 
 
-# ── Live status banner ─────────────────────────────────────────────────────────
+# ── Live status banner — only auto-refreshes when market is open ──────────────
 @st.fragment(run_every=REFRESH_MS / 1000 if market_open else None)
 def _status_banner() -> None:
     try:
@@ -110,16 +101,16 @@ def _status_banner() -> None:
             next_data_in = CACHE_TTL - (int(time.time()) % CACHE_TTL)
             st.success(
                 pulse + "  NSE LIVE  |  " + ist_str
-                + "  |  Refreshing every 5s  |  New data in "
+                + "  |  Refreshing every 60s  |  New data in "
                 + str(next_data_in) + "s  |  MARKET OPEN"
             )
         else:
             st.warning(
-                "NSE CLOSED \u2014 " + market_status
+                "NSE CLOSED — " + market_status
                 + (" | " + last_close_label if last_close_label else "")
                 + " | Showing last closing prices"
             )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.error("_status_banner failed: %s", exc, exc_info=True)
         st.info("NSE Tracker")
 
@@ -127,7 +118,7 @@ def _status_banner() -> None:
 _status_banner()
 _show_data_warnings()
 
-# ── Tabs ─────────────────────────────────────────────────────────────────────
+# ── Tabs ──────────────────────────────────────────────────────────────────────
 tabs = st.tabs([
     "Market Overview",
     "Nifty 50 Index",
@@ -136,7 +127,7 @@ tabs = st.tabs([
     "P&L Calculator",
     "Stock Chart",
     "Time Machine",
-    "\U0001f514 Alerts",
+    "🔔 Alerts",
 ])
 
 _ctx = dict(

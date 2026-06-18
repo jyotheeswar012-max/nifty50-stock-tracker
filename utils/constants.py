@@ -1,8 +1,27 @@
 """Shared constants, static data, and Plotly theme config."""
 from datetime import date
+import datetime as _dt
+import pytz as _pytz
 
-REFRESH_MS = 5_000
-CACHE_TTL  = 15
+# ---------------------------------------------------------------------------
+# Auto-detect market open for smarter cache TTLs
+# ---------------------------------------------------------------------------
+def _market_is_open() -> bool:
+    try:
+        ist = _pytz.timezone("Asia/Kolkata")
+        now = _dt.datetime.now(ist)
+        if now.weekday() >= 5:
+            return False
+        h, m = now.hour, now.minute
+        return (h > 9 or (h == 9 and m >= 15)) and (h < 15 or (h == 15 and m <= 30))
+    except Exception:
+        return False
+
+# Refresh every 60s when live, every 5 min when closed — UI banner only
+REFRESH_MS = 60_000 if _market_is_open() else 300_000
+
+# Data cache: 60s live, 5 min closed
+CACHE_TTL = 60 if _market_is_open() else 300
 
 NIFTY50 = [
     {"symbol":"RELIANCE.NS",   "name":"Reliance Industries",    "sector":"Energy",             "beta":0.90},
