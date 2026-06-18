@@ -1,10 +1,7 @@
-# Streamlit multipage config — MINIMAL
-# Only keep app.py as the main entry. All other navigation is via tabs inside app.py.
+# Minimal pages.toml to fix Streamlit navigation crash
+# Main navigation handled via tabs in app.py
 
 [[pages]]
 path = "app.py"
 name = "NSE Tracker"
 icon = "🏦"
-
-# Disable all other pages to stop the navigation crash
-# (You can re-enable individual ones later once they are cleaned)
