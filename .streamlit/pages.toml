@@ -1,5 +1,5 @@
-# Minimal pages.toml — disable all pages/ to avoid navigation crash
-# All navigation now via tabs in app.py only
+# Disabled multi-page navigation to fix StreamlitAPIException
+# All navigation handled inside app.py via tabs
 
 [[pages]]
 path = "app.py"
