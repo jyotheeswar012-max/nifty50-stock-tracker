@@ -17,6 +17,7 @@ get_multiple_stocks(symbols, period)  → dict[str, pd.DataFrame]
 get_nifty50_data(period)              → dict[str, pd.DataFrame]
 fetch_intraday(symbol)                → pd.DataFrame (intraday 1d)
 fetch_all_stocks_5d()                 → dict[str, pd.DataFrame] (5-day history)
+fetch_all_history()                   → dict[str, pd.DataFrame] (max history, for Time Machine)
 is_nse_open()                         → (bool, str, str)
 get_source_status()                   → dict {yfinance, nselib}
 """
@@ -439,6 +440,49 @@ def fetch_all_stocks_5d() -> dict[str, pd.DataFrame]:
 
     log.info("fetch_all_stocks_5d: returning %d symbols", len(data))
     return data
+
+
+@st.cache_data(ttl=_CACHE_TTL_HIST, show_spinner=False)
+def fetch_all_history() -> dict[str, pd.DataFrame]:
+    """Fetch maximum available OHLCV history for all 50 Nifty stocks.
+
+    Used by the Time Machine tab to allow travel to any historical date.
+    Fetches "max" period (~20 years) per symbol via yfinance, falling back
+    to a wide static history if the network call fails.
+    Returns a dict keyed by full symbol (e.g. "RELIANCE.NS").
+    """
+    log.info("fetch_all_history: fetching max history for all 50 symbols")
+    all_syms = [s["symbol"] for s in NIFTY50]
+    result: dict[str, pd.DataFrame] = {}
+
+    for sym in all_syms:
+        # Check cache first (keyed with period="max")
+        cached = price_cache_read(sym, "max")
+        if cached is not None and _validate_ohlcv(cached, min_rows=10):
+            result[sym] = cached
+            continue
+        try:
+            df = _yf_history(sym, period="max")
+            if _validate_ohlcv(df, min_rows=10):
+                result[sym] = df
+            else:
+                # Fallback: try 10y if "max" gives nothing
+                df2 = _yf_history(sym, period="10y")
+                if _validate_ohlcv(df2, min_rows=10):
+                    result[sym] = df2
+                else:
+                    log.warning("fetch_all_history: no live data for %s, using static", sym)
+                    static = _build_static_hist()
+                    if sym in static:
+                        result[sym] = static[sym]
+        except Exception as exc:
+            log.error("fetch_all_history: failed for %s: %s", sym, exc, exc_info=True)
+            static = _build_static_hist()
+            if sym in static:
+                result[sym] = static[sym]
+
+    log.info("fetch_all_history: returning %d/%d symbols", len(result), len(all_syms))
+    return result
 
 
 def get_source_status() -> dict[str, str]:
