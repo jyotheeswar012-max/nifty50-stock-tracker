@@ -10,6 +10,7 @@ Public API
 ----------
 get_stock_data(symbol, period)        → pd.DataFrame (OHLCV)
 fetch_ticker(symbol, period)          → pd.DataFrame (alias for get_stock_data)
+fetch_indices(period)                 → dict[str, pd.DataFrame] (NSE indices)
 get_last_price(symbol)                → dict {price, change_pct, day_high, day_low}
 get_multiple_stocks(symbols, period)  → dict[str, pd.DataFrame]
 get_nifty50_data(period)              → dict[str, pd.DataFrame]
@@ -28,7 +29,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from utils.constants import NIFTY50
+from utils.constants import NIFTY50, NSE_INDICES
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -268,6 +269,27 @@ def get_stock_data(symbol: str, period: str = "1mo") -> pd.DataFrame:
 def fetch_ticker(symbol: str, period: str = "1mo") -> pd.DataFrame:
     """Alias for get_stock_data — used by tab_nifty and other tab modules."""
     return get_stock_data(symbol, period)
+
+
+@st.cache_data(ttl=_CACHE_TTL_LIVE, show_spinner=False)
+def fetch_indices(period: str = "5d") -> dict[str, pd.DataFrame]:
+    """Fetch OHLCV history for all NSE_INDICES (^NSEI, ^NSEBANK, etc.).
+
+    Returns a dict keyed by symbol, e.g. {"^NSEI": df, "^NSEBANK": df, ...}.
+    Falls back to an empty DataFrame for any symbol that fails.
+    """
+    log.info("fetch_indices: period=%s", period)
+    symbols = [idx["symbol"] for idx in NSE_INDICES]
+    result: dict[str, pd.DataFrame] = {}
+    for sym in symbols:
+        try:
+            df = _yf_history(sym, period)
+            result[sym] = df if _validate_ohlcv(df) else pd.DataFrame()
+        except Exception as exc:
+            log.warning("fetch_indices: failed for %s: %s", sym, exc)
+            result[sym] = pd.DataFrame()
+    log.info("fetch_indices: returning %d symbols", len(result))
+    return result
 
 
 @st.cache_data(ttl=_CACHE_TTL_LIVE, show_spinner=False)
