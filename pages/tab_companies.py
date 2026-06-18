@@ -19,6 +19,43 @@ log = get_logger(__name__)
 
 _PURE_NUM = r"^[\-+]?[\d,\.]+$"
 
+# ---------------------------------------------------------------------------
+# Shared chart style constants — light theme friendly
+# ---------------------------------------------------------------------------
+_CHART_FONT_COLOR = "#1e293b"
+_CHART_BG         = "#ffffff"
+_CHART_PLOT_BG    = "#fafafa"
+_CHART_GRID       = "#f1f5f9"
+_CHART_LINE       = "#cbd5e1"
+
+_PLT_LAYOUT = dict(
+    paper_bgcolor=_CHART_BG,
+    plot_bgcolor=_CHART_PLOT_BG,
+    font=dict(color=_CHART_FONT_COLOR, family="Inter, sans-serif", size=12),
+    title_font=dict(size=15, color="#0f172a"),
+    margin=dict(l=16, r=16, t=48, b=16),
+    legend=dict(
+        font=dict(color=_CHART_FONT_COLOR, size=12),
+        bgcolor="rgba(255,255,255,0.85)",
+        bordercolor="#e2e8f0",
+        borderwidth=1,
+    ),
+)
+
+_AXIS_STYLE = dict(
+    tickfont=dict(color=_CHART_FONT_COLOR, size=11, family="Inter, sans-serif"),
+    title_font=dict(color="#0f172a", size=12, family="Inter, sans-serif"),
+    linecolor=_CHART_LINE,
+    gridcolor=_CHART_GRID,
+    zerolinecolor=_CHART_LINE,
+)
+
+
+def _style_fig(fig: go.Figure) -> go.Figure:
+    fig.update_xaxes(**_AXIS_STYLE)
+    fig.update_yaxes(**_AXIS_STYLE)
+    return fig
+
 
 # ---------------------------------------------------------------------------
 # Build guaranteed static history inline — no imports from charts.py
@@ -84,11 +121,11 @@ _HIST: dict[str, pd.DataFrame] = _make_static_hist()
 
 
 # ---------------------------------------------------------------------------
-# Inline heatmap builder
+# Inline heatmap builder — light-theme fix
 # ---------------------------------------------------------------------------
 
 def _render_heatmap(syms: list[str], names: list[str], title: str) -> None:
-    """Build and render the correlation heatmap directly — no function call."""
+    """Build and render the correlation heatmap with fully visible axis labels."""
     labels = [s.replace(".NS", "") for s in syms]
 
     # Build price DataFrame from static history
@@ -105,13 +142,13 @@ def _render_heatmap(syms: list[str], names: list[str], title: str) -> None:
         st.warning("Not enough data for heatmap.")
         return
 
-    # Build correlation matrix manually — no pandas corr(), pure numpy
+    # Build correlation matrix — pure numpy
     lbls = list(price_data.keys())
-    mat = np.array([price_data[l] for l in lbls], dtype=float)  # shape: (n_stocks, n_days)
+    mat = np.array([price_data[l] for l in lbls], dtype=float)
 
-    # Daily returns
-    rets = np.diff(mat, axis=1) / mat[:, :-1]  # shape: (n_stocks, n_days-1)
-    rets = rets[:, -30:]  # last 30
+    # Daily returns — last 30 days
+    rets = np.diff(mat, axis=1) / mat[:, :-1]
+    rets = rets[:, -30:]
 
     n = len(lbls)
     corr = np.ones((n, n), dtype=float)
@@ -124,39 +161,55 @@ def _render_heatmap(syms: list[str], names: list[str], title: str) -> None:
 
     text = [[f"{corr[i,j]:.2f}" for j in range(n)] for i in range(n)]
 
-    height = max(420, min(700, n * 14 + 120))
+    # Dynamic height: at least 420px, scale with number of stocks
+    height = max(420, min(800, n * 16 + 140))
+
     fig = go.Figure(go.Heatmap(
         z=corr.tolist(),
         x=lbls,
         y=lbls,
         text=text,
         texttemplate="%{text}",
-        textfont=dict(size=9),
+        textfont=dict(size=9, color="#1e293b"),
         colorscale="RdBu",
         zmid=0, zmin=-1, zmax=1,
-        hovertemplate="%{y} ↔ %{x}: <b>%{z:.3f}</b><extra></extra>",
-        colorbar=dict(title="r", thickness=12, len=0.8),
+        hovertemplate="%{y} \u2194 %{x}: <b>%{z:.3f}</b><extra></extra>",
+        colorbar=dict(
+            title=dict(text="r", font=dict(color="#0f172a", size=12)),
+            tickfont=dict(color="#1e293b", size=11),
+            thickness=14,
+            len=0.8,
+        ),
     ))
     fig.update_layout(
-        title=title,
+        title=dict(text=title, font=dict(color="#0f172a", size=15)),
         height=height,
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#e2e8f0"),
-        xaxis=dict(tickangle=-45, tickfont=dict(size=9)),
-        yaxis=dict(tickfont=dict(size=9)),
-        margin=dict(t=60, b=120, l=80, r=60),
+        paper_bgcolor=_CHART_BG,
+        plot_bgcolor=_CHART_PLOT_BG,
+        font=dict(color=_CHART_FONT_COLOR, family="Inter, sans-serif", size=12),
+        xaxis=dict(
+            tickangle=-45,
+            tickfont=dict(size=10, color=_CHART_FONT_COLOR, family="Inter, sans-serif"),
+            linecolor=_CHART_LINE,
+            gridcolor=_CHART_GRID,
+        ),
+        yaxis=dict(
+            tickfont=dict(size=10, color=_CHART_FONT_COLOR, family="Inter, sans-serif"),
+            linecolor=_CHART_LINE,
+            gridcolor=_CHART_GRID,
+            autorange="reversed",
+        ),
+        margin=dict(t=60, b=130, l=100, r=60),
     )
     st.plotly_chart(fig, use_container_width=True)
 
 
 # ---------------------------------------------------------------------------
-# Inline sparkline builder
+# Inline sparkline builder — light-theme fix
 # ---------------------------------------------------------------------------
 
 def _render_sparklines(syms: list[str], names: list[str]) -> None:
-    """Build and render sparklines directly — no function call."""
+    """Build and render sparklines with visible labels on light theme."""
     labels = [s.replace(".NS", "") for s in syms]
 
     valid: list[tuple[str, str, list[float]]] = []
@@ -174,12 +227,12 @@ def _render_sparklines(syms: list[str], names: list[str]) -> None:
 
     COLS = 5
     ROWS = (len(valid) + COLS - 1) // COLS
-    height = max(300, ROWS * 110)
+    height = max(300, ROWS * 120)
 
     fig = make_subplots(
         rows=ROWS, cols=COLS,
         horizontal_spacing=0.04,
-        vertical_spacing=0.08,
+        vertical_spacing=0.10,
     )
 
     for idx, (sym, lbl, vals) in enumerate(valid):
@@ -197,7 +250,7 @@ def _render_sparklines(syms: list[str], names: list[str]) -> None:
                 line=dict(color=colour, width=1.5),
                 name=lbl,
                 showlegend=False,
-                hovertemplate=f"<b>{lbl}</b><br>₹%{{y:,.2f}}<extra></extra>",
+                hovertemplate=f"<b>{lbl}</b><br>\u20b9%{{y:,.2f}}<extra></extra>",
             ),
             row=row, col=col,
         )
@@ -209,17 +262,19 @@ def _render_sparklines(syms: list[str], names: list[str]) -> None:
             x=(col - 0.5) / COLS,
             y=1.0 - (row - 1) / ROWS + 0.005,
             showarrow=False,
-            font=dict(size=9, color=colour),
+            font=dict(size=10, color=colour, family="Inter, sans-serif"),
             xanchor="center",
         )
 
     fig.update_layout(
-        title=f"20-Day Price Sparklines ({len(valid)} stocks)",
+        title=dict(
+            text=f"20-Day Price Sparklines ({len(valid)} stocks)",
+            font=dict(color="#0f172a", size=15),
+        ),
         height=height,
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#e2e8f0"),
+        paper_bgcolor=_CHART_BG,
+        plot_bgcolor=_CHART_PLOT_BG,
+        font=dict(color=_CHART_FONT_COLOR, family="Inter, sans-serif", size=11),
         margin=dict(t=80, b=10, l=10, r=10),
     )
     st.plotly_chart(fig, use_container_width=True)
@@ -279,12 +334,12 @@ def _render_dashboard_metrics() -> None:
     vols_list.sort(reverse=True)
     avg = sum(g[0] for g in gains) / len(gains)
 
-    st.markdown("### 📊 Quick Dashboard")
+    st.markdown("### \U0001f4ca Quick Dashboard")
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("🚀 Top Gainer (30D)",  gains[0][1],  f"{gains[0][0]:+.1f}%")
-    c2.metric("📉 Top Loser (30D)",   losses[0][1], f"{losses[0][0]:+.1f}%")
-    c3.metric("⚡ Most Volatile",      vols_list[0][1], f"σ {vols_list[0][0]:.2f}%/day")
-    c4.metric("📈 Avg 30D Return",    "Nifty 50",   f"{avg:+.1f}%")
+    c1.metric("\U0001f680 Top Gainer (30D)",  gains[0][1],  f"{gains[0][0]:+.1f}%")
+    c2.metric("\U0001f4c9 Top Loser (30D)",   losses[0][1], f"{losses[0][0]:+.1f}%")
+    c3.metric("\u26a1 Most Volatile",      vols_list[0][1], f"\u03c3 {vols_list[0][0]:.2f}%/day")
+    c4.metric("\U0001f4c8 Avg 30D Return",    "Nifty 50",   f"{avg:+.1f}%")
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +362,7 @@ def render(
 
     if not market_open:
         st.info(
-            "⚠️ Market is closed — charts below use last-session closing prices and work 24/7."
+            "\u26a0\ufe0f Market is closed \u2014 charts below use last-session closing prices and work 24/7."
         )
 
     _render_dashboard_metrics()
@@ -317,7 +372,7 @@ def render(
     sel_sec = st.selectbox("Sector", sectors, key="all_sec")
 
     # Stock table
-    with st.spinner("Loading stock data…"):
+    with st.spinner("Loading stock data\u2026"):
         try:
             df_rows = build_stock_rows_cached()
         except Exception as exc:
@@ -333,7 +388,7 @@ def render(
     export_buttons(
         display_df,
         filename_stem=f"nifty50_{'all' if sel_sec == 'All' else sel_sec.replace(' ', '_')}",
-        title=f"Nifty 50 Companies — {sel_sec}",
+        title=f"Nifty 50 Companies \u2014 {sel_sec}",
         key_suffix="companies",
     )
     divider()
@@ -351,7 +406,7 @@ def render(
     try:
         fig_pie = build_sector_pie(
             _build_pie_rows(),
-            "Sector Allocation — Nifty 50" if sel_sec == "All" else f"Sector Allocation — {sel_sec}",
+            "Sector Allocation \u2014 Nifty 50" if sel_sec == "All" else f"Sector Allocation \u2014 {sel_sec}",
         )
         if fig_pie.data:
             st.plotly_chart(fig_pie, use_container_width=True)
@@ -374,7 +429,7 @@ def render(
                 log.error("bar chart: %s", exc, exc_info=True)
     divider()
 
-    # Heatmap — fully inline, no external function
+    # Heatmap
     sec("30-Day Return Correlation Heatmap")
     st.caption(
         "Pairwise Pearson correlations of daily returns over the last 30 trading sessions. "
@@ -382,11 +437,11 @@ def render(
     )
     _render_heatmap(
         sector_syms, sector_names,
-        f"30-Day Correlation — {sel_sec}",
+        f"30-Day Correlation \u2014 {sel_sec}",
     )
     divider()
 
-    # Sparklines — fully inline, no external function
+    # Sparklines
     sec("20-Day Price Sparklines")
     st.caption(
         "Each mini-chart shows the last 20 trading sessions. "
