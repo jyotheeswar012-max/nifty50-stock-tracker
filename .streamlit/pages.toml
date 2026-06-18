@@ -1,7 +1,0 @@
-# Disabled multi-page navigation to fix StreamlitAPIException
-# All navigation handled inside app.py via tabs
-
-[[pages]]
-path = "app.py"
-name = "NSE Tracker"
-icon = "🏦"
