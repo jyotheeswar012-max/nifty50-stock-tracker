@@ -11,6 +11,7 @@ Public API
 get_stock_data(symbol, period)        → pd.DataFrame (OHLCV)
 fetch_ticker(symbol, period)          → pd.DataFrame (alias for get_stock_data)
 fetch_indices(period)                 → dict[str, pd.DataFrame] (NSE indices)
+get_beta(symbol)                      → float (beta from NIFTY50 constants)
 get_last_price(symbol)                → dict {price, change_pct, day_high, day_low}
 get_multiple_stocks(symbols, period)  → dict[str, pd.DataFrame]
 get_nifty50_data(period)              → dict[str, pd.DataFrame]
@@ -42,6 +43,9 @@ _YF_RETRY_SLEEP  = 1.5      # seconds between yfinance retries
 _CACHE_TTL_LIVE  = 120      # seconds — intraday / "1d" period
 _CACHE_TTL_HIST  = 3_600    # seconds — multi-day periods
 _STALE_THRESHOLD = 0.30     # fraction of missing rows before cache is considered stale
+
+# Pre-build beta lookup from constants for O(1) access
+_BETA_MAP: dict[str, float] = {s["symbol"]: float(s["beta"]) for s in NIFTY50}
 
 # ---------------------------------------------------------------------------
 # Lazy imports (optional heavy deps)
@@ -269,6 +273,14 @@ def get_stock_data(symbol: str, period: str = "1mo") -> pd.DataFrame:
 def fetch_ticker(symbol: str, period: str = "1mo") -> pd.DataFrame:
     """Alias for get_stock_data — used by tab_nifty and other tab modules."""
     return get_stock_data(symbol, period)
+
+
+def get_beta(symbol: str, default: float = 1.0) -> float:
+    """Return the beta for *symbol* from NIFTY50 constants.
+
+    Falls back to *default* (1.0) if symbol is not in the list.
+    """
+    return _BETA_MAP.get(symbol, default)
 
 
 @st.cache_data(ttl=_CACHE_TTL_LIVE, show_spinner=False)
