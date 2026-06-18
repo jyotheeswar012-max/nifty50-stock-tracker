@@ -1,3 +1,67 @@
+# Streamlit multipage app — sidebar pages only
+# tab_*.py files are imported directly by app.py and must NOT appear here
+
 [[pages]]
 path = "app.py"
-name = "NSE & Nifty 50 Tracker"
+name = "NSE Tracker"
+icon = "🏦"
+
+[[pages]]
+path = "pages/01_Alerts.py"
+name = "Alerts"
+url_path = "alerts"
+icon = "🔔"
+
+[[pages]]
+path = "pages/02_Scenario_Engine.py"
+name = "Scenario Engine"
+url_path = "scenario"
+icon = "🧪"
+
+[[pages]]
+path = "pages/03_Paper_Portfolio.py"
+name = "Paper Portfolio"
+url_path = "portfolio"
+icon = "💼"
+
+[[pages]]
+path = "pages/04_ML_Predictions.py"
+name = "ML Predictions"
+url_path = "ml"
+icon = "🤖"
+
+[[pages]]
+path = "pages/05_Watchlist.py"
+name = "Watchlist"
+url_path = "watchlist"
+icon = "⭐"
+
+[[pages]]
+path = "pages/06_Paper_Trading.py"
+name = "Paper Trading"
+url_path = "trading"
+icon = "🎮"
+
+[[pages]]
+path = "pages/07_News_Sentiment.py"
+name = "News Sentiment"
+url_path = "news"
+icon = "📰"
+
+[[pages]]
+path = "pages/08_Market_Calendar.py"
+name = "Market Calendar"
+url_path = "calendar"
+icon = "📅"
+
+[[pages]]
+path = "pages/09_Login.py"
+name = "Login"
+url_path = "login"
+icon = "🔐"
+
+[[pages]]
+path = "pages/10_Profile.py"
+name = "Profile"
+url_path = "profile"
+icon = "👤"
