@@ -3,6 +3,28 @@
 [![CI](https://github.com/jyotheeswar012-max/nifty50-stock-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/jyotheeswar012-max/nifty50-stock-tracker/actions/workflows/ci.yml)
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://nifty50-stock-tracker.streamlit.app)
 
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Frontend / UI** | [Streamlit](https://streamlit.io) — multi-page app with custom CSS |
+| **Charts** | [Plotly](https://plotly.com/python/) — candlestick, heatmap, bar, scatter, line |
+| **Market Data** | [yfinance](https://github.com/ranaroussi/yfinance) — NSE/BSE OHLCV via Yahoo Finance |
+| **Data Layer** | [Pandas](https://pandas.pydata.org/) + [NumPy](https://numpy.org/) |
+| **Caching** | `@st.cache_data` + SQLite (Parquet blobs) — 60s live / 5 min closed |
+| **Auth** | [Supabase](https://supabase.com) + Firebase OTP (phone auth) |
+| **ML / Predictions** | Beta-weighted CAPM model + scikit-learn signals |
+| **Background Jobs** | `ThreadPoolExecutor` — parallel bulk data fetching |
+| **Database** | [Supabase](https://supabase.com) (PostgreSQL) — watchlists, alerts, portfolios |
+| **Logging** | Python `logging` with rotating file handler |
+| **CI** | GitHub Actions — `ruff` lint + `pytest` |
+| **Deployment** | [Streamlit Community Cloud](https://streamlit.io/cloud) |
+| **Language** | Python 3.11+ |
+
+---
+
 > **Live App → [https://nifty50-stock-tracker.streamlit.app](https://nifty50-stock-tracker.streamlit.app)**
 
 The **only free Nifty 50 dashboard** combining real-time NSE data with historical time-travel and macro event simulation.
@@ -95,12 +117,12 @@ Fetches 5-year OHLCV history for all 50 Nifty stocks + macro proxies.
 
 | Function | TTL (Market Open) | TTL (Market Closed) |
 |----------|-------------------|---------------------|
-| `fetch_ticker` | 5 min | 30 min |
-| `fetch_indices` | 5 min | 30 min |
-| `fetch_all_stocks_5d` | 5 min | 30 min |
+| `fetch_ticker` | 60s | 5 min |
+| `fetch_indices` | 60s | 5 min |
+| `fetch_all_stocks_5d` | 60s | 5 min |
 | `fetch_all_history` | 1 hour | 1 hour |
 
-All caching is handled by `@st.cache_data`. To force a refresh, press **`C`** in the Streamlit app or reboot the server.
+All caching is handled by `@st.cache_data` + SQLite. To force a refresh, press **`C`** in the Streamlit app or reboot the server.
 
 ---
 
