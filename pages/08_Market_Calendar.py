@@ -25,11 +25,17 @@ try:
 except Exception:
     pass
 
+# ── Shared chart theme ────────────────────────────────────────────────────────
 PLT_LAYOUT = dict(
     paper_bgcolor="#ffffff", plot_bgcolor="#fafafa",
     font=dict(color="#1e293b", family="Inter, sans-serif", size=12),
     title_font=dict(size=15, color="#0f172a"),
     margin=dict(l=16, r=16, t=48, b=16),
+)
+_AXIS = dict(
+    tickfont=dict(color="#1e293b", size=11),
+    title_font=dict(color="#0f172a", size=12),
+    linecolor="#cbd5e1", gridcolor="#f1f5f9", zerolinecolor="#cbd5e1",
 )
 
 st.markdown("""
@@ -96,9 +102,6 @@ st.markdown('<hr class="ui-divider">', unsafe_allow_html=True)
 st.markdown("<p class='sec-label'>RBI Repo Rate Journey 2026</p>", unsafe_allow_html=True)
 try:
     rate_labels = ["Start (6.50%)", "MPC #1 Feb", "MPC #2 Apr", "MPC #3 Jun", "MPC #4 Aug", "MPC #5 Oct", "MPC #6 Dec"]
-    rate_values = [6.50, 6.25, 6.00, 5.75, None, None, None]
-    bar_colors  = ["#94a3b8", "#10b981", "#10b981", "#10b981", "#e2e8f0", "#e2e8f0", "#e2e8f0"]
-    rate_texts  = ["6.50%",   "6.25%",  "6.00%",  "5.75%",  "TBD",    "TBD",    "TBD"]
 
     fig_rate = go.Figure()
     # Confirmed rate bars
@@ -107,6 +110,7 @@ try:
         y=[6.50, 6.25, 6.00, 5.75],
         text=["6.50%", "6.25%", "6.00%", "5.75%"],
         textposition="outside",
+        textfont=dict(color="#1e293b", size=12, family="Inter, sans-serif"),
         marker_color=["#94a3b8", "#10b981", "#10b981", "#10b981"],
         name="Confirmed Rate",
         width=0.5,
@@ -114,17 +118,18 @@ try:
     # Projected / TBD bars
     fig_rate.add_trace(go.Bar(
         x=rate_labels[4:],
-        y=[5.75, 5.75, 5.75],  # placeholder at last known rate
+        y=[5.75, 5.75, 5.75],
         text=["TBD", "TBD", "TBD"],
         textposition="outside",
+        textfont=dict(color="#64748b", size=12, family="Inter, sans-serif"),
         marker_color="#e2e8f0",
         marker_line_color="#94a3b8",
         marker_line_width=1.5,
         name="Projected / Awaited",
-        opacity=0.6,
+        opacity=0.7,
         width=0.5,
     ))
-    # Rate cut annotations — arrows
+    # Rate cut arrows
     for x0, x1, y0, y1 in [(1, 2, 6.25, 6.00), (2, 3, 6.00, 5.75)]:
         fig_rate.add_annotation(
             x=rate_labels[x1], y=y1 + 0.05,
@@ -134,12 +139,17 @@ try:
             arrowcolor="#10b981", arrowwidth=2,
         )
     fig_rate.update_layout(
-        **PLT_LAYOUT, height=360,
+        **PLT_LAYOUT, height=380,
         title="RBI Repo Rate — Confirmed Cuts & Upcoming MPC Meetings (2026)",
-        xaxis_title="MPC Meeting", yaxis_title="Repo Rate (%)",
-        yaxis=dict(range=[5.0, 7.0], ticksuffix="%"),
+        xaxis=dict(**_AXIS, title="MPC Meeting"),
+        yaxis=dict(**_AXIS, title="Repo Rate (%)", range=[5.0, 7.2], ticksuffix="%"),
         barmode="group",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        legend=dict(
+            font=dict(color="#1e293b", size=12),
+            bgcolor="rgba(255,255,255,0.92)",
+            bordercolor="#e2e8f0", borderwidth=1,
+            orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+        ),
     )
     st.plotly_chart(fig_rate, use_container_width=True)
 except Exception as e:
@@ -178,10 +188,22 @@ try:
         height=340,
         labels={"y": "", "Color": "Status"},
     )
-    fig_fo.update_traces(textposition="inside", textfont_color="white", textfont_size=11)
+    fig_fo.update_traces(
+        textposition="inside",
+        textfont=dict(color="#ffffff", size=11, family="Inter, sans-serif"),
+    )
     fig_fo.update_yaxes(visible=False)
-    fig_fo.update_layout(**PLT_LAYOUT, showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    fig_fo.update_layout(
+        **PLT_LAYOUT,
+        showlegend=True,
+        xaxis=dict(**_AXIS, title="Month"),
+        legend=dict(
+            font=dict(color="#1e293b", size=12),
+            bgcolor="rgba(255,255,255,0.92)",
+            bordercolor="#e2e8f0", borderwidth=1,
+            orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+        ),
+    )
     st.plotly_chart(fig_fo, use_container_width=True)
 except Exception as e:
     st.warning(f"F&O chart error: {e}")

@@ -26,11 +26,17 @@ try:
 except Exception:
     pass
 
+# ── Shared chart theme ────────────────────────────────────────────────────────
 PLT_LAYOUT = dict(
     paper_bgcolor="#ffffff", plot_bgcolor="#fafafa",
     font=dict(color="#1e293b", family="Inter, sans-serif", size=12),
     title_font=dict(size=15, color="#0f172a"),
     margin=dict(l=16, r=16, t=48, b=16),
+)
+_AXIS = dict(
+    tickfont=dict(color="#1e293b", size=11),
+    title_font=dict(color="#0f172a", size=12),
+    linecolor="#cbd5e1", gridcolor="#f1f5f9", zerolinecolor="#cbd5e1",
 )
 
 NSE_STOCKS = [
@@ -58,7 +64,6 @@ base_scores = {
     "TITAN": 0.68, "TATAMOTORS": 0.38, "TATASTEEL": 0.28, "MARUTI": 0.50, "NTPC": 0.45,
 }
 
-# Simulated 7-day sentiment trend (day -6 to today)
 np.random.seed(42)
 DAYS = ["Day -6", "Day -5", "Day -4", "Day -3", "Day -2", "Yesterday", "Today"]
 
@@ -219,9 +224,19 @@ try:
         color_continuous_midpoint=0.5,
         text="Sentiment Score", title="Stock Sentiment Scores (All 20 Stocks)", height=380,
     )
-    fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
-    fig.add_hline(y=0.5, line_dash="dot", line_color="#94a3b8", annotation_text="Neutral")
-    fig.update_layout(**PLT_LAYOUT, coloraxis_showscale=False)
+    fig.update_traces(
+        texttemplate="%{text:.2f}", textposition="outside",
+        textfont=dict(color="#1e293b", size=11),
+    )
+    fig.add_hline(y=0.5, line_dash="dot", line_color="#94a3b8",
+                  annotation_text="Neutral",
+                  annotation_font=dict(color="#475569", size=11))
+    fig.update_layout(
+        **PLT_LAYOUT,
+        coloraxis_showscale=False,
+        xaxis=dict(**_AXIS, title="Symbol"),
+        yaxis=dict(**_AXIS, title="Sentiment Score", range=[0, 1.12]),
+    )
     st.plotly_chart(fig, use_container_width=True)
 except Exception:
     st.dataframe(df_sent, use_container_width=True, hide_index=True)
@@ -246,9 +261,19 @@ try:
         title="Average Sentiment Score by Sector",
         height=340,
     )
-    fig_sec.update_traces(texttemplate="%{text:.2f}", textposition="outside")
-    fig_sec.add_vline(x=0.5, line_dash="dot", line_color="#94a3b8", annotation_text="Neutral")
-    fig_sec.update_layout(**PLT_LAYOUT, coloraxis_showscale=False, xaxis_range=[0, 0.85])
+    fig_sec.update_traces(
+        texttemplate="%{text:.2f}", textposition="outside",
+        textfont=dict(color="#1e293b", size=11),
+    )
+    fig_sec.add_vline(x=0.5, line_dash="dot", line_color="#94a3b8",
+                      annotation_text="Neutral",
+                      annotation_font=dict(color="#475569", size=11))
+    fig_sec.update_layout(
+        **PLT_LAYOUT,
+        coloraxis_showscale=False,
+        xaxis=dict(**_AXIS, title="Avg Sentiment", range=[0, 0.92]),
+        yaxis=dict(**_AXIS, title="Sector"),
+    )
     st.plotly_chart(fig_sec, use_container_width=True)
 except Exception as e:
     st.warning(f"Sector chart error: {e}")
@@ -268,22 +293,19 @@ try:
     df_avg_trend["Day"] = pd.Categorical(df_avg_trend["Day"], categories=DAYS, ordered=True)
     df_avg_trend = df_avg_trend.sort_values("Day")
 
-    # Top 5 stocks trend
     top5 = df_sent["Symbol"].head(5).tolist()
     df_top5_trend = df_trend[df_trend["Symbol"].isin(top5)].copy()
     df_top5_trend["Day"] = pd.Categorical(df_top5_trend["Day"], categories=DAYS, ordered=True)
     df_top5_trend = df_top5_trend.sort_values("Day")
 
     fig_trend = go.Figure()
-    # Market average line
     fig_trend.add_trace(go.Scatter(
         x=df_avg_trend["Day"], y=df_avg_trend["Score"],
         mode="lines+markers",
         name="Market Avg",
         line=dict(color="#6366f1", width=3),
-        marker=dict(size=8),
+        marker=dict(size=8, color="#6366f1"),
     ))
-    # Top 5 stocks
     colors = ["#10b981", "#f59e0b", "#ef4444", "#0ea5e9", "#a855f7"]
     for i, sym in enumerate(top5):
         d = df_top5_trend[df_top5_trend["Symbol"] == sym]
@@ -292,15 +314,23 @@ try:
             mode="lines+markers",
             name=sym,
             line=dict(color=colors[i], width=1.5, dash="dot"),
-            marker=dict(size=5),
+            marker=dict(size=5, color=colors[i]),
         ))
-    fig_trend.add_hline(y=0.5, line_dash="dash", line_color="#94a3b8", annotation_text="Neutral 0.5")
+    fig_trend.add_hline(
+        y=0.5, line_dash="dash", line_color="#94a3b8",
+        annotation_text="Neutral 0.5",
+        annotation_font=dict(color="#475569", size=11),
+    )
     fig_trend.update_layout(
         **PLT_LAYOUT, height=360,
         title="7-Day Sentiment Trend — Market Avg & Top 5 Bullish Stocks",
-        xaxis_title="Day", yaxis_title="Sentiment Score",
-        yaxis=dict(range=[0.1, 0.9]),
-        legend=dict(font=dict(size=11), bgcolor="rgba(255,255,255,0.85)"),
+        xaxis=dict(**_AXIS, title="Day"),
+        yaxis=dict(**_AXIS, title="Sentiment Score", range=[0.1, 0.9]),
+        legend=dict(
+            font=dict(size=11, color="#1e293b"),
+            bgcolor="rgba(255,255,255,0.92)",
+            bordercolor="#e2e8f0", borderwidth=1,
+        ),
     )
     st.plotly_chart(fig_trend, use_container_width=True)
 except Exception as e:
