@@ -1,1 +1,1 @@
-# This file is intentionally empty to prevent Streamlit auto-discovery.
+# intentionally empty — logic moved to tabs/tab_gainers.py
