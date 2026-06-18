@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/jyotheeswar012-max/nifty50-stock-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/jyotheeswar012-max/nifty50-stock-tracker/actions/workflows/ci.yml)
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://nifty50-stock-tracker.streamlit.app)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
@@ -203,6 +204,19 @@ To run the linter:
 ```bash
 ruff check utils/ tests/ --select E,W,F --ignore E501
 ```
+
+---
+
+## 📝 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 👨‍💻 Built By
+
+**A. Jyotheeswar Reddy**  
+Designed, built, and maintained this project end-to-end — from data pipelines and ML models to UI/UX and deployment.
 
 ---
 
