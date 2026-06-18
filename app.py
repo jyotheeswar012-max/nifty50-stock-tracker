@@ -1,7 +1,7 @@
 """NSE & Nifty 50 Tracker — Streamlit entry point.
 
 app.py is intentionally thin: startup, sidebar, status banner, tab wiring.
-All tab logic lives in pages/tab_*.py.
+All tab logic lives in tabs/tab_*.py (NOT pages/ — to avoid duplicate URL registration).
 """
 import time
 import warnings
@@ -59,7 +59,7 @@ def _show_data_warnings() -> None:
         st.warning(w)
 
 
-# ── Sidebar ─────────────────────────────────────────────────────────────────
+# ── Sidebar ──────────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### \u2699\ufe0f System")
     with st.expander("\U0001f50c Data Source Status", expanded=False):
@@ -99,7 +99,7 @@ with st.sidebar:
             st.caption("Log viewer unavailable")
 
 
-# ── Live status banner ─────────────────────────────────────────────────────────
+# ── Live status banner ───────────────────────────────────────────────────────────────────────────────────────
 @st.fragment(run_every=REFRESH_MS / 1000 if market_open else None)
 def _status_banner() -> None:
     try:
@@ -127,7 +127,7 @@ def _status_banner() -> None:
 _status_banner()
 _show_data_warnings()
 
-# ── Tabs ─────────────────────────────────────────────────────────────────────
+# ── Tabs ────────────────────────────────────────────────────────────────────────────────────
 tabs = st.tabs([
     "Market Overview",
     "Nifty 50 Index",
@@ -145,34 +145,35 @@ _ctx = dict(
     last_close_label=last_close_label,
 )
 
+# NOTE: ALL imports use tabs/ (not pages/) so Streamlit never registers them as pages.
 with tabs[0]:
-    from pages.tab_overview import render as _r0
+    from tabs.tab_overview import render as _r0
     _r0(**_ctx)
 
 with tabs[1]:
-    from pages.tab_nifty import render as _r1
+    from tabs.tab_nifty import render as _r1
     _r1(**_ctx)
 
 with tabs[2]:
-    from pages.tab_companies import render as _r2
+    from tabs.tab_companies import render as _r2  # fixed: was pages.tab_companies
     _r2(**_ctx, build_stock_rows_cached=_build_stock_rows_cached)
 
 with tabs[3]:
-    from pages.tab_gainers import render as _r3
+    from tabs.tab_gainers import render as _r3
     _r3(**_ctx, build_stock_rows_cached=_build_stock_rows_cached)
 
 with tabs[4]:
-    from pages.tab_pl import render as _r4
+    from tabs.tab_pl import render as _r4
     _r4(**_ctx)
 
 with tabs[5]:
-    from pages.tab_chart import render as _r5
+    from tabs.tab_chart import render as _r5
     _r5(**_ctx)
 
 with tabs[6]:
-    from pages.tab_timemachine import render as _r6
+    from tabs.tab_timemachine import render as _r6
     _r6()
 
 with tabs[7]:
-    from pages.tab_alerts import render as _r7
+    from tabs.tab_alerts import render as _r7
     _r7(build_stock_rows_cached=_build_stock_rows_cached)

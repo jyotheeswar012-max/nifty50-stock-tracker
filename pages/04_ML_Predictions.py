@@ -10,8 +10,11 @@ warnings.filterwarnings("ignore")
 
 st.set_page_config(page_title="ML Predictions", page_icon="🤖", layout="wide")
 
-from utils.theme import inject, inject_topbar
-inject()
+try:
+    from utils.theme import inject, inject_topbar
+    inject()
+except Exception:
+    def inject_topbar(user=None): pass
 
 try:
     from utils.supabase_auth import get_current_user, logout, is_guest, login_nudge
@@ -22,7 +25,10 @@ except Exception:
     def login_nudge(f=""): st.info("💡 Sign in to save your data.")
 
 user = get_current_user()
-inject_topbar(user=user)
+try:
+    inject_topbar(user=user)
+except Exception:
+    pass
 
 try:
     from sklearn.linear_model import LinearRegression
@@ -82,110 +88,6 @@ def safe_float(v, d=0.0):
         f = float(v); return d if (np.isnan(f) or np.isinf(f)) else f
     except: return d
 
-# ── RISK DISCLOSURE CSS ───────────────────────────────────────────────────
-st.markdown("""
-<style>
-/* Full-width top risk banner */
-.risk-banner {
-    background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 60%, #b91c1c 100%);
-    border: 2px solid #fca5a5;
-    border-radius: 12px;
-    padding: 1.1rem 1.5rem;
-    margin-bottom: 1.2rem;
-    display: flex;
-    align-items: flex-start;
-    gap: 1rem;
-}
-.risk-banner-icon { font-size: 2rem; flex-shrink: 0; margin-top: 2px; }
-.risk-banner-title {
-    color: #ffffff !important;
-    font-size: 1rem !important;
-    font-weight: 800 !important;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    margin-bottom: 0.3rem;
-}
-.risk-banner-body {
-    color: #fecaca !important;
-    font-size: 0.85rem !important;
-    line-height: 1.6;
-}
-.risk-banner-body b { color: #ffffff !important; }
-
-/* Inline risk level badge */
-.risk-level-high {
-    background: #fff1f2;
-    border: 2px solid #f87171;
-    border-left: 6px solid #dc2626;
-    border-radius: 10px;
-    padding: 0.9rem 1.2rem;
-    margin: 0.8rem 0;
-}
-.risk-level-moderate {
-    background: #fffbeb;
-    border: 2px solid #fbbf24;
-    border-left: 6px solid #d97706;
-    border-radius: 10px;
-    padding: 0.9rem 1.2rem;
-    margin: 0.8rem 0;
-}
-.risk-level-low {
-    background: #f0fdf4;
-    border: 2px solid #86efac;
-    border-left: 6px solid #16a34a;
-    border-radius: 10px;
-    padding: 0.9rem 1.2rem;
-    margin: 0.8rem 0;
-}
-.risk-level-title {
-    font-size: 1rem !important;
-    font-weight: 800 !important;
-    margin-bottom: 0.25rem;
-}
-.risk-level-high   .risk-level-title { color: #991b1b !important; }
-.risk-level-moderate .risk-level-title { color: #92400e !important; }
-.risk-level-low    .risk-level-title { color: #14532d !important; }
-.risk-level-body {
-    font-size: 0.88rem !important;
-    line-height: 1.5;
-}
-.risk-level-high   .risk-level-body { color: #7f1d1d !important; }
-.risk-level-moderate .risk-level-body { color: #78350f !important; }
-.risk-level-low    .risk-level-body { color: #166534 !important; }
-
-/* Sticky footer disclaimer */
-.risk-footer {
-    background: #1e1b4b;
-    border: 1.5px solid #4338ca;
-    border-radius: 10px;
-    padding: 0.85rem 1.3rem;
-    margin-top: 2rem;
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-}
-.risk-footer-icon { font-size: 1.2rem; flex-shrink: 0; }
-.risk-footer-text {
-    color: #c7d2fe !important;
-    font-size: 0.78rem !important;
-    line-height: 1.65;
-}
-.risk-footer-text b { color: #e0e7ff !important; }
-
-/* Model accuracy callout */
-.model-caveat {
-    background: #fefce8;
-    border: 1.5px solid #fde047;
-    border-radius: 8px;
-    padding: 0.6rem 1rem;
-    margin: 0.5rem 0 1rem;
-    font-size: 0.82rem !important;
-    color: #713f12 !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# ── HERO ──────────────────────────────────────────────────────────────────
 st.markdown("""
 <div style='background:linear-gradient(135deg,#1e1b4b 0%,#312e81 50%,#4c1d95 100%);
      border-radius:14px;padding:1.4rem 1.8rem;margin-bottom:1rem;
@@ -200,25 +102,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ── ⚠️ PROMINENT RISK DISCLOSURE BANNER (always visible, top of page) ─────
-st.markdown("""
-<div class="risk-banner">
-  <div class="risk-banner-icon">⚠️</div>
-  <div>
-    <div class="risk-banner-title">⛔ Not Investment Advice — Read Before Using</div>
-    <div class="risk-banner-body">
-      <b>These ML predictions are for educational and research purposes only.</b>
-      They do <b>not</b> constitute financial advice, investment recommendations, or solicitation to buy/sell
-      any security. Stock market predictions are inherently uncertain — past patterns do not guarantee
-      future results. <b>ML models trained on historical data can fail significantly in real markets</b>,
-      especially during earnings, macro events, or high-volatility regimes.
-      <br><br>
-      🔴 <b>Never make real trading decisions based solely on these outputs.</b>
-      Always consult a SEBI-registered financial advisor before investing.
-    </div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+st.warning("⚠️ **Educational use only.** These ML predictions are NOT financial advice. Never make real trading decisions based solely on these outputs.")
 
 if not SK_OK:
     st.error("❌ `scikit-learn` not installed. Add it to requirements.txt and redeploy.")
@@ -256,7 +140,7 @@ try:
     close = _c.dropna().astype(float).values.flatten()
     dates = hist.index[:len(close)]
     if len(close) < 40:
-        st.warning("⚠️ Not enough clean price data. Try a longer period."); st.stop()
+        st.warning("⚠️ Not enough clean price data."); st.stop()
 
     def make_features(prices):
         n = len(prices); feats = []
@@ -303,130 +187,42 @@ try:
     last_price=float(close[-1])
     rf_prices=[last_price*(1+dd/100) for dd in rf_fut]
     gb_prices=[last_price*(1+dd/100) for dd in gb_fut]
-    lr_prices=[last_price*(1+dd/100) for dd in lr_fut]
     worst_pct=min(float(rf_fut.min()),float(gb_fut.min()))
-    worst_price=last_price*(1+worst_pct/100)
     trigger=last_price*(1-dd_pct/100)
 
-    # ── KPI row ────────────────────────────────────────────────────────────
     m1,m2,m3,m4,m5,m6=st.columns(6)
     m1.metric("Current Price",f"₹{last_price:,.2f}")
     m2.metric("RF MAE",f"{rf_mae:.3f}%")
     m3.metric("GB MAE",f"{gb_mae:.3f}%")
     m4.metric("RF R²",f"{rf_r2:.3f}")
     m5.metric("GB R²",f"{gb_r2:.3f}")
-    m6.metric("Worst Drawdown",f"{worst_pct:.2f}%",delta=f"₹{worst_price:,.2f}",delta_color="inverse")
+    m6.metric("Worst Drawdown",f"{worst_pct:.2f}%",delta=f"₹{last_price*(1+worst_pct/100):,.2f}",delta_color="inverse")
 
-    # ── Model accuracy caveat (always shown) ───────────────────────────────
-    st.markdown(f"""
-    <div class="model-caveat">
-      📐 <b>Model accuracy note:</b> RF R² = <b>{rf_r2:.3f}</b>, GB R² = <b>{gb_r2:.3f}</b>.
-      R² close to 1.0 may indicate <b>overfitting to historical data</b> — this does not mean the model
-      will predict future prices accurately. MAE is measured on <i>training data</i> and is not
-      an out-of-sample performance metric.
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown('<hr style="border:none;border-top:1px solid #e2e8f0;margin:.6rem 0;">',unsafe_allow_html=True)
-
-    # ── PROMINENT inline risk level alert ──────────────────────────────────
-    best_model_worst = min(float(rf_fut.min()), float(gb_fut.min()))
-
-    if best_model_worst <= -dd_pct:
-        st.markdown(f"""
-        <div class="risk-level-high">
-          <div class="risk-level-title">🚨 HIGH DOWNSIDE RISK DETECTED</div>
-          <div class="risk-level-body">
-            Models project a drawdown of up to <b>{best_model_worst:.1f}%</b> within <b>{ml_horizon} trading days</b>.<br>
-            Trigger price: <b>₹{trigger:,.2f}</b> (−{dd_pct}% from current ₹{last_price:,.2f})<br><br>
-            ⚠️ <b>This is a model output — not a guaranteed outcome.</b> Real markets can move
-            far beyond model predictions. Do NOT use this as a stop-loss or sell signal without
-            independent analysis.
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-    elif best_model_worst <= -dd_pct * 0.5:
-        st.markdown(f"""
-        <div class="risk-level-moderate">
-          <div class="risk-level-title">⚠️ MODERATE RISK — Monitor Closely</div>
-          <div class="risk-level-body">
-            Models suggest a drawdown of <b>{best_model_worst:.1f}%</b> over <b>{ml_horizon} trading days</b>.<br>
-            Watch level: <b>₹{trigger:,.2f}</b><br><br>
-            This is within normal market volatility range but warrants attention.
-            <b>Not a recommendation to buy, hold, or sell.</b>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown(f"""
-        <div class="risk-level-low">
-          <div class="risk-level-title">✅ LOW PREDICTED RISK</div>
-          <div class="risk-level-body">
-            Models predict a max drawdown of <b>{best_model_worst:.1f}%</b> over <b>{ml_horizon} trading days</b>.<br><br>
-            Low predicted risk does <b>not</b> mean safe to invest. Models cannot anticipate
-            earnings surprises, macro shocks, or geopolitical events. <b>Always do your own research.</b>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # ── Charts ─────────────────────────────────────────────────────────────
     tab1,tab2,tab3=st.tabs(["📉 Drawdown Forecast","💹 Price Forecast","📊 Model Comparison"])
-
     with tab1:
-        st.markdown("""
-        <div class="model-caveat">
-          📌 <b>Chart note:</b> Shaded forecast region uses randomly simulated future prices as model input.
-          The forecast band is illustrative — actual drawdowns may be larger or smaller.
-        </div>
-        """, unsafe_allow_html=True)
         fig_dd=go.Figure()
         fig_dd.add_trace(go.Scatter(x=dates[10:],y=y_dd,mode="lines",name="Actual",line=dict(color="#1e293b",width=1.5)))
-        fig_dd.add_trace(go.Scatter(x=dates[10:],y=rf_pred_hist,mode="lines",name="RF hist",line=dict(color="#ef4444",width=1.5,dash="dot")))
         fig_dd.add_trace(go.Scatter(x=fut_dates,y=rf_fut,mode="lines+markers",name="RF Forecast",line=dict(color="#ef4444",width=2.5)))
         fig_dd.add_trace(go.Scatter(x=fut_dates,y=gb_fut,mode="lines+markers",name="GB Forecast",line=dict(color="#f59e0b",width=2.5)))
         fig_dd.add_trace(go.Scatter(x=fut_dates,y=lr_fut,mode="lines+markers",name="Linear",line=dict(color="#8b5cf6",width=2,dash="dash")))
         fig_dd.add_hline(y=-dd_pct,line_dash="dash",line_color="#ef4444",annotation_text=f"Trigger −{dd_pct}%")
-        fig_dd.update_layout(**PLT_LAYOUT,title=f"{ml_stock} — {ml_horizon}-Day Drawdown Forecast (Simulated)",height=460,xaxis_title="Date",yaxis_title="Drawdown (%)")
-        style_fig(fig_dd); fig_dd.update_layout(autosize=True); st.plotly_chart(fig_dd,use_container_width=True)
-
+        fig_dd.update_layout(**PLT_LAYOUT,title=f"{ml_stock} — {ml_horizon}-Day Drawdown Forecast",height=460,xaxis_title="Date",yaxis_title="Drawdown (%)")
+        style_fig(fig_dd); st.plotly_chart(fig_dd,use_container_width=True)
     with tab2:
-        st.markdown("""
-        <div class="model-caveat">
-          📌 <b>Chart note:</b> Implied prices are derived from drawdown predictions, not direct price forecasts.
-          The dashed trigger line is a reference level — <b>not a prediction of where price will go.</b>
-        </div>
-        """, unsafe_allow_html=True)
         fig_pr=go.Figure()
         fig_pr.add_trace(go.Scatter(x=dates,y=close,mode="lines",name="Actual",line=dict(color="#1e293b",width=2)))
         fig_pr.add_trace(go.Scatter(x=fut_dates,y=rf_prices,mode="lines+markers",name="RF Implied",line=dict(color="#ef4444",width=2.5)))
         fig_pr.add_trace(go.Scatter(x=fut_dates,y=gb_prices,mode="lines+markers",name="GB Implied",line=dict(color="#f59e0b",width=2.5)))
         fig_pr.add_hline(y=trigger,line_dash="dash",line_color="#ef4444",annotation_text=f"Trigger ₹{trigger:,.0f}")
-        fig_pr.update_layout(**PLT_LAYOUT,title=f"{ml_stock} — Implied Price (Educational Only)",height=460,xaxis_title="Date",yaxis_title="Price (₹)")
-        style_fig(fig_pr); fig_pr.update_layout(autosize=True); st.plotly_chart(fig_pr,use_container_width=True)
-
+        fig_pr.update_layout(**PLT_LAYOUT,title=f"{ml_stock} — Implied Price",height=460,xaxis_title="Date",yaxis_title="Price (₹)")
+        style_fig(fig_pr); st.plotly_chart(fig_pr,use_container_width=True)
     with tab3:
-        cmp_df=pd.DataFrame({"Date":[d.strftime("%d %b") for d in fut_dates],"RF %":[f"{v:.2f}%" for v in rf_fut],"GB %":[f"{v:.2f}%" for v in gb_fut],"LR %":[f"{v:.2f}%" for v in lr_fut],"RF Price":[f"₹{v:,.2f}" for v in rf_prices],"GB Price":[f"₹{v:,.2f}" for v in gb_prices]})
+        cmp_df=pd.DataFrame({"Date":[d.strftime("%d %b") for d in fut_dates],"RF %":[f"{v:.2f}%" for v in rf_fut],"GB %":[f"{v:.2f}%" for v in gb_fut],"LR %":[f"{v:.2f}%" for v in lr_fut]})
         st.dataframe(cmp_df,use_container_width=True,hide_index=True)
         feat_names=["Index","Return 1D","Return 5D","Return 10D","MA5","MA10","StdDev5","High5","Low5"]
         fi_df=pd.DataFrame({"Feature":feat_names,"Importance":rf.feature_importances_}).sort_values("Importance",ascending=True)
-        fig_fi=px.bar(fi_df,x="Importance",y="Feature",orientation="h",color="Importance",color_continuous_scale="Reds_r",title="Feature Importance (RF)",template="plotly_white",height=320)
+        fig_fi=px.bar(fi_df,x="Importance",y="Feature",orientation="h",color="Importance",color_continuous_scale="Reds_r",title="Feature Importance (RF)",height=320)
         fig_fi.update_layout(**PLT_LAYOUT,coloraxis_showscale=False)
-        style_fig(fig_fi); fig_fi.update_layout(autosize=True); st.plotly_chart(fig_fi,use_container_width=True)
-
-    # ── FOOTER DISCLAIMER (always visible at bottom) ───────────────────────
-    st.markdown("""
-    <div class="risk-footer">
-      <div class="risk-footer-icon">⚖️</div>
-      <div class="risk-footer-text">
-        <b>Legal Disclaimer:</b> All predictions and outputs on this page are generated by machine learning
-        models trained on historical market data. They are provided <b>for educational and research purposes
-        only</b> and do not constitute financial advice, investment recommendations, or an offer to buy or sell
-        any securities. Past performance and model accuracy on historical data are <b>not indicative of future
-        results</b>. Stock markets involve substantial risk of loss. The creators of this tool are not SEBI-registered
-        investment advisors. <b>Always consult a qualified financial professional before making investment decisions.</b>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
+        style_fig(fig_fi); st.plotly_chart(fig_fi,use_container_width=True)
 except Exception as e:
     st.error(f"❌ Model error: {e}")

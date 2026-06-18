@@ -100,43 +100,31 @@ def sf(v, d=0.0):
 
 
 def _fmt(value: float) -> str:
-    """Strictly ASCII price string — no locale, no \\xa0, no Unicode.
-
-    Builds thousands-separated string purely from str/list operations
-    so it is guaranteed to contain only ASCII characters 0-9, comma, dot.
-    """
-    # Work entirely with plain Python strings — no locale, no f-string number formatting
-    # that might pull in a locale-specific thousands separator (\xa0 on some systems).
-    raw = f"{abs(value):.2f}"            # e.g. "1328.50"  -- always ASCII
+    raw = f"{abs(value):.2f}"
     integer_part, decimal_part = raw.split(".")
     chars = list(integer_part)
     for i in range(len(chars) - 3, 0, -3):
         chars.insert(i, ",")
     result = ("-" if value < 0 else "") + "".join(chars) + "." + decimal_part
-    # Final safety net: drop anything that slipped through
     return result.encode("ascii", errors="ignore").decode("ascii")
 
 
 def _clean(text: str) -> str:
-    """Strip every non-ASCII character from a string before it touches SMTP."""
     return (
         text
-        .replace("\xa0", " ")       # non-breaking space
-        .replace("\u20b9", "Rs.")    # rupee sign \u20b9
-        .replace("\u20a8", "Rs.")    # rupee sign \u20a8
+        .replace("\xa0", " ")
+        .replace("\u20b9", "Rs.")
+        .replace("\u20a8", "Rs.")
         .encode("ascii", errors="replace")
         .decode("ascii")
     )
 
 
 def _send_alert_email(alert: dict, cp: float, user_email: str) -> None:
-    """Send a triggered-alert email. Silently logs result to session state."""
     if not smtp_configured():
         return
     if alert.get("email_sent"):
         return
-
-    # Build every string field through _clean() so \xa0 / \u20b9 can never reach smtplib
     stock      = _clean(str(alert["stock"]))
     symbol     = _clean(str(alert["symbol"]))
     ttype      = _clean(str(alert["type"]))
@@ -144,7 +132,6 @@ def _send_alert_email(alert: dict, cp: float, user_email: str) -> None:
     cp_str     = _clean(_fmt(float(cp)))
     note_str   = _clean(str(alert.get("note", "")))
     time_str   = _clean(datetime.now(IST).strftime("%d %b %Y %I:%M:%S %p IST"))
-
     subject = f"Nifty50 Alert: {stock} {ttype} target Rs.{target_str} hit!"
     body = (
         f"Your price alert has been triggered!\n\n"
@@ -156,7 +143,6 @@ def _send_alert_email(alert: dict, cp: float, user_email: str) -> None:
     if note_str:
         body += f"Note    : {note_str}\n"
     body += "\n-- NSE & Nifty 50 Tracker"
-
     ok, err = send_email(user_email, subject, body)
     alert["email_sent"] = True
     log = st.session_state.setdefault("alert_email_log", [])
@@ -271,10 +257,8 @@ with tab_active:
                 ref = a.get("ref_price") or cp
                 if ref and ref != 0 and abs((cp - ref) / ref * 100) >= a["target"]:
                     trig = True
-
             if trig and alert_email and not a.get("email_sent"):
                 _send_alert_email(a, cp, alert_email)
-
             diff = cp - a["target"]
             pct  = diff / a["target"] * 100 if a["target"] else 0
             status = "TRIGGERED" if trig else "Watching"
@@ -293,13 +277,11 @@ with tab_active:
             )
             if trig:
                 triggered.append(i)
-
         email_log = st.session_state.get("alert_email_log", [])
         if email_log:
             with st.expander("Email log"):
                 for entry in email_log[:10]:
                     st.text(entry)
-
         if triggered:
             if st.button("Mark Triggered as Done", key="btn_mark_done"):
                 for i in triggered:

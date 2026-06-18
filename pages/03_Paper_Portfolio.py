@@ -90,33 +90,20 @@ def style_fig(fig):
 
 
 def fetch_hist(sym, start_str, end_str):
-    """Robust historical data fetch using yf.download() with fallback."""
-    # Primary: yf.download (avoids the 'Item wrong length' Ticker.history bug)
     try:
         df = yf.download(
-            sym,
-            start=start_str,
-            end=end_str,
-            auto_adjust=True,
-            progress=False,
-            show_errors=False,
+            sym, start=start_str, end=end_str,
+            auto_adjust=True, progress=False, show_errors=False,
         )
         if df is not None and not df.empty:
-            # flatten MultiIndex columns if present
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
             df.index = pd.to_datetime(df.index).tz_localize(None)
             return df
     except Exception:
         pass
-    # Fallback: Ticker.history with auto_adjust=False
     try:
-        df2 = yf.Ticker(sym).history(
-            start=start_str,
-            end=end_str,
-            auto_adjust=False,
-            actions=False,
-        )
+        df2 = yf.Ticker(sym).history(start=start_str, end=end_str, auto_adjust=False, actions=False)
         if df2 is not None and not df2.empty:
             df2.index = pd.to_datetime(df2.index).tz_localize(None)
             return df2
@@ -140,9 +127,6 @@ if "pp_holdings" not in st.session_state:
 
 tab_port, tab_backtest = st.tabs(["Portfolio", "Historical Backtest"])
 
-# -------------------------------------------------
-# TAB 1 - PORTFOLIO
-# -------------------------------------------------
 with tab_port:
     st.markdown("<p class='sec-label'>Add a Holding</p>", unsafe_allow_html=True)
     with st.form("pp_add", clear_on_submit=True):
@@ -248,16 +232,8 @@ with tab_port:
             st.session_state.pp_holdings = []
             st.rerun()
 
-# -------------------------------------------------
-# TAB 2 - HISTORICAL BACKTEST
-# -------------------------------------------------
 with tab_backtest:
     st.markdown("<p class='sec-label'>Historical Backtest - What If I Had Invested?</p>", unsafe_allow_html=True)
-    st.markdown(
-        "Pick a stock, quantity, and date range to see exactly what your gain or loss would have been "
-        "using real historical market prices."
-    )
-
     bt1, bt2, bt3 = st.columns(3)
     with bt1:
         bt_stock = st.selectbox("Stock", NIFTY50_NAMES, key="bt_stock")
@@ -266,18 +242,14 @@ with tab_backtest:
     with bt3:
         bt_capital = st.number_input(
             "Or enter capital (Rs.) [optional]", min_value=0.0, value=0.0, step=1000.0, key="bt_capital",
-            help="If set, quantity will be auto-calculated from the start price",
         )
-
     dt1, dt2 = st.columns(2)
     today = date.today()
     default_start = today - timedelta(days=365)
     with dt1:
-        bt_start = st.date_input("Buy Date (Start)", value=default_start,
-                                  max_value=today - timedelta(days=2), key="bt_start")
+        bt_start = st.date_input("Buy Date (Start)", value=default_start, max_value=today - timedelta(days=2), key="bt_start")
     with dt2:
-        bt_end = st.date_input("Sell Date (End)", value=today - timedelta(days=1),
-                                max_value=today, key="bt_end")
+        bt_end = st.date_input("Sell Date (End)", value=today - timedelta(days=1), max_value=today, key="bt_end")
 
     if st.button("Run Backtest", type="primary", key="bt_run"):
         if bt_start >= bt_end:
@@ -285,160 +257,43 @@ with tab_backtest:
         else:
             sym = NIFTY50_SYMS.get(bt_stock, "")
             with st.spinner("Fetching historical data..."):
-                # add buffer days around the requested range for weekend/holiday handling
                 fetch_start = (bt_start - timedelta(days=7)).strftime("%Y-%m-%d")
                 fetch_end   = (bt_end   + timedelta(days=2)).strftime("%Y-%m-%d")
-
                 hist = fetch_hist(sym, fetch_start, fetch_end)
-
                 if hist is None or hist.empty:
-                    st.error(
-                        "No historical data found for " + bt_stock +
-                        ". Please try a different date range or check your internet connection."
-                    )
+                    st.error("No historical data found for " + bt_stock)
                 else:
-                    # get Close column regardless of MultiIndex
                     close_col = hist["Close"] if "Close" in hist.columns else hist.iloc[:, 0]
                     if isinstance(close_col, pd.DataFrame):
                         close_col = close_col.iloc[:, 0]
-
-                    # filter to the user-selected range
                     mask = (hist.index.date >= bt_start) & (hist.index.date <= bt_end)
                     chart_data = hist.loc[mask].copy()
                     close = close_col.loc[mask]
-
                     if chart_data.empty or len(close) < 1:
-                        st.error(
-                            "No trading data found between " + str(bt_start) +
-                            " and " + str(bt_end) +
-                            ". Markets may have been closed on those dates. Try adjusting the range."
-                        )
+                        st.error("No trading data found in selected range.")
                     else:
                         buy_price  = float(close.iloc[0])
                         sell_price = float(close.iloc[-1])
-                        actual_buy_date  = chart_data.index[0].date()
-                        actual_sell_date = chart_data.index[-1].date()
-
-                        # auto-calc qty from capital if given
                         qty_used = int(bt_qty)
                         if bt_capital > 0:
                             qty_used = max(1, int(bt_capital // buy_price))
-
-                        invested     = buy_price  * qty_used
-                        final_val    = sell_price * qty_used
-                        pnl          = final_val - invested
-                        pnl_pct      = (pnl / invested * 100) if invested > 0 else 0
-                        holding_days = (actual_sell_date - actual_buy_date).days
-
-                        st.markdown('<hr class="ui-divider">', unsafe_allow_html=True)
-                        st.markdown("**Backtest Result: " + bt_stock + "**")
-
+                        invested  = buy_price  * qty_used
+                        final_val = sell_price * qty_used
+                        pnl       = final_val - invested
+                        pnl_pct   = (pnl / invested * 100) if invested > 0 else 0
                         col_a, col_b, col_c, col_d, col_e = st.columns(5)
-                        col_a.metric("Buy Price",  rs(buy_price),  help="First trading day in range")
-                        col_b.metric("Sell Price", rs(sell_price), help="Last trading day in range")
+                        col_a.metric("Buy Price",  rs(buy_price))
+                        col_b.metric("Sell Price", rs(sell_price))
                         col_c.metric("Qty",        str(qty_used))
                         col_d.metric("Invested",   rs(invested))
                         col_e.metric("Return",     f"{pnl_pct:+.2f}%", delta=rs(pnl, "+,.2f"))
-
-                        col_f, col_g, col_h = st.columns(3)
-                        col_f.metric("Final Value",     rs(final_val))
-                        col_g.metric("Net P&L",         rs(pnl, "+,.2f"))
-                        col_h.metric("Holding Period",  str(holding_days) + " days")
-
-                        # verdict
                         if pnl >= 0:
-                            st.success(
-                                "GAIN: Bought " + str(qty_used) + " shares of " + bt_stock +
-                                " on " + str(actual_buy_date) +
-                                " and sold on " + str(actual_sell_date) +
-                                " => GAINED " + rs(pnl, "+,.2f") +
-                                " (" + f"{pnl_pct:+.2f}" + "%)"
-                            )
+                            st.success(f"GAIN: {bt_stock} => GAINED {rs(pnl, '+,.2f')} ({pnl_pct:+.2f}%)")
                         else:
-                            st.error(
-                                "LOSS: Bought " + str(qty_used) + " shares of " + bt_stock +
-                                " on " + str(actual_buy_date) +
-                                " and sold on " + str(actual_sell_date) +
-                                " => LOST " + rs(abs(pnl)) +
-                                " (" + f"{pnl_pct:.2f}" + "%)"
-                            )
-
-                        # Price chart
-                        st.markdown("<p class='sec-label'>Price Movement Over Period</p>", unsafe_allow_html=True)
+                            st.error(f"LOSS: {bt_stock} => LOST {rs(abs(pnl))} ({pnl_pct:.2f}%)")
                         fig_bt = go.Figure()
-                        fig_bt.add_trace(go.Scatter(
-                            x=chart_data.index, y=close,
-                            mode="lines", name=bt_stock,
-                            line=dict(color="#6366f1", width=2),
-                            fill="tozeroy", fillcolor="rgba(99,102,241,0.07)",
-                        ))
-                        fig_bt.add_hline(
-                            y=buy_price, line_dash="dash", line_color="#f59e0b",
-                            annotation_text="Buy @ Rs." + format(buy_price, ",.2f"),
-                            annotation_position="top left",
-                        )
-                        fig_bt.add_hline(
-                            y=sell_price,
-                            line_dash="dot",
-                            line_color="#10b981" if sell_price >= buy_price else "#ef4444",
-                            annotation_text="Sell @ Rs." + format(sell_price, ",.2f"),
-                            annotation_position="bottom right",
-                        )
-                        fig_bt.add_trace(go.Scatter(
-                            x=[chart_data.index[0]], y=[buy_price],
-                            mode="markers", name="Buy",
-                            marker=dict(color="#f59e0b", size=12, symbol="triangle-up"),
-                        ))
-                        fig_bt.add_trace(go.Scatter(
-                            x=[chart_data.index[-1]], y=[sell_price],
-                            mode="markers", name="Sell",
-                            marker=dict(
-                                color="#10b981" if sell_price >= buy_price else "#ef4444",
-                                size=12, symbol="triangle-down",
-                            ),
-                        ))
-                        fig_bt.update_layout(
-                            **PLT_LAYOUT, height=380,
-                            title=bt_stock + " | " + str(actual_buy_date) + " to " + str(actual_sell_date),
-                            xaxis_title="Date", yaxis_title="Price (Rs.)",
-                        )
-                        style_fig(fig_bt)
+                        fig_bt.add_trace(go.Scatter(x=chart_data.index, y=close, mode="lines", name=bt_stock, line=dict(color="#6366f1", width=2), fill="tozeroy", fillcolor="rgba(99,102,241,0.07)"))
+                        fig_bt.update_layout(**PLT_LAYOUT, height=380, title=bt_stock + " Price Chart", xaxis_title="Date", yaxis_title="Price (Rs.)")
                         st.plotly_chart(fig_bt, use_container_width=True)
-
-                        # Portfolio value curve
-                        st.markdown("<p class='sec-label'>Portfolio Value Curve</p>", unsafe_allow_html=True)
-                        port_series = close * qty_used
-                        fig_pv = go.Figure()
-                        fig_pv.add_trace(go.Scatter(
-                            x=chart_data.index, y=port_series,
-                            mode="lines", name="Portfolio Value",
-                            line=dict(color="#0ea5e9", width=2),
-                            fill="tozeroy", fillcolor="rgba(14,165,233,0.08)",
-                        ))
-                        fig_pv.add_hline(
-                            y=invested, line_dash="dash", line_color="#94a3b8",
-                            annotation_text="Invested Rs." + format(invested, ",.0f"),
-                        )
-                        fig_pv.update_layout(
-                            **PLT_LAYOUT, height=320,
-                            title="Portfolio Value over Time (" + str(qty_used) + " shares)",
-                            xaxis_title="Date", yaxis_title="Value (Rs.)",
-                        )
-                        style_fig(fig_pv)
-                        st.plotly_chart(fig_pv, use_container_width=True)
-
-                        # Daily data table
-                        with st.expander("View Daily Price Data"):
-                            daily_df = pd.DataFrame({
-                                "Date": chart_data.index.date,
-                                "Close (Rs.)": close.round(2).values,
-                                "Portfolio Value (Rs.)": (close * qty_used).round(2).values,
-                                "Cumulative P&L (Rs.)": ((close - buy_price) * qty_used).round(2).values,
-                                "Return (%)": (((close - buy_price) / buy_price) * 100).round(2).values,
-                            })
-                            st.dataframe(daily_df, use_container_width=True, hide_index=True)
     else:
-        st.info(
-            "Select a stock, set quantity or capital amount, choose your buy date and sell date, "
-            "then click Run Backtest to see your hypothetical gain or loss."
-        )
+        st.info("Select a stock, set quantity, choose dates, then click Run Backtest.")

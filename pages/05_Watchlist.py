@@ -1,22 +1,34 @@
 """
-Page: Watchlist  —  light theme
+Page: Watchlist
 """
 import streamlit as st
-from utils.supabase_auth import get_current_user, is_guest, login_nudge
-from utils.theme import inject, inject_topbar
-
-st.set_page_config(page_title="Watchlist", page_icon="⭐", layout="wide")
-inject()
-
-import yfinance as yf
-import pandas as pd
-import numpy as np
 import warnings
 warnings.filterwarnings("ignore")
 
+try:
+    from utils.supabase_auth import get_current_user, is_guest, login_nudge
+except Exception:
+    def get_current_user(): return None
+    def is_guest(): return True
+    def login_nudge(msg=""): st.info("Sign in to save your data.")
+
+try:
+    from utils.theme import inject, inject_topbar
+    inject()
+except Exception:
+    def inject_topbar(user=None): pass
+
+st.set_page_config(page_title="Watchlist", page_icon="⭐", layout="wide")
+
+import yfinance as yf
+import pandas as pd
+
 user  = get_current_user()
 guest = is_guest()
-inject_topbar(user=user)
+try:
+    inject_topbar(user=user)
+except Exception:
+    pass
 
 try:
     from utils.db import wl_load, wl_add, wl_remove
@@ -76,13 +88,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-if guest:
-    st.markdown("<span class='ui-badge badge-hist'>👤 Guest — session only, sign in to save</span>", unsafe_allow_html=True)
-else:
-    st.markdown(f"<span class='ui-badge badge-live'>✅ {user['full_name']} — watchlist saved</span>", unsafe_allow_html=True)
-
-st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
-st.markdown("#### ➕ Add Stock")
 cw1, cw2 = st.columns([4,1])
 with cw1: add_name = st.selectbox("Stock", NAMES, key="wl_add_sel", label_visibility="collapsed")
 with cw2:
@@ -90,14 +95,11 @@ with cw2:
         if guest: login_nudge("save your watchlist")
         else:
             if wl_add(add_name): st.success(f"✅ Added {add_name}"); st.rerun()
-st.markdown("</div>", unsafe_allow_html=True)
 
 watchlist = wl_load()
 if not watchlist:
     st.info("💡 Your watchlist is empty. Add stocks above!")
 else:
-    st.markdown(f"<div class='ui-card'>", unsafe_allow_html=True)
-    st.markdown(f"#### 📊 {len(watchlist)} Stocks on Watch")
     with st.spinner("Fetching live prices…"):
         rows = []
         for name in watchlist:
@@ -110,9 +112,6 @@ else:
                 "Change (₹)": f"{ch:+.2f}" if ch is not None else "N/A",
                 "Change %": f"{arrow} {pt:+.2f}%" if pt is not None else "N/A"})
     if rows: st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
-    rem = st.selectbox("Remove from watchlist", watchlist, key="wl_rem_sel", label_visibility="collapsed")
+    rem = st.selectbox("Remove from watchlist", watchlist, key="wl_rem_sel")
     if st.button("🗑️ Remove", key="wl_rem_btn"):
         if wl_remove(rem): st.success(f"✅ Removed {rem}"); st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
