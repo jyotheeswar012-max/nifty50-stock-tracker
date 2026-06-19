@@ -1,22 +1,22 @@
-# Contributing
+# Contributing to NSE & Nifty 50 Tracker
 
-Full contributing guide lives in the [docs site](https://jyotheeswar012-max.github.io/nifty50-stock-tracker/contributing/).
+Thank you for contributing! 📈
 
-## Quick Start
+## How to Contribute
 
+1. Fork the repository
+2. Create a branch: `git checkout -b feature/your-feature`
+3. Make your changes
+4. Commit: `git commit -m 'feat: your feature'`
+5. Push and open a Pull Request
+
+## Setup
 ```bash
-git clone https://github.com/jyotheeswar012-max/nifty50-stock-tracker.git
-cd nifty50-stock-tracker
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt -r requirements-test.txt
-streamlit run app.py   # verify app works
-pytest                 # verify tests pass
+pip install -r requirements.txt
+streamlit run app.py
 ```
 
-## Branching
-
-- `feature/<name>` for new features
-- `fix/<name>` for bug fixes
-- `docs/<name>` for documentation only
-
-See the full guide for code style, commit message conventions, and PR requirements.
+## Guidelines
+- Follow PEP 8
+- Test all stock data features before submitting
+- Document any new ML model additions
